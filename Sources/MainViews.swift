@@ -94,6 +94,50 @@ struct CoursesView: View {
     @State private var favOverride: [Int: Bool] = [:]
     @State private var loading = false
     @State private var error: String?
+    @State private var query = ""
+    @State private var allCourses: [Course] = []     // every enrolled course, used for search suggestions
+    @State private var openCourse: Course?
+    @FocusState private var searchFocused: Bool
+
+    // ---- search ----
+
+    private var cleanQuery: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    // 0 = every typed word starts a word in the course name, 1 = just contained somewhere, nil = no match
+    private func rank(_ c: Course, _ q: String) -> Int? {
+        let words = q.split(separator: " ").map(String.init)
+        guard !words.isEmpty else { return 0 }
+        let hay = c.fullname + " " + (c.shortname ?? "")
+        let hayWords = hay.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+            .split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init)
+        var prefixAll = true
+        for w in words {
+            let f = w.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+            if !hayWords.contains(where: { $0.hasPrefix(f) }) { prefixAll = false }
+            if hay.range(of: w, options: [.caseInsensitive, .diacriticInsensitive]) == nil { return nil }
+        }
+        return prefixAll ? 0 : 1
+    }
+
+    // Suggestions come from all enrolled courses (plus whatever the current filter loaded)
+    private var suggestions: [Course] {
+        guard !cleanQuery.isEmpty else { return [] }
+        var seen = Set<Int>()
+        let pool = (allCourses + courses).filter { seen.insert($0.id).inserted }
+        return pool.compactMap { c in rank(c, cleanQuery).map { (c, $0) } }
+            .sorted { $0.1 != $1.1 ? $0.1 < $1.1 : $0.0.fullname < $1.0.fullname }
+            .prefix(5).map { $0.0 }
+    }
+
+    private var visibleCourses: [Course] {
+        cleanQuery.isEmpty ? courses : courses.filter { rank($0, cleanQuery) != nil }
+    }
+
+    private func openFromSearch(_ c: Course) {
+        searchFocused = false
+        query = ""
+        openCourse = c
+    }
 
     private var firstTwoNames: String {
         (app.site?.fullname ?? "")
@@ -114,12 +158,15 @@ struct CoursesView: View {
                 }
                 .font(.title3)
 
+                searchBar
+                suggestionList
+
                 filterBar
 
                 if let error { Text(error).font(.footnote).foregroundColor(Theme.muted) }
 
                 LazyVStack(spacing: 22) {
-                    ForEach(courses) { c in
+                    ForEach(visibleCourses) { c in
                         let starred = favOverride[c.id] ?? c.isfavourite ?? false
                         ZStack(alignment: .topTrailing) {
                             NavigationLink { CourseDetailView(course: c) } label: { CourseCard(course: c) }
@@ -144,8 +191,9 @@ struct CoursesView: View {
                         }
                     }
                 }
-                if !loading && courses.isEmpty && error == nil {
-                    Text("No courses here.").foregroundColor(Theme.muted)
+                if !loading && visibleCourses.isEmpty && error == nil {
+                    Text(cleanQuery.isEmpty ? "No courses here." : "No courses match \u{201C}\(cleanQuery)\u{201D}.")
+                        .foregroundColor(Theme.muted)
                 }
                 if loading { ProgressView().tint(Theme.accent).frame(maxWidth: .infinity) }
             }
@@ -153,8 +201,67 @@ struct CoursesView: View {
         }
         .background(Theme.bg.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
-        .refreshable { await load() }
+        .scrollDismissesKeyboard(.interactively)
+        .navigationDestination(isPresented: Binding(get: { openCourse != nil },
+                                                    set: { if !$0 { openCourse = nil } })) {
+            if let c = openCourse { CourseDetailView(course: c) }
+        }
+        .refreshable { await load(); await loadAll() }
         .task(id: filter) { await load() }
+        .task { await loadAll() }
+    }
+
+    private var searchBar: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass").foregroundColor(Theme.muted)
+            TextField("", text: $query, prompt: Text("Search my courses").foregroundColor(Theme.muted))
+                .foregroundColor(Theme.txt)
+                .tint(Theme.accent)
+                .focused($searchFocused)
+                .submitLabel(.search)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .onSubmit { if let c = suggestions.first { openFromSearch(c) } }
+            if !query.isEmpty {
+                Button { query = "" } label: {
+                    Image(systemName: "xmark.circle.fill").foregroundColor(Theme.muted)
+                }
+            }
+        }
+        .padding(12)
+        .background(Theme.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .stroke(searchFocused ? Theme.accent.opacity(0.6) : Theme.line))
+    }
+
+    @ViewBuilder private var suggestionList: some View {
+        let s = suggestions
+        if searchFocused && !s.isEmpty {
+            VStack(spacing: 0) {
+                ForEach(s) { c in
+                    Button { openFromSearch(c) } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "book.closed").font(.footnote).foregroundColor(Theme.accent)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(c.fullname).foregroundColor(Theme.txt).multilineTextAlignment(.leading)
+                                if let sn = c.shortname, !sn.isEmpty {
+                                    Text(sn).font(.caption).foregroundColor(Theme.muted)
+                                }
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right").font(.caption).foregroundColor(Theme.muted)
+                        }
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                        .overlay(Rectangle().fill(Theme.line).frame(height: 1), alignment: .bottom)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .glowCard()
+        }
     }
 
     private var filterBar: some View {
@@ -187,6 +294,14 @@ struct CoursesView: View {
         loading = false
     }
 
+    // All enrolled courses, loaded once in the background to power the search suggestions
+    private func loadAll() async {
+        let r: CourseList? = try? await MoodleAPI.shared.call(
+            "core_course_get_enrolled_courses_by_timeline_classification",
+            ["classification": "all", "limit": 0, "offset": 0, "sort": "fullname"])
+        if let r { allCourses = r.courses }
+    }
+
     // Star / unstar. Updates the card immediately and rolls back if Moodle refuses.
     private func toggleStar(_ c: Course) async {
         let now = !(favOverride[c.id] ?? c.isfavourite ?? false)
@@ -204,8 +319,9 @@ struct CoursesView: View {
     private func toggleHide(_ c: Course) async {
         let hide = filter != .hidden
         do {
-            try await MoodleAPI.shared.setHidden(c.id, hide)
+            try await MoodleAPI.shared.setHidden(c.id, hide, userid: app.site?.userid ?? 0)
             courses.removeAll { $0.id == c.id }
+            if hide { allCourses.removeAll { $0.id == c.id } } else { await loadAll() }
         } catch {
             self.error = error.localizedDescription
         }
