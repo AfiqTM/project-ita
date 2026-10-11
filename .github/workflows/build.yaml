@@ -1,0 +1,26 @@
+name: Build IPA
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate Xcode project
+        run: brew install xcodegen && xcodegen
+      - name: Build (unsigned)
+        run: |
+          xcodebuild -project iTaleem.xcodeproj -scheme iTaleem -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
+      - name: Package IPA
+        run: |
+          mkdir Payload
+          cp -R build/Build/Products/Release-iphoneos/iTaleem.app Payload/
+          zip -r iTaleem.ipa Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: iTaleem-ipa
+          path: iTaleem.ipa
