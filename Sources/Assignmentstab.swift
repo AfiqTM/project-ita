@@ -22,7 +22,7 @@ struct StatusPill: View {
     }
 }
 
-// MARK: - Model
+// MARK: - Filters
 
 enum AssignFilter: String, CaseIterable, Identifiable {
     case todo = "To do"
@@ -31,6 +31,36 @@ enum AssignFilter: String, CaseIterable, Identifiable {
     case all = "All"
     var id: String { rawValue }
 }
+
+// How far ahead the "To do" list (and the tab badge) looks
+enum AssignRange: String, CaseIterable, Identifiable {
+    case week = "7d", month = "30d", threeMonths = "3m", sixMonths = "6m"
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .week: return "7 days"
+        case .month: return "30 days"
+        case .threeMonths: return "3 months"
+        case .sixMonths: return "6 months"
+        }
+    }
+
+    // Unix time of the end of the window, counted from now
+    func end(from now: Date = Date()) -> Int {
+        let comp: (Calendar.Component, Int)
+        switch self {
+        case .week: comp = (.day, 7)
+        case .month: comp = (.day, 30)
+        case .threeMonths: comp = (.month, 3)
+        case .sixMonths: comp = (.month, 6)
+        }
+        let d = Calendar.current.date(byAdding: comp.0, value: comp.1, to: now) ?? now
+        return Int(d.timeIntervalSince1970)
+    }
+}
+
+// MARK: - Model
 
 struct AssignItem: Identifiable {
     let a: Assign
@@ -47,9 +77,11 @@ struct AssignItem: Identifiable {
 
     func overdue(_ now: Int) -> Bool { !submitted && due > 0 && due < now }
 
-    func matches(_ f: AssignFilter, _ now: Int) -> Bool {
+    // To do = not submitted, not overdue, due date inside the chosen window.
+    // Items without a due date only appear under "All".
+    func matches(_ f: AssignFilter, now: Int, limit: Int) -> Bool {
         switch f {
-        case .todo: return !submitted && !overdue(now)
+        case .todo: return !submitted && !overdue(now) && due > 0 && due <= limit
         case .overdue: return overdue(now)
         case .submitted: return submitted
         case .all: return true
@@ -66,37 +98,113 @@ struct AssignItem: Identifiable {
     }
 }
 
-// MARK: - Assignments tab
+// Owned by RootView so the tab badge is correct from launch, before the tab is ever opened.
+@MainActor
+final class AssignmentsModel: ObservableObject {
+    @Published var items: [AssignItem] = []
+    @Published var loading = true
+    @Published var error: String?
+    @Published var filter: AssignFilter = .todo
+    @Published var range: AssignRange {
+        didSet { UserDefaults.standard.set(range.rawValue, forKey: "assignRange") }
+    }
+    private var running = false
 
-struct AssignmentsTabView: View {
-    @EnvironmentObject var app: AppState
-    @State private var filter: AssignFilter = .todo
-    @State private var items: [AssignItem] = []
-    @State private var loading = true
-    @State private var error: String?
+    init() {
+        range = AssignRange(rawValue: UserDefaults.standard.string(forKey: "assignRange") ?? "") ?? .month
+    }
 
     private var now: Int { Int(Date().timeIntervalSince1970) }
 
-    private func count(_ f: AssignFilter) -> Int { items.filter { $0.matches(f, now) }.count }
+    func count(_ f: AssignFilter) -> Int {
+        let lim = range.end()
+        let n = now
+        return items.filter { $0.matches(f, now: n, limit: lim) }.count
+    }
 
-    private var shown: [AssignItem] {
-        let list = items.filter { $0.matches(filter, now) }
-        switch filter {
+    // Number shown on the tab icon: to-do assignments due inside the selected range
+    var badgeCount: Int { count(.todo) }
+
+    func list(_ f: AssignFilter) -> [AssignItem] {
+        let lim = range.end()
+        let n = now
+        let l = items.filter { $0.matches(f, now: n, limit: lim) }
+        switch f {
         case .todo, .all:
             // soonest first, no-due-date last
-            return list.sorted { l, r in
-                if l.due == 0 { return false }
-                if r.due == 0 { return true }
-                return l.due < r.due
+            return l.sorted { x, y in
+                if x.due == 0 { return false }
+                if y.due == 0 { return true }
+                return x.due < y.due
             }
         case .overdue, .submitted:
-            return list.sorted { $0.due > $1.due }
+            return l.sorted { $0.due > $1.due }
         }
     }
 
+    // One call for the course list, one for every assignment, then one status call per assignment (8 at a time).
+    // Only the first load shows a spinner; later refreshes update quietly.
+    func load(uid: Int) async {
+        guard !running else { return }
+        running = true
+        defer { running = false }
+        if items.isEmpty { loading = true }
+        error = nil
+        do {
+            let cl: CourseList = try await MoodleAPI.shared.call(
+                "core_course_get_enrolled_courses_by_timeline_classification",
+                ["classification": "inprogress", "limit": 0, "offset": 0, "sort": "fullname"])
+            let names = Dictionary(cl.courses.map { ($0.id, $0.fullname) }, uniquingKeysWith: { a, _ in a })
+            guard !cl.courses.isEmpty else { items = []; loading = false; return }
+
+            let r: AssignResp = try await MoodleAPI.shared.call(
+                "mod_assign_get_assignments", ["courseids": cl.courses.map { $0.id }])
+            var base: [(Assign, Int, String)] = []
+            for c in r.courses {
+                for a in c.assignments { base.append((a, c.id, names[c.id] ?? "")) }
+            }
+
+            var out: [AssignItem] = []
+            var start = 0
+            while start < base.count {
+                let chunk = Array(base[start..<min(start + 8, base.count)])
+                start += 8
+                let part = await withTaskGroup(of: AssignItem.self) { g -> [AssignItem] in
+                    for (a, cid, cn) in chunk {
+                        g.addTask {
+                            let s: StatusResp? = try? await MoodleAPI.shared.call(
+                                "mod_assign_get_submission_status", ["assignid": a.id, "userid": uid])
+                            return AssignItem(a: a, courseId: cid, courseName: cn, status: s)
+                        }
+                    }
+                    var res: [AssignItem] = []
+                    for await i in g { res.append(i) }
+                    return res
+                }
+                out.append(contentsOf: part)
+            }
+            items = out
+        } catch {
+            if !(error is CancellationError), (error as? URLError)?.code != .cancelled {
+                self.error = error.localizedDescription
+            }
+        }
+        loading = false
+    }
+}
+
+// MARK: - Assignments tab
+
+struct AssignmentsTabView: View {
+    @ObservedObject var model: AssignmentsModel
+    @EnvironmentObject var app: AppState
+
+    private var uid: Int { app.site?.userid ?? 0 }
+    private var now: Int { Int(Date().timeIntervalSince1970) }
+
     private var groups: [(String, [AssignItem])] {
         var out: [(String, [AssignItem])] = []
-        for i in shown {
+        for i in model.list(model.filter) {
             let title = i.due == 0
                 ? "No due date"
                 : Date(timeIntervalSince1970: TimeInterval(i.due)).formatted(date: .complete, time: .omitted)
@@ -114,7 +222,8 @@ struct AssignmentsTabView: View {
             VStack(alignment: .leading, spacing: 18) {
                 Text("Assignments").font(.title3.weight(.semibold)).foregroundColor(Theme.txt)
                 filterBar
-                if let error { Text(error).font(.footnote).foregroundColor(Theme.muted) }
+                rangeBar
+                if let error = model.error { Text(error).font(.footnote).foregroundColor(Theme.muted) }
 
                 ForEach(groups, id: \.0) { title, list in
                     VStack(alignment: .leading, spacing: 10) {
@@ -126,29 +235,32 @@ struct AssignmentsTabView: View {
                     }
                 }
 
-                if loading { ProgressView().tint(Theme.accent).frame(maxWidth: .infinity) }
-                else if shown.isEmpty && error == nil {
-                    Text("Nothing here.").foregroundColor(Theme.muted)
+                if model.loading { ProgressView().tint(Theme.accent).frame(maxWidth: .infinity) }
+                else if groups.isEmpty && model.error == nil {
+                    Text(model.filter == .todo
+                         ? "Nothing due in the next \(model.range.title)."
+                         : "Nothing here.")
+                        .foregroundColor(Theme.muted)
                 }
             }
             .padding(16)
         }
         .background(Theme.bg.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
-        .refreshable { await load() }
-        .task { await load() }
+        .refreshable { await model.load(uid: uid) }
+        .onAppear { Task { await model.load(uid: uid) } }   // also refreshes after coming back from an assignment
     }
 
     private var filterBar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 22) {
                 ForEach(AssignFilter.allCases) { f in
-                    Button { filter = f } label: {
+                    Button { model.filter = f } label: {
                         HStack(spacing: 6) {
                             Text(f.rawValue)
-                                .fontWeight(filter == f ? .semibold : .regular)
-                                .foregroundColor(filter == f ? Theme.accent : Theme.txt)
-                            let n = count(f)
+                                .fontWeight(model.filter == f ? .semibold : .regular)
+                                .foregroundColor(model.filter == f ? Theme.accent : Theme.txt)
+                            let n = model.count(f)
                             if (f == .todo || f == .overdue) && n > 0 {
                                 Text("\(n)")
                                     .font(.caption2.bold())
@@ -157,6 +269,27 @@ struct AssignmentsTabView: View {
                                     .background(f == .overdue ? Tone.red : Theme.accent)
                                     .clipShape(Capsule())
                             }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Chooses how far ahead to look; drives the To do list and the number on the tab icon
+    private var rangeBar: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("DUE WITHIN").font(.caption).foregroundColor(Theme.muted)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(AssignRange.allCases) { r in
+                        Button { model.range = r } label: {
+                            Text(r.title)
+                                .font(.footnote.weight(.semibold))
+                                .foregroundColor(model.range == r ? .black : Theme.txt)
+                                .padding(.horizontal, 12).padding(.vertical, 6)
+                                .background(model.range == r ? Theme.accent : Theme.surface2)
+                                .clipShape(Capsule())
                         }
                     }
                 }
@@ -201,51 +334,5 @@ struct AssignmentsTabView: View {
             .overlay(Rectangle().fill(Theme.line).frame(height: 1), alignment: .bottom)
         }
         .buttonStyle(.plain)
-    }
-
-    // One call for the course list, one for every assignment, then one status call per assignment (8 at a time).
-    private func load() async {
-        loading = true; error = nil
-        do {
-            let cl: CourseList = try await MoodleAPI.shared.call(
-                "core_course_get_enrolled_courses_by_timeline_classification",
-                ["classification": "inprogress", "limit": 0, "offset": 0, "sort": "fullname"])
-            let names = Dictionary(cl.courses.map { ($0.id, $0.fullname) }, uniquingKeysWith: { a, _ in a })
-            guard !cl.courses.isEmpty else { items = []; loading = false; return }
-
-            let r: AssignResp = try await MoodleAPI.shared.call(
-                "mod_assign_get_assignments", ["courseids": cl.courses.map { $0.id }])
-            var base: [(Assign, Int, String)] = []
-            for c in r.courses {
-                for a in c.assignments { base.append((a, c.id, names[c.id] ?? "")) }
-            }
-
-            let uid = app.site?.userid ?? 0
-            var out: [AssignItem] = []
-            var start = 0
-            while start < base.count {
-                let chunk = Array(base[start..<min(start + 8, base.count)])
-                start += 8
-                let part = await withTaskGroup(of: AssignItem.self) { g -> [AssignItem] in
-                    for (a, cid, cn) in chunk {
-                        g.addTask {
-                            let s: StatusResp? = try? await MoodleAPI.shared.call(
-                                "mod_assign_get_submission_status", ["assignid": a.id, "userid": uid])
-                            return AssignItem(a: a, courseId: cid, courseName: cn, status: s)
-                        }
-                    }
-                    var res: [AssignItem] = []
-                    for await i in g { res.append(i) }
-                    return res
-                }
-                out.append(contentsOf: part)
-            }
-            items = out
-        } catch {
-            if !(error is CancellationError), (error as? URLError)?.code != .cancelled {
-                self.error = error.localizedDescription
-            }
-        }
-        loading = false
     }
 }
