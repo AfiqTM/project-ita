@@ -12,24 +12,26 @@ struct AttSummary {
 extension MoodleAPI {
     // ---- Attendance ----
     func attendanceSessions(userid: Int, attendanceId: Int) async throws -> [AttSession] {
-        let courses: [AttCourse] = try await call("mod_attendance_get_courses_with_today_sessions", ["userid": userid])
-        let ids = courses.flatMap { $0.attendance_instances ?? [] }
-            .flatMap { $0.today_sessions ?? [] }
-            .filter { $0.attendanceid == nil || $0.attendanceid == attendanceId }
-            .map { $0.id }
-        var out: [AttSession] = []
-        for id in ids {
-            let s: AttSession = try await call("mod_attendance_get_session", ["sessionid": id])
-            out.append(s)
+    let courses: [AttCourse] = try await call("mod_attendance_get_courses_with_today_sessions", ["userid": userid])
+
+    var ids: [Int] = []
+    for course in courses {
+        for inst in course.attendance_instances ?? [] {
+            for s in inst.today_sessions ?? [] {
+                if s.attendanceid == nil || s.attendanceid == attendanceId {
+                    ids.append(s.id)
+                }
+            }
         }
-        return out.sorted { ($0.sessdate ?? 0) < ($1.sessdate ?? 0) }
     }
 
-    func markAttendance(sessionId: Int, userid: Int, statusId: Int, password: String?) async throws {
-        _ = try await raw("mod_attendance_submit_session",
-                          ["sessionid": sessionId, "studentid": userid,
-                           "statusid": statusId, "statuspass": password ?? ""])
+    var out: [AttSession] = []
+    for id in ids {
+        let s: AttSession = try await call("mod_attendance_get_session", ["sessionid": id])
+        out.append(s)
     }
+    return out.sorted { ($0.sessdate ?? 0) < ($1.sessdate ?? 0) }
+}
 
     // Percentage / absences are not in the web-service API, so the attendance page is fetched and parsed
     func fetchHTML(_ url: URL, userid: Int) async -> String? {
