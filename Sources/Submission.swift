@@ -60,7 +60,47 @@ struct AttSummary {
     var rows: [(String, String)] = []
     var points: String?
     var records: [AttRecord] = []
+
+    // Maximum possible attendance (what you'd finish on if you attend every remaining session)
+    var maxPercent: String?      // "96.7%"
+    var maxPoints: String?       // "58 / 60"
+    var total: Int?              // total number of sessions in the course
+    var taken: Int?              // sessions already taken
+    var earned: Double?          // points over taken sessions (numerator)
+    var possible: Double?        // points over taken sessions (denominator)
+
     func count(_ k: AttKind) -> Int { records.filter { $0.kind == k }.count }
+
+    private func num(_ v: Double) -> String { v == v.rounded() ? String(Int(v)) : String(format: "%.1f", v) }
+
+    // Takes the totals (not the session rows) from another copy of the page
+    mutating func mergeMax(from o: AttSummary) {
+        if maxPercent == nil { maxPercent = o.maxPercent; maxPoints = o.maxPoints }
+        total = total ?? o.total
+        taken = taken ?? o.taken
+        earned = earned ?? o.earned
+        possible = possible ?? o.possible
+    }
+
+    // If the page doesn't state the maximum, work it out:
+    // max = points earned + remaining sessions x points per session
+    mutating func fillMax() {
+        if earned == nil || possible == nil {
+            var e = 0.0, p = 0.0, n = 0
+            for r in records where r.kind != .pending {
+                let parts = r.points.split(separator: "/").map { Double($0.trimmingCharacters(in: .whitespaces)) }
+                if parts.count == 2, let a = parts[0], let b = parts[1] { e += a; p += b; n += 1 }
+            }
+            if n > 0 { earned = e; possible = p; taken = taken ?? n }
+        }
+        guard maxPercent == nil, let total, let taken, taken > 0, total >= taken,
+              let e = earned, let p = possible, p > 0 else { return }
+        let per = p / Double(taken)
+        let maxPts = e + Double(total - taken) * per
+        let allPts = Double(total) * per
+        maxPoints = "\(num(maxPts)) / \(num(allPts))"
+        maxPercent = String(format: "%.1f%%", maxPts / allPts * 100)
+    }
 }
 
 // MARK: - API helpers
@@ -75,13 +115,23 @@ extension MoodleAPI {
     }
 
     // "Removed from view" is stored by Moodle as a user preference, the same one the website uses.
-    func setHidden(_ courseId: Int, _ hidden: Bool) async throws {
+    // core_user_update_user_preferences wants each preference as {type, value} (not {name, value}); sending
+    // "name" is what produced "Invalid parameter value detected". If a site rejects that form,
+    // core_user_set_user_preferences ({name, value, userid}) is tried as a fallback.
+    func setHidden(_ courseId: Int, _ hidden: Bool, userid: Int) async throws {
         let key = "block_myoverview_hidden_course_\(courseId)"
-        if hidden {
-            _ = try await raw("core_user_update_user_preferences",
-                              ["preferences": [["name": key, "value": "1"]]])
-        } else {
-            _ = try await raw("core_user_update_user_preferences", ["emptypreferences": [key]])
+        do {
+            if hidden {
+                _ = try await raw("core_user_update_user_preferences",
+                                  ["userid": userid, "preferences": [["type": key, "value": "1"]]])
+            } else {
+                _ = try await raw("core_user_update_user_preferences",
+                                  ["userid": userid, "emptypreferences": [key]])
+            }
+        } catch let e as APIError where e.code == "invalidparameter" {
+            var pref: [String: Any] = ["name": key, "userid": userid]
+            if hidden { pref["value"] = "1" }   // leaving value out clears the preference
+            _ = try await raw("core_user_set_user_preferences", ["preferences": [pref]])
         }
     }
 
@@ -161,12 +211,23 @@ extension MoodleAPI {
         let text = strip(cleaned)
         var sum = AttSummary()
 
-        for g in groups("(Percentage[^%\\d]{0,60}?)([\\d.]+)\\s*%", text).prefix(3) {
+        for g in groups("(?<![Pp]ossible\\s)(Percentage[^%\\d]{0,60}?)([\\d.]+)\\s*%", text).prefix(3) {
             let label = g[0].trimmingCharacters(in: CharacterSet(charactersIn: ": ").union(.whitespaces))
             sum.rows.append((label, g[1] + "%"))
         }
         if let g = groups("Points[^\\d]{0,60}?([\\d.]+)\\s*/\\s*([\\d.]+)", text).first {
             sum.points = "\(g[0]) / \(g[1]) points"
+        }
+        if let g = groups("Taken sessions\\s*(\\d+)", text).first { sum.taken = Int(g[0]) }
+        if let g = groups("Total number of sessions\\s*(\\d+)", text).first { sum.total = Int(g[0]) }
+        if let g = groups("Points over taken sessions\\s*([\\d.]+)\\s*/\\s*([\\d.]+)", text).first {
+            sum.earned = Double(g[0]); sum.possible = Double(g[1])
+        }
+        if let g = groups("Maximum possible points\\s*([\\d.]+)\\s*/\\s*([\\d.]+)", text).first {
+            sum.maxPoints = "\(g[0]) / \(g[1])"
+        }
+        if let g = groups("Maximum possible percentage\\s*([\\d.]+)\\s*%", text).first {
+            sum.maxPercent = g[0] + "%"
         }
 
         // Session table: columns are found from the header row (Date / Description / Status / Points / Remarks);
@@ -339,6 +400,7 @@ struct AttendanceView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
+                maxCard
                 summaryCard
                 if let s = summary, !s.records.isEmpty {
                     filterBar(s)
@@ -369,6 +431,31 @@ struct AttendanceView: View {
         .navigationBarTitleDisplayMode(.inline)
         .refreshable { await loadSummary() }
         .task { await loadSummary() }
+    }
+
+    // ---- maximum possible (top of the screen) ----
+
+    @ViewBuilder private var maxCard: some View {
+        if let s = summary, let pct = s.maxPercent {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("MAXIMUM POSSIBLE ATTENDANCE").font(.caption).foregroundColor(Theme.muted)
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(pct).font(Font.largeTitle.bold()).foregroundColor(Theme.accent)
+                    Text("if you attend every remaining session").font(.subheadline).foregroundColor(Theme.txt)
+                }
+                if let p = Double(pct.replacingOccurrences(of: "%", with: "")) {
+                    ProgressView(value: min(max(p, 0), 100), total: 100).tint(Theme.accent)
+                }
+                HStack(spacing: 14) {
+                    if let pts = s.maxPoints { Text("\(pts) points").font(.caption).foregroundColor(Theme.muted) }
+                    if let t = s.total, let k = s.taken {
+                        Text("\(k) of \(t) sessions taken").font(.caption).foregroundColor(Theme.muted)
+                    }
+                }
+            }
+            .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+            .glowCard()
+        }
     }
 
     // ---- summary ----
@@ -478,11 +565,17 @@ struct AttendanceView: View {
             debugText = await DebugLog.shared.text()
             return
         }
-        let s = MoodleAPI.shared.parseAttendance(html)
+        var s = MoodleAPI.shared.parseAttendance(html)
         if s.rows.isEmpty && s.records.isEmpty {
             note = "No attendance data found on the page."
             debugText = await DebugLog.shared.text()
         } else {
+            // The "all sessions" view may not carry the totals; the course's normal attendance page does.
+            if (s.maxPercent == nil || s.total == nil), let base = URL(string: module.url ?? ""),
+               let h2 = await MoodleAPI.shared.fetchHTML(base, userid: uid) {
+                s.mergeMax(from: MoodleAPI.shared.parseAttendance(h2))
+            }
+            s.fillMax()
             summary = s
             debugText = ""
         }
