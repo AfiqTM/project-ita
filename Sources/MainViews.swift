@@ -46,6 +46,10 @@ struct RootView: View {
         .task(id: app.site?.userid) {
             if let uid = app.site?.userid { await assignments.load(uid: uid) }
         }
+        // Home-screen widget data (maximum possible attendance per subject)
+        .task(id: app.site?.userid) {
+            if let uid = app.site?.userid { await AttendanceSync.refresh(userid: uid) }
+        }
         // Unread alerts: check now, then once a minute while the app is open
         .task(id: app.site?.userid) {
             guard let uid = app.site?.userid else { return }
@@ -59,6 +63,7 @@ struct RootView: View {
             Task {
                 await notifs.refresh(uid: uid)
                 await assignments.load(uid: uid)
+                await AttendanceSync.refresh(userid: uid)
             }
         }
     }
@@ -542,7 +547,7 @@ struct ProfileView: View {
                 FinalExamCalculator()
                     .padding(.top, 6)
 
-                Button(role: .destructive) { SiteBrowser.wipeSession(); app.signOut() } label: {
+                Button(role: .destructive) { SiteBrowser.wipeSession(); AttendanceStore.clear(); app.signOut() } label: {
                     Text("Sign out").frame(maxWidth: .infinity).padding(.vertical, 12)
                         .background(Theme.surface2).foregroundColor(.red.opacity(0.85))
                         .clipShape(RoundedRectangle(cornerRadius: 12))
