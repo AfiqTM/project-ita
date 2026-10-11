@@ -442,10 +442,12 @@ final class WebCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
         stopRefreshing(w)
     }
 
+    // Only real "other app" links (mail, phone, ...) go to iOS. Everything else, including the javascript:
+    // links Moodle's menus use, must be allowed to run inside the page.
     func webView(_ w: WKWebView, decidePolicyFor action: WKNavigationAction,
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         if let u = action.request.url, let s = u.scheme?.lowercased(),
-           !["http", "https", "about", "file", "blob", "data"].contains(s) {
+           ["mailto", "tel", "sms", "facetime", "itms-apps", "maps"].contains(s) {
             UIApplication.shared.open(u)
             decisionHandler(.cancel)
             return
@@ -468,7 +470,7 @@ final class WebCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
 
     func webView(_ w: WKWebView, runJavaScriptAlertPanelWithMessage message: String,
                  initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
-        guard let vc = topVC() else { completionHandler(); return }
+        guard let vc = topVC(), vc.view.window != nil else { completionHandler(); return }
         let a = UIAlertController(title: nil, message: message, preferredStyle: .alert)
         a.addAction(UIAlertAction(title: "OK", style: .default) { _ in completionHandler() })
         vc.present(a, animated: true)
@@ -476,7 +478,7 @@ final class WebCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
 
     func webView(_ w: WKWebView, runJavaScriptConfirmPanelWithMessage message: String,
                  initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) {
-        guard let vc = topVC() else { completionHandler(false); return }
+        guard let vc = topVC(), vc.view.window != nil else { completionHandler(false); return }
         let a = UIAlertController(title: nil, message: message, preferredStyle: .alert)
         a.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in completionHandler(false) })
         a.addAction(UIAlertAction(title: "OK", style: .default) { _ in completionHandler(true) })
