@@ -68,6 +68,7 @@ struct AttSummary {
     var taken: Int?              // sessions already taken
     var earned: Double?          // points over taken sessions (numerator)
     var possible: Double?        // points over taken sessions (denominator)
+    var sample = ""              // text around the summary on the page, shown under "Details" when something is missing
 
     func count(_ k: AttKind) -> Int { records.filter { $0.kind == k }.count }
 
@@ -76,6 +77,7 @@ struct AttSummary {
     // Takes the totals (not the session rows) from another copy of the page
     mutating func mergeMax(from o: AttSummary) {
         if maxPercent == nil { maxPercent = o.maxPercent; maxPoints = o.maxPoints }
+        if sample.isEmpty { sample = o.sample }
         total = total ?? o.total
         taken = taken ?? o.taken
         earned = earned ?? o.earned
@@ -145,6 +147,30 @@ extension MoodleAPI {
             catch { failures.append("\(label): \(error.localizedDescription)") }
         }
         throw APIError(message: "Couldn't show this course again. " + failures.joined(separator: " | "))
+    }
+
+    // The official Moodle app builds its attendance screen from this web-service call, which already includes the
+    // totals (total sessions, maximum possible points / percentage).
+    func attendanceMobileContent(cmid: Int, courseId: Int, userid: Int) async -> String? {
+        var args: [[String: Any]] = [["name": "cmid", "value": String(cmid)],
+                                     ["name": "userid", "value": String(userid)]]
+        if courseId > 0 { args.append(["name": "courseid", "value": String(courseId)]) }
+        do {
+            let data = try await raw("tool_mobile_get_content",
+                                     ["component": "mod_attendance", "method": "mobile_course_view", "args": args])
+            guard let o = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+                await DebugLog.shared.add("mobile content: unreadable reply")
+                return nil
+            }
+            var out = ""
+            for t in (o["templates"] as? [[String: Any]]) ?? [] { out += (t["html"] as? String ?? "") + "\n" }
+            out += (o["otherdata"] as? String ?? "")
+            await DebugLog.shared.add("mobile content: \(out.count) chars")
+            return out.isEmpty ? nil : out
+        } catch {
+            await DebugLog.shared.add("mobile content failed: \(error.localizedDescription)")
+            return nil
+        }
     }
 
     // ---- Attendance (read-only, parsed from the website page) ----
@@ -222,6 +248,11 @@ extension MoodleAPI {
                                                 with: " ", options: [.regularExpression, .caseInsensitive])
         let text = strip(cleaned)
         var sum = AttSummary()
+        if let r = text.range(of: "sessions", options: .caseInsensitive) {
+            let a = text.index(r.lowerBound, offsetBy: -80, limitedBy: text.startIndex) ?? text.startIndex
+            let b = text.index(r.lowerBound, offsetBy: 420, limitedBy: text.endIndex) ?? text.endIndex
+            sum.sample = String(text[a..<b])
+        }
 
         for g in groups("(?<![Pp]ossible\\s)(Percentage[^%\\d]{0,60}?)([\\d.]+)\\s*%", text).prefix(3) {
             let label = g[0].trimmingCharacters(in: CharacterSet(charactersIn: ": ").union(.whitespaces))
@@ -394,6 +425,7 @@ extension MoodleAPI {
 
 struct AttendanceView: View {
     let module: Module
+    var courseId = 0
     @EnvironmentObject var app: AppState
     @State private var summary: AttSummary?
     @State private var note: String? = "Loading attendance..."
@@ -584,6 +616,11 @@ struct AttendanceView: View {
         } else {
             // The "all sessions" view may not carry the totals; the course's normal attendance page does.
             if s.maxPercent == nil || s.total == nil {
+                if let h = await MoodleAPI.shared.attendanceMobileContent(cmid: module.id, courseId: courseId, userid: uid) {
+                    s.mergeMax(from: MoodleAPI.shared.parseAttendance(h))
+                }
+            }
+            if s.maxPercent == nil || s.total == nil {
                 for v in ["5", ""] {   // 5 = all sessions (incl. future); "" = the page's default view
                     guard var c2 = URLComponents(string: module.url ?? "") else { break }
                     var q2 = c2.queryItems ?? []
@@ -599,7 +636,7 @@ struct AttendanceView: View {
             s.fillMax()
             summary = s
             debugText = s.maxPercent == nil
-                ? "Max possible not found. total=\(s.total.map(String.init) ?? "nil") taken=\(s.taken.map(String.init) ?? "nil") earned=\(s.earned.map { String($0) } ?? "nil") possible=\(s.possible.map { String($0) } ?? "nil")\n" + (await DebugLog.shared.text())
+                ? "Max possible not found. total=\(s.total.map(String.init) ?? "nil") taken=\(s.taken.map(String.init) ?? "nil") earned=\(s.earned.map { String($0) } ?? "nil") possible=\(s.possible.map { String($0) } ?? "nil")\n" + (await DebugLog.shared.text()) + "\nPage text: " + s.sample
                 : ""
         }
     }
