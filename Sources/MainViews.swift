@@ -530,24 +530,242 @@ struct ProfileView: View {
     @EnvironmentObject var app: AppState
 
     var body: some View {
-        VStack(spacing: 18) {
-            if let s = app.site?.userpictureurl, let u = MoodleAPI.shared.fileURL(s) {
-                AsyncImage(url: u) { img in img.resizable().scaledToFill() } placeholder: { Theme.surface2 }
-                    .frame(width: 96, height: 96).clipShape(Circle())
+        ScrollView {
+            VStack(spacing: 18) {
+                if let s = app.site?.userpictureurl, let u = MoodleAPI.shared.fileURL(s) {
+                    AsyncImage(url: u) { img in img.resizable().scaledToFill() } placeholder: { Theme.surface2 }
+                        .frame(width: 96, height: 96).clipShape(Circle())
+                }
+                Text(app.site?.fullname ?? "").font(.title3.weight(.semibold)).foregroundColor(Theme.txt)
+                Text(app.site?.sitename ?? "iTa'leem").foregroundColor(Theme.muted)
+
+                FinalExamCalculator()
+                    .padding(.top, 6)
+
+                Button(role: .destructive) { app.signOut() } label: {
+                    Text("Sign out").frame(maxWidth: .infinity).padding(.vertical, 12)
+                        .background(Theme.surface2).foregroundColor(.red.opacity(0.85))
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+                .padding(.top, 6)
             }
-            Text(app.site?.fullname ?? "").font(.title3.weight(.semibold)).foregroundColor(Theme.txt)
-            Text(app.site?.sitename ?? "iTa'leem").foregroundColor(Theme.muted)
-            Button(role: .destructive) { app.signOut() } label: {
-                Text("Sign out").frame(maxWidth: .infinity).padding(.vertical, 12)
-                    .background(Theme.surface2).foregroundColor(.red.opacity(0.85))
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-            }
-            .padding(.top, 16)
-            Spacer()
+            .padding(24)
         }
-        .padding(24)
+        .scrollDismissesKeyboard(.interactively)
         .background(Theme.bg.ignoresSafeArea())
         .navigationTitle("Profile")
         .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+// MARK: - Final exam calculator
+
+struct FinalExamCalculator: View {
+    private enum Weight: Hashable { case sixty, fifty, custom }
+    private enum Field { case cams, custom }
+
+    private struct GradeRow: Identifiable {
+        let id: String
+        let letter: String
+        let threshold: Double
+        let remark: String
+    }
+
+    // Lowest grade shown is B-
+    private let grades: [GradeRow] = [
+        .init(id: "A",  letter: "A",  threshold: 80, remark: "Excellent"),
+        .init(id: "A-", letter: "A-", threshold: 75, remark: "Extremely Good"),
+        .init(id: "B+", letter: "B+", threshold: 70, remark: "Very Good"),
+        .init(id: "B",  letter: "B",  threshold: 65, remark: "Good"),
+        .init(id: "B-", letter: "B-", threshold: 60, remark: "Fairly Good")
+    ]
+
+    @State private var weight: Weight = .sixty
+    @State private var customText = ""
+    @State private var camsText = ""
+    @FocusState private var focus: Field?
+
+    private func number(_ s: String) -> Double? {
+        Double(s.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: ",", with: "."))
+    }
+
+    /// CAMS total (what the coursework is marked out of)
+    private var camsTotal: Double? {
+        switch weight {
+        case .sixty: return 60
+        case .fifty: return 50
+        case .custom:
+            guard let v = number(customText), v > 0, v < 100 else { return nil }
+            return v
+        }
+    }
+    private var examTotal: Double? { camsTotal.map { 100 - $0 } }
+    private var cams: Double? { number(camsText) }
+
+    private var customInvalid: Bool {
+        weight == .custom && !customText.isEmpty && camsTotal == nil
+    }
+    private var camsInvalid: Bool {
+        guard let c = cams, let t = camsTotal else { return !camsText.isEmpty && cams == nil }
+        return c < 0 || c > t
+    }
+    private var ready: Bool { camsTotal != nil && cams != nil && !camsInvalid }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            header
+
+            weightPicker
+
+            if weight == .custom {
+                inputRow(title: "CAMS total", suffix: "marks", placeholder: "e.g. 70",
+                         text: $customText, field: .custom, invalid: customInvalid)
+            }
+
+            inputRow(title: "Your CAMS mark",
+                     suffix: camsTotal.map { "/ \(clean($0))" } ?? "/ ?",
+                     placeholder: "0", text: $camsText, field: .cams, invalid: camsInvalid)
+
+            if customInvalid {
+                hint("CAMS total must be between 1 and 99.")
+            } else if camsInvalid, let t = camsTotal {
+                hint("CAMS mark must be between 0 and \(clean(t)).")
+            }
+
+            Rectangle().fill(Theme.line).frame(height: 1)
+
+            if ready, let c = cams, let e = examTotal {
+                results(cams: c, exam: e)
+            } else {
+                Text("Enter your CAMS mark to see what you need in the final exam.")
+                    .font(.footnote).foregroundColor(Theme.muted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .padding(16)
+        .glowCard()
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") { focus = nil }.foregroundColor(Theme.accent)
+            }
+        }
+    }
+
+    // MARK: pieces
+
+    private var header: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "function").foregroundColor(Theme.accent)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Final exam calculator").font(.headline).foregroundColor(Theme.txt)
+                Text("Marks needed for each grade").font(.caption).foregroundColor(Theme.muted)
+            }
+            Spacer()
+        }
+    }
+
+    private var weightPicker: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("CAMS is out of").font(.caption.weight(.medium)).foregroundColor(Theme.muted)
+            HStack(spacing: 8) {
+                chip("60", .sixty)
+                chip("50", .fifty)
+                chip("Custom", .custom)
+            }
+        }
+    }
+
+    private func chip(_ title: String, _ value: Weight) -> some View {
+        let on = weight == value
+        return Button {
+            weight = value
+            focus = nil
+        } label: {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .frame(maxWidth: .infinity).padding(.vertical, 10)
+                .background(on ? Theme.accent : Theme.surface2)
+                .foregroundColor(on ? .black : Theme.txt)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(on ? Theme.accent : Theme.line, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func inputRow(title: String, suffix: String, placeholder: String,
+                          text: Binding<String>, field: Field, invalid: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title).font(.caption.weight(.medium)).foregroundColor(Theme.muted)
+            HStack {
+                TextField("", text: text, prompt: Text(placeholder).foregroundColor(Theme.muted.opacity(0.6)))
+                    .keyboardType(.decimalPad)
+                    .focused($focus, equals: field)
+                    .foregroundColor(Theme.txt)
+                Text(suffix).foregroundColor(Theme.muted).font(.subheadline)
+            }
+            .padding(.horizontal, 12).padding(.vertical, 12)
+            .background(Theme.surface2)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(invalid ? Color.red.opacity(0.7) : (focus == field ? Theme.accent : Theme.line), lineWidth: 1))
+        }
+    }
+
+    private func hint(_ s: String) -> some View {
+        Text(s).font(.footnote).foregroundColor(.red.opacity(0.85))
+    }
+
+    private func results(cams: Double, exam: Double) -> some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Grade").frame(width: 56, alignment: .leading)
+                Text("Remark")
+                Spacer()
+                Text("Exam needed (/\(clean(exam)))")
+            }
+            .font(.caption.weight(.medium)).foregroundColor(Theme.muted)
+            .padding(.horizontal, 12).padding(.vertical, 8)
+            .background(Theme.titleBar)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+            ForEach(Array(grades.enumerated()), id: \.element.id) { i, g in
+                let needed = ceil((g.threshold - cams) * 100) / 100
+                HStack {
+                    Text(g.letter).font(.headline).foregroundColor(Theme.accent)
+                        .frame(width: 56, alignment: .leading)
+                    Text(g.remark).font(.footnote).foregroundColor(Theme.muted)
+                    Spacer()
+                    outcome(needed: needed, exam: exam)
+                }
+                .padding(.horizontal, 12).padding(.vertical, 12)
+                if i < grades.count - 1 {
+                    Rectangle().fill(Theme.line).frame(height: 1)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func outcome(needed: Double, exam: Double) -> some View {
+        if needed <= 0 {
+            Label("Secured", systemImage: "checkmark.circle.fill")
+                .font(.subheadline.weight(.semibold)).foregroundColor(Theme.accent)
+        } else if needed > exam {
+            Text("Not achievable").font(.subheadline).foregroundColor(.red.opacity(0.8))
+        } else {
+            VStack(alignment: .trailing, spacing: 1) {
+                Text("\(clean(needed)) / \(clean(exam))")
+                    .font(.subheadline.weight(.semibold)).foregroundColor(Theme.txt)
+                Text("\(clean(needed / exam * 100))%")
+                    .font(.caption2).foregroundColor(Theme.muted)
+            }
+        }
+    }
+
+    private func clean(_ v: Double) -> String {
+        let r = (v * 100).rounded() / 100
+        return r == r.rounded() ? String(Int(r)) : String(format: "%.2f", r).replacingOccurrences(of: "0+$", with: "", options: .regularExpression)
     }
 }
