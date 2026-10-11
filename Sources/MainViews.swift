@@ -5,10 +5,13 @@ struct RootView: View {
         TabView {
             NavigationStack { CoursesView() }
                 .tabItem { Label("My courses", systemImage: "books.vertical") }
+            NavigationStack { AssignmentsTabView() }
+                .tabItem { Label("Assignments", systemImage: "checklist") }
             NavigationStack { AlertsView() }
                 .tabItem { Label("Alerts", systemImage: "bell") }
             NavigationStack {
-                WebActivityView(url: Site.url.appendingPathComponent("my/"), title: "iTa'leem")
+                // theme: false -> the site is shown exactly as it is in a normal browser
+                WebActivityView(url: Site.url.appendingPathComponent("my/"), title: "iTa'leem", theme: false)
             }
             .tabItem { Label("Website", systemImage: "globe") }
             NavigationStack { ProfileView() }
@@ -26,12 +29,11 @@ enum CourseFilter: String, CaseIterable, Identifiable {
     case past = "Past"
     case favourites = "Starred"
     case hidden = "Removed from view"
-    case assignments = "Assignments"
 
     var id: String { rawValue }
     var classification: String {
         switch self {
-        case .all, .assignments: return "all"
+        case .all: return "all"
         case .inprogress: return "inprogress"
         case .future: return "future"
         case .past: return "past"
@@ -45,7 +47,7 @@ struct CoursesView: View {
     @EnvironmentObject var app: AppState
     @State private var filter: CourseFilter = .all
     @State private var courses: [Course] = []
-    @State private var events: [TLEvent] = []
+    @State private var favOverride: [Int: Bool] = [:]
     @State private var loading = false
     @State private var error: String?
 
@@ -72,18 +74,34 @@ struct CoursesView: View {
 
                 if let error { Text(error).font(.footnote).foregroundColor(Theme.muted) }
 
-                if filter == .assignments {
-                    AssignmentsList(events: events)
-                } else {
-                    LazyVStack(spacing: 22) {
-                        ForEach(courses) { c in
+                LazyVStack(spacing: 22) {
+                    ForEach(courses) { c in
+                        let starred = favOverride[c.id] ?? c.isfavourite ?? false
+                        ZStack(alignment: .topTrailing) {
                             NavigationLink { CourseDetailView(course: c) } label: { CourseCard(course: c) }
                                 .buttonStyle(.plain)
+                            Button { Task { await toggleStar(c) } } label: {
+                                Image(systemName: starred ? "star.fill" : "star")
+                                    .foregroundColor(starred ? Theme.accent : Color.white.opacity(0.85))
+                                    .padding(10)
+                                    .background(Color.black.opacity(0.45))
+                                    .clipShape(Circle())
+                            }
+                            .padding(10)
+                        }
+                        .contextMenu {
+                            Button { Task { await toggleStar(c) } } label: {
+                                Label(starred ? "Unstar" : "Star", systemImage: starred ? "star.slash" : "star")
+                            }
+                            Button { Task { await toggleHide(c) } } label: {
+                                Label(filter == .hidden ? "Show again" : "Remove from view",
+                                      systemImage: filter == .hidden ? "eye" : "eye.slash")
+                            }
                         }
                     }
-                    if !loading && courses.isEmpty && error == nil {
-                        Text("No courses here.").foregroundColor(Theme.muted)
-                    }
+                }
+                if !loading && courses.isEmpty && error == nil {
+                    Text("No courses here.").foregroundColor(Theme.muted)
                 }
                 if loading { ProgressView().tint(Theme.accent).frame(maxWidth: .infinity) }
             }
@@ -91,9 +109,8 @@ struct CoursesView: View {
         }
         .background(Theme.bg.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
-        .refreshable { await load(); await loadEvents() }
+        .refreshable { await load() }
         .task(id: filter) { await load() }
-        .task { await loadEvents() }
     }
 
     private var filterBar: some View {
@@ -101,19 +118,9 @@ struct CoursesView: View {
             HStack(spacing: 22) {
                 ForEach(CourseFilter.allCases) { f in
                     Button { filter = f } label: {
-                        HStack(spacing: 6) {
-                            Text(f.rawValue)
-                                .fontWeight(filter == f ? .semibold : .regular)
-                                .foregroundColor(filter == f ? Theme.accent : Theme.txt)
-                            if f == .assignments && !events.isEmpty {
-                                Text("\(events.count)")
-                                    .font(.caption2.bold())
-                                    .foregroundColor(.black)
-                                    .padding(.horizontal, 6).padding(.vertical, 2)
-                                    .background(Theme.accent)
-                                    .clipShape(Capsule())
-                            }
-                        }
+                        Text(f.rawValue)
+                            .fontWeight(filter == f ? .semibold : .regular)
+                            .foregroundColor(filter == f ? Theme.accent : Theme.txt)
                     }
                 }
             }
@@ -121,13 +128,13 @@ struct CoursesView: View {
     }
 
     private func load() async {
-        guard filter != .assignments else { return }
         loading = true; error = nil
         do {
             let r: CourseList = try await MoodleAPI.shared.call(
                 "core_course_get_enrolled_courses_by_timeline_classification",
                 ["classification": filter.classification, "limit": 0, "offset": 0, "sort": "fullname"])
             courses = r.courses
+            favOverride = [:]
         } catch {
             if !(error is CancellationError), (error as? URLError)?.code != .cancelled {
                 self.error = error.localizedDescription
@@ -136,15 +143,28 @@ struct CoursesView: View {
         loading = false
     }
 
-    private func loadEvents() async {
-        let now = Int(Date().timeIntervalSince1970)
+    // Star / unstar. Updates the card immediately and rolls back if Moodle refuses.
+    private func toggleStar(_ c: Course) async {
+        let now = !(favOverride[c.id] ?? c.isfavourite ?? false)
+        favOverride[c.id] = now
         do {
-            let r: EventsResp = try await MoodleAPI.shared.call(
-                "core_calendar_get_action_events_by_timesort",
-                ["timesortfrom": now - 7 * 86400, "timesortto": now + 30 * 86400,
-                 "limitnum": 50, "limittononsuspendedevents": 1])
-            events = r.events
-        } catch { /* leave empty */ }
+            try await MoodleAPI.shared.setFavourite(c.id, now)
+            if filter == .favourites && !now { courses.removeAll { $0.id == c.id } }
+        } catch {
+            favOverride[c.id] = !now
+            self.error = error.localizedDescription
+        }
+    }
+
+    // "Removed from view" = Moodle's own hide-course preference, so it also applies on the website.
+    private func toggleHide(_ c: Course) async {
+        let hide = filter != .hidden
+        do {
+            try await MoodleAPI.shared.setHidden(c.id, hide)
+            courses.removeAll { $0.id == c.id }
+        } catch {
+            self.error = error.localizedDescription
+        }
     }
 }
 
@@ -207,55 +227,6 @@ struct DefaultCover: View {
                 .foregroundColor(Theme.accent.opacity(0.9))
                 .lineLimit(1).minimumScaleFactor(0.5)
                 .padding(14)
-        }
-    }
-}
-
-// MARK: - Assignments (Timeline)
-
-struct AssignmentsList: View {
-    let events: [TLEvent]
-
-    private var days: [(Date, [TLEvent])] {
-        let g = Dictionary(grouping: events) {
-            Calendar.current.startOfDay(for: Date(timeIntervalSince1970: TimeInterval($0.timesort)))
-        }
-        return g.keys.sorted().map { ($0, g[$0]!.sorted { $0.timesort < $1.timesort }) }
-    }
-
-    var body: some View {
-        if events.isEmpty {
-            Text("No activities require action.").foregroundColor(Theme.muted)
-        } else {
-            VStack(alignment: .leading, spacing: 20) {
-                ForEach(days, id: \.0) { day, list in
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text(day.formatted(date: .complete, time: .omitted))
-                            .font(.footnote.weight(.semibold)).foregroundColor(Theme.muted)
-                        VStack(spacing: 0) {
-                            ForEach(list) { e in row(e) }
-                        }
-                        .glowCard()
-                    }
-                }
-            }
-        }
-    }
-
-    @ViewBuilder private func row(_ e: TLEvent) -> some View {
-        let content = VStack(alignment: .leading, spacing: 4) {
-            Text(e.name).foregroundColor(Theme.txt).fontWeight(.medium).multilineTextAlignment(.leading)
-            if let c = e.course { Text(c.fullname).font(.caption).foregroundColor(Theme.muted) }
-            Text(fmt(e.timesort, time: true)).font(.caption).foregroundColor(Theme.accent)
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-
-        if let s = e.url, let u = URL(string: s) {
-            NavigationLink { WebActivityView(url: u, title: e.name) } label: { content }
-                .buttonStyle(.plain)
-        } else {
-            content
         }
     }
 }
