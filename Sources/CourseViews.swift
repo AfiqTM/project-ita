@@ -399,7 +399,7 @@ struct ParticipantsView: View {
 
 struct WebView: UIViewRepresentable {
     let url: URL
-    var theme = true
+    var theme = false   // pages are shown as the normal site (no injected dark theme)
 
     func makeUIView(context: Context) -> WKWebView {
         let cfg = WKWebViewConfiguration()
@@ -408,9 +408,6 @@ struct WebView: UIViewRepresentable {
                 WKUserScript(source: WebTheme.js, injectionTime: .atDocumentStart, forMainFrameOnly: false))
         }
         let w = WKWebView(frame: .zero, configuration: cfg)
-        w.isOpaque = false
-        w.backgroundColor = .black
-        w.scrollView.backgroundColor = .black
         w.load(URLRequest(url: url))
         return w
     }
