@@ -24,6 +24,16 @@ final class MoodleAPI {
     var privateToken: String?
     private var lastAutologin = Date.distantPast
 
+    // Moodle's autologin function (and some pages) only work for requests whose User-Agent
+    // contains "MoodleMobile", which is how the site recognises the official app.
+    static let session: URLSession = {
+        let cfg = URLSessionConfiguration.default
+        cfg.httpAdditionalHeaders = [
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 MoodleMobile"
+        ]
+        return URLSession(configuration: cfg)
+    }()
+
     private func enc(_ s: String) -> String {
         var allowed = CharacterSet.alphanumerics
         allowed.insert(charactersIn: "-._~")
@@ -62,7 +72,7 @@ final class MoodleAPI {
         req.httpMethod = "POST"
         req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         req.httpBody = items.map { "\(enc($0.0))=\(enc($0.1))" }.joined(separator: "&").data(using: .utf8)
-        let (data, _) = try await URLSession.shared.data(for: req)
+        let (data, _) = try await MoodleAPI.session.data(for: req)
         guard let obj = try? JSONSerialization.jsonObject(with: data) else { return data }
         if let o = obj as? [String: Any], o["exception"] != nil || o["errorcode"] != nil {
             throw APIError(message: (o["message"] as? String) ?? "Request failed",
