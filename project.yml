@@ -12,7 +12,14 @@ targets:
   iTaleem:
     type: application
     platform: iOS
-    sources: [Sources]
+    sources: [Sources, Shared]
+    dependencies:
+      - target: AttendanceWidget
+    entitlements:
+      path: Entitlements/iTaleem.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.afiq.italeem
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.afiq.italeem
@@ -24,3 +31,31 @@ targets:
         INFOPLIST_KEY_UIUserInterfaceStyle: Dark
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait
+  AttendanceWidget:
+    type: app-extension
+    platform: iOS
+    sources: [Widget, Shared]
+    entitlements:
+      path: Entitlements/AttendanceWidget.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.afiq.italeem
+    info:
+      path: Plists/AttendanceWidget-Info.plist
+      properties:
+        CFBundleDevelopmentRegion: en
+        CFBundleDisplayName: Attendance
+        CFBundleExecutable: $(EXECUTABLE_NAME)
+        CFBundleIdentifier: $(PRODUCT_BUNDLE_IDENTIFIER)
+        CFBundleInfoDictionaryVersion: "6.0"
+        CFBundleName: $(PRODUCT_NAME)
+        CFBundlePackageType: XPC!
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.afiq.italeem.AttendanceWidget
+        TARGETED_DEVICE_FAMILY: "1"
+        SKIP_INSTALL: YES
