@@ -571,13 +571,24 @@ struct AttendanceView: View {
             debugText = await DebugLog.shared.text()
         } else {
             // The "all sessions" view may not carry the totals; the course's normal attendance page does.
-            if (s.maxPercent == nil || s.total == nil), let base = URL(string: module.url ?? ""),
-               let h2 = await MoodleAPI.shared.fetchHTML(base, userid: uid) {
-                s.mergeMax(from: MoodleAPI.shared.parseAttendance(h2))
+            if s.maxPercent == nil || s.total == nil {
+                for v in ["5", ""] {   // 5 = all sessions (incl. future); "" = the page's default view
+                    guard var c2 = URLComponents(string: module.url ?? "") else { break }
+                    var q2 = c2.queryItems ?? []
+                    q2.removeAll { $0.name == "view" }
+                    if !v.isEmpty { q2.append(URLQueryItem(name: "view", value: v)) }
+                    c2.queryItems = q2
+                    if let u2 = c2.url, let h2 = await MoodleAPI.shared.fetchHTML(u2, userid: uid) {
+                        s.mergeMax(from: MoodleAPI.shared.parseAttendance(h2))
+                    }
+                    if s.maxPercent != nil || s.total != nil { break }
+                }
             }
             s.fillMax()
             summary = s
-            debugText = ""
+            debugText = s.maxPercent == nil
+                ? "Max possible not found. total=\(s.total.map(String.init) ?? "nil") taken=\(s.taken.map(String.init) ?? "nil") earned=\(s.earned.map { String($0) } ?? "nil") possible=\(s.possible.map { String($0) } ?? "nil")\n" + (await DebugLog.shared.text())
+                : ""
         }
     }
 }
