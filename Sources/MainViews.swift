@@ -542,7 +542,7 @@ struct ProfileView: View {
                 FinalExamCalculator()
                     .padding(.top, 6)
 
-                Button(role: .destructive) { app.signOut() } label: {
+                Button(role: .destructive) { SiteBrowser.wipeSession(); app.signOut() } label: {
                     Text("Sign out").frame(maxWidth: .infinity).padding(.vertical, 12)
                         .background(Theme.surface2).foregroundColor(.red.opacity(0.85))
                         .clipShape(RoundedRectangle(cornerRadius: 12))
