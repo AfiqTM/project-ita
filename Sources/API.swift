@@ -22,7 +22,14 @@ final class MoodleAPI {
     static let shared = MoodleAPI()
     var token = ""
     var privateToken: String?
-    private var lastAutologin = Date.distantPast
+    // Remembered across launches: Moodle enforces its 6-minute limit on the server, so a relaunch
+    // must not forget that a key was just handed out.
+    private var lastAutologin: Date {
+        get { Date(timeIntervalSince1970: UserDefaults.standard.double(forKey: "autologin.last")) }
+        set { UserDefaults.standard.set(newValue.timeIntervalSince1970, forKey: "autologin.last") }
+    }
+    /// Seconds until Moodle will give out another auto-login key (0 = available now).
+    var autologinWait: TimeInterval { max(0, 360 - Date().timeIntervalSince(lastAutologin)) }
 
     // Moodle's autologin function (and some pages) only work for requests whose User-Agent
     // contains "MoodleMobile", which is how the site recognises the official app.
