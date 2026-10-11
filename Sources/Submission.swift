@@ -120,19 +120,31 @@ extension MoodleAPI {
     // core_user_set_user_preferences ({name, value, userid}) is tried as a fallback.
     func setHidden(_ courseId: Int, _ hidden: Bool, userid: Int) async throws {
         let key = "block_myoverview_hidden_course_\(courseId)"
-        do {
-            if hidden {
+        if hidden {
+            do {
                 _ = try await raw("core_user_update_user_preferences",
                                   ["userid": userid, "preferences": [["type": key, "value": "1"]]])
-            } else {
-                _ = try await raw("core_user_update_user_preferences",
-                                  ["userid": userid, "emptypreferences": [key]])
+            } catch let e as APIError where e.code == "invalidparameter" {
+                _ = try await raw("core_user_set_user_preferences",
+                                  ["preferences": [["name": key, "value": "1", "userid": userid]]])
             }
-        } catch let e as APIError where e.code == "invalidparameter" {
-            var pref: [String: Any] = ["name": key, "userid": userid]
-            if hidden { pref["value"] = "1" }   // leaving value out clears the preference
-            _ = try await raw("core_user_set_user_preferences", ["preferences": [pref]])
+            return
         }
+        // Un-hiding = deleting the preference. Sites differ in how they accept that, so each form is tried in turn.
+        let attempts: [(String, () async throws -> Void)] = [
+            ("update/no-value", { _ = try await self.raw("core_user_update_user_preferences",
+                ["userid": userid, "preferences": [["type": key]]]) }),
+            ("update/empty", { _ = try await self.raw("core_user_update_user_preferences",
+                ["userid": userid, "emptypreferences": [key]]) }),
+            ("set/no-value", { _ = try await self.raw("core_user_set_user_preferences",
+                ["preferences": [["name": key, "userid": userid]]]) }),
+        ]
+        var failures: [String] = []
+        for (label, call) in attempts {
+            do { try await call(); return }
+            catch { failures.append("\(label): \(error.localizedDescription)") }
+        }
+        throw APIError(message: "Couldn't show this course again. " + failures.joined(separator: " | "))
     }
 
     // ---- Attendance (read-only, parsed from the website page) ----
