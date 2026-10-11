@@ -436,7 +436,10 @@ final class WebCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
 
     private func stopRefreshing(_ w: WKWebView) { w.scrollView.refreshControl?.endRefreshing() }
 
-    func webView(_ w: WKWebView, didFinish navigation: WKNavigation!) { stopRefreshing(w) }
+    func webView(_ w: WKWebView, didFinish navigation: WKNavigation!) {
+        stopRefreshing(w)
+        Task { await MoodleAPI.shared.syncCookies() }   // share the web login with API-side page fetches
+    }
     func webView(_ w: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { stopRefreshing(w) }
     func webView(_ w: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         stopRefreshing(w)
