@@ -261,15 +261,15 @@ extension MoodleAPI {
         if let g = groups("Points[^\\d]{0,60}?([\\d.]+)\\s*/\\s*([\\d.]+)", text).first {
             sum.points = "\(g[0]) / \(g[1]) points"
         }
-        if let g = groups("Taken sessions\\s*(\\d+)", text).first { sum.taken = Int(g[0]) }
-        if let g = groups("Total number of sessions\\s*(\\d+)", text).first { sum.total = Int(g[0]) }
-        if let g = groups("Points over taken sessions\\s*([\\d.]+)\\s*/\\s*([\\d.]+)", text).first {
+        if let g = groups("Taken sessions[\\s:]*(\\d+)", text).first { sum.taken = Int(g[0]) }
+        if let g = groups("Total number of sessions[\\s:]*(\\d+)", text).first { sum.total = Int(g[0]) }
+        if let g = groups("Points over taken sessions[\\s:]*([\\d.]+)\\s*/\\s*([\\d.]+)", text).first {
             sum.earned = Double(g[0]); sum.possible = Double(g[1])
         }
-        if let g = groups("Maximum possible points\\s*([\\d.]+)\\s*/\\s*([\\d.]+)", text).first {
+        if let g = groups("Maximum possible points[\\s:]*([\\d.]+)\\s*/\\s*([\\d.]+)", text).first {
             sum.maxPoints = "\(g[0]) / \(g[1])"
         }
-        if let g = groups("Maximum possible percentage\\s*([\\d.]+)\\s*%", text).first {
+        if let g = groups("Maximum possible percentage[\\s:]*([\\d.]+)\\s*%", text).first {
             sum.maxPercent = g[0] + "%"
         }
 
