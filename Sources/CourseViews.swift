@@ -125,7 +125,7 @@ struct ModuleRow: View {
         case "assign":
             AssignmentView(courseId: courseId, module: module)
         case "attendance":
-            AttendanceView(module: module)
+            AttendanceView(module: module, courseId: courseId)
         case "folder":
             FolderView(module: module)
         case "resource":
