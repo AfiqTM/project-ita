@@ -1,6 +1,16 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+// MARK: - Debug log (temporary, remove once attendance works)
+
+actor DebugLog {
+    static let shared = DebugLog()
+    private var lines: [String] = []
+    func add(_ s: String) { lines.append(s) }
+    func reset() { lines = [] }
+    func text() -> String { lines.joined(separator: "\n") }
+}
+
 // MARK: - API helpers
 
 struct AttSummary {
@@ -15,15 +25,27 @@ extension MoodleAPI {
     // Percentage / absences are not in the web-service API, so the attendance page is fetched and parsed.
 
     func fetchHTML(_ url: URL, userid: Int) async -> String? {
-        func get(_ u: URL) async -> String? {
-            guard let (d, r) = try? await URLSession.shared.data(from: u) else { return nil }
-            let html = String(decoding: d, as: UTF8.self)
-            if (r.url?.path ?? "").contains("/login/") { return nil }
-            return html
+        func get(_ u: URL, _ tag: String) async -> String? {
+            do {
+                let (d, r) = try await URLSession.shared.data(from: u)
+                let code = (r as? HTTPURLResponse)?.statusCode ?? -1
+                await DebugLog.shared.add("\(tag): status \(code), final path \(r.url?.path ?? "nil"), \(d.count) bytes")
+                if (r.url?.path ?? "").contains("/login/") {
+                    await DebugLog.shared.add("\(tag): redirected to login")
+                    return nil
+                }
+                return String(decoding: d, as: UTF8.self)
+            } catch {
+                await DebugLog.shared.add("\(tag): request error \(error)")
+                return nil
+            }
         }
-        if let h = await get(url) { return h }
+        await DebugLog.shared.reset()
+        await DebugLog.shared.add("fetching path \(url.path)")
+        if let h = await get(url, "direct") { return h }
         let al = await autologin(url, userid: userid, force: true)
-        if al != url { return await get(al) }
+        await DebugLog.shared.add("autologin returned path \(al.path), same as input: \(al == url)")
+        if al != url { return await get(al, "autologin") }
         return nil
     }
 
@@ -129,6 +151,7 @@ struct AttendanceView: View {
     @State private var summary: AttSummary?
     @State private var note: String? = "Loading attendance..."
     @State private var loading = true
+    @State private var debugText = ""
 
     private var uid: Int { app.site?.userid ?? 0 }
 
@@ -136,6 +159,12 @@ struct AttendanceView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 summaryCard
+                if !debugText.isEmpty {
+                    Text(debugText)
+                        .font(.system(.caption2, design: .monospaced))
+                        .foregroundColor(Theme.muted)
+                        .textSelection(.enabled)
+                }
                 if loading {
                     ProgressView().tint(Theme.accent).frame(maxWidth: .infinity)
                 }
@@ -192,6 +221,7 @@ struct AttendanceView: View {
         c.queryItems = q
         guard let u = c.url, let html = await MoodleAPI.shared.fetchHTML(u, userid: uid) else {
             note = "Couldn't load your attendance percentage."
+            debugText = await DebugLog.shared.text()
             return
         }
         let s = MoodleAPI.shared.parseAttendance(html)
