@@ -5,6 +5,7 @@ struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var assignments = AssignmentsModel()
     @StateObject private var notifs = NotifBadgeModel()
+    @StateObject private var browser = SiteBrowser()
 
     init() {
         // Tab badges in the app's accent colour with dark text. SwiftUI's .badge ignores
@@ -36,11 +37,8 @@ struct RootView: View {
             NavigationStack { AlertsView(badge: notifs) }
                 .tabItem { Label("Alerts", systemImage: "bell") }
                 .badge(notifs.count)   // unread notifications
-            NavigationStack {
-                // theme: false -> the site is shown exactly as it is in a normal browser
-                WebActivityView(url: Site.url.appendingPathComponent("my/"), title: "iTa'leem", theme: false)
-            }
-            .tabItem { Label("Website", systemImage: "globe") }
+            NavigationStack { SiteBrowserView(browser: browser) }
+                .tabItem { Label("Website", systemImage: "globe") }
             NavigationStack { ProfileView() }
                 .tabItem { Label("Profile", systemImage: "person") }
         }
