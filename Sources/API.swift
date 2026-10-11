@@ -92,31 +92,32 @@ final class MoodleAPI {
 
     // Opens a normal website page already logged in. The key is single-use and
     // Moodle rate-limits it to once per 6 minutes; otherwise the web view's cookie session is used.
+    // (Logs the reason for any failure to DebugLog, which is defined in Submission.swift.)
     func autologin(_ target: URL, userid: Int, force: Bool = false) async -> URL {
-    guard let pt = privateToken else {
-        await DebugLog.shared.add("autologin: no private token stored")
-        return target
-    }
-    if !force && Date().timeIntervalSince(lastAutologin) <= 360 {
-        await DebugLog.shared.add("autologin: skipped, used less than 6 min ago")
-        return target
-    }
-    do {
-        let r: AutoKey = try await call("tool_mobile_get_autologin_key", ["privatetoken": pt])
-        lastAutologin = Date()
-        guard var c = URLComponents(string: r.autologinurl) else {
-            await DebugLog.shared.add("autologin: bad autologinurl")
+        guard let pt = privateToken else {
+            await DebugLog.shared.add("autologin: no private token stored")
             return target
         }
-        c.queryItems = [URLQueryItem(name: "userid", value: String(userid)),
-                        URLQueryItem(name: "key", value: r.key),
-                        URLQueryItem(name: "urltogo", value: target.absoluteString)]
-        return c.url ?? target
-    } catch {
-        await DebugLog.shared.add("autologin: key request failed: \(error.localizedDescription)")
-        return target
+        if !force && Date().timeIntervalSince(lastAutologin) <= 360 {
+            await DebugLog.shared.add("autologin: skipped, used less than 6 min ago")
+            return target
+        }
+        do {
+            let r: AutoKey = try await call("tool_mobile_get_autologin_key", ["privatetoken": pt])
+            lastAutologin = Date()
+            guard var c = URLComponents(string: r.autologinurl) else {
+                await DebugLog.shared.add("autologin: bad autologinurl")
+                return target
+            }
+            c.queryItems = [URLQueryItem(name: "userid", value: String(userid)),
+                            URLQueryItem(name: "key", value: r.key),
+                            URLQueryItem(name: "urltogo", value: target.absoluteString)]
+            return c.url ?? target
+        } catch {
+            await DebugLog.shared.add("autologin: key request failed: \(error.localizedDescription)")
+            return target
+        }
     }
-}
 
     // Username + password (accounts WITHOUT 2FA)
     func passwordLogin(_ user: String, _ pass: String) async throws -> Session {
