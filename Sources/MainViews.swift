@@ -552,10 +552,20 @@ struct ProfileView: View {
             .padding(24)
         }
         .scrollDismissesKeyboard(.interactively)
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") { hideKeyboard() }.foregroundColor(Theme.accent)
+            }
+        }
         .background(Theme.bg.ignoresSafeArea())
         .navigationTitle("Profile")
         .navigationBarTitleDisplayMode(.inline)
     }
+}
+
+func hideKeyboard() {
+    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
 }
 
 // MARK: - Final exam calculator
@@ -644,12 +654,6 @@ struct FinalExamCalculator: View {
         }
         .padding(16)
         .glowCard()
-        .toolbar {
-            ToolbarItemGroup(placement: .keyboard) {
-                Spacer()
-                Button("Done") { focus = nil }.foregroundColor(Theme.accent)
-            }
-        }
     }
 
     // MARK: pieces
@@ -662,6 +666,12 @@ struct FinalExamCalculator: View {
                 Text("Marks needed for each grade").font(.caption).foregroundColor(Theme.muted)
             }
             Spacer()
+            if focus != nil {
+                Button { focus = nil; hideKeyboard() } label: {
+                    Label("Hide keyboard", systemImage: "keyboard.chevron.compact.down")
+                        .labelStyle(.iconOnly).font(.title3).foregroundColor(Theme.accent)
+                }
+            }
         }
     }
 
@@ -756,9 +766,9 @@ struct FinalExamCalculator: View {
             Text("Not achievable").font(.subheadline).foregroundColor(.red.opacity(0.8))
         } else {
             VStack(alignment: .trailing, spacing: 1) {
-                Text("\(clean(needed)) / \(clean(exam))")
-                    .font(.subheadline.weight(.semibold)).foregroundColor(Theme.txt)
                 Text("\(clean(needed / exam * 100))%")
+                    .font(.subheadline.weight(.semibold)).foregroundColor(Theme.txt)
+                Text("\(clean(needed)) / \(clean(exam))")
                     .font(.caption2).foregroundColor(Theme.muted)
             }
         }
