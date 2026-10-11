@@ -11,37 +11,9 @@ struct AttSummary {
 
 extension MoodleAPI {
 
-    // ---- Attendance ----
+    // ---- Attendance (read-only, parsed from the website page) ----
+    // Percentage / absences are not in the web-service API, so the attendance page is fetched and parsed.
 
-    func attendanceSessions(userid: Int, attendanceId: Int) async throws -> [AttSession] {
-        let courses: [AttCourse] = try await call("mod_attendance_get_courses_with_today_sessions",
-                                                  ["userid": userid])
-        var ids: [Int] = []
-        for course in courses {
-            for inst in course.attendance_instances ?? [] {
-                for s in inst.today_sessions ?? [] {
-                    if s.attendanceid == nil || s.attendanceid == attendanceId {
-                        ids.append(s.id)
-                    }
-                }
-            }
-        }
-
-        var out: [AttSession] = []
-        for id in ids {
-            let s: AttSession = try await call("mod_attendance_get_session", ["sessionid": id])
-            out.append(s)
-        }
-        return out.sorted { ($0.sessdate ?? 0) < ($1.sessdate ?? 0) }
-    }
-
-    func markAttendance(sessionId: Int, userid: Int, statusId: Int, password: String?) async throws {
-        _ = try await raw("mod_attendance_submit_session",
-                          ["sessionid": sessionId, "studentid": userid,
-                           "statusid": statusId, "statuspass": password ?? ""])
-    }
-
-    // Percentage / absences are not in the web-service API, so the attendance page is fetched and parsed
     func fetchHTML(_ url: URL, userid: Int) async -> String? {
         func get(_ u: URL) async -> String? {
             guard let (d, r) = try? await URLSession.shared.data(from: u) else { return nil }
@@ -149,20 +121,14 @@ extension MoodleAPI {
     }
 }
 
-// MARK: - Attendance screen
+// MARK: - Attendance screen (read-only)
 
 struct AttendanceView: View {
     let module: Module
     @EnvironmentObject var app: AppState
-    @State private var sessions: [AttSession] = []
     @State private var summary: AttSummary?
-    @State private var summaryNote: String? = "Loading attendance..."
+    @State private var note: String? = "Loading attendance..."
     @State private var loading = true
-    @State private var error: String?
-    @State private var info: String?
-    @State private var passwords: [Int: String] = [:]
-    @State private var needsPass: Set<Int> = []
-    @State private var busyId: Int?
 
     private var uid: Int { app.site?.userid ?? 0 }
 
@@ -170,14 +136,8 @@ struct AttendanceView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 summaryCard
-                Text("Today's sessions").font(.footnote.weight(.semibold)).foregroundColor(Theme.muted)
-                if let error { Text(error).font(.footnote).foregroundColor(.red.opacity(0.85)) }
-                if let info { Text(info).font(.footnote).foregroundColor(Theme.accent) }
-                ForEach(sessions) { s in sessionCard(s) }
                 if loading {
                     ProgressView().tint(Theme.accent).frame(maxWidth: .infinity)
-                } else if sessions.isEmpty && error == nil {
-                    Text("No sessions today.").foregroundColor(Theme.muted)
                 }
                 NavigationLink {
                     WebActivityView(url: URL(string: module.url ?? "") ?? Site.url, title: module.name)
@@ -190,8 +150,8 @@ struct AttendanceView: View {
         .background(Theme.bg.ignoresSafeArea())
         .navigationTitle(module.name)
         .navigationBarTitleDisplayMode(.inline)
-        .refreshable { await loadSessions() }
-        .task { await loadSessions(); await loadSummary() }
+        .refreshable { await loadSummary() }
+        .task { await loadSummary() }
     }
 
     @ViewBuilder private var summaryCard: some View {
@@ -215,7 +175,7 @@ struct AttendanceView: View {
                         Text("+ \(s.absent.count - 8) more").font(.caption).foregroundColor(Theme.muted)
                     }
                 }
-            } else if let n = summaryNote {
+            } else if let n = note {
                 Text(n).font(.subheadline).foregroundColor(Theme.muted)
             }
         }
@@ -223,93 +183,25 @@ struct AttendanceView: View {
         .glowCard()
     }
 
-    private func currentStatus(_ s: AttSession) -> String? {
-        guard let sid = s.attendance_log?.first(where: { $0.studentid == uid })?.statusid,
-              let st = s.statuses?.first(where: { $0.id == sid }) else { return nil }
-        return st.description ?? st.acronym
-    }
-
-    @ViewBuilder private func sessionCard(_ s: AttSession) -> some View {
-        let canMark = s.studentscanmark?.value ?? false
-        VStack(alignment: .leading, spacing: 10) {
-            Text(fmt(s.sessdate)).fontWeight(.semibold).foregroundColor(Theme.txt)
-            if let d = s.description?.plainText, !d.isEmpty {
-                Text(d).font(.subheadline).foregroundColor(Theme.muted)
-            }
-            if let c = currentStatus(s) {
-                Text("Your status: \(c)").font(.subheadline).foregroundColor(Theme.accent)
-            }
-            if canMark {
-                markControls(s)
-            } else {
-                Text("Students can't mark this session yet.").font(.caption).foregroundColor(Theme.muted)
-            }
-        }
-        .padding(16).frame(maxWidth: .infinity, alignment: .leading)
-        .glowCard()
-    }
-
-    @ViewBuilder private func markControls(_ s: AttSession) -> some View {
-        if needsPass.contains(s.id) || !(s.studentpassword ?? "").isEmpty {
-            SecureField("Session password", text: Binding(
-                get: { passwords[s.id] ?? "" },
-                set: { passwords[s.id] = $0 }))
-                .foregroundColor(Theme.txt).padding(12)
-                .background(Theme.surface2)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-        }
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 10)], spacing: 10) {
-            ForEach(s.statuses ?? []) { st in
-                Button { Task { await mark(s, st) } } label: {
-                    Text(st.description ?? st.acronym ?? "Mark")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundColor(.black)
-                        .frame(maxWidth: .infinity).padding(.vertical, 10)
-                        .background(Theme.accent)
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
-                }
-                .disabled(busyId == s.id)
-            }
-        }
-    }
-
-    private func mark(_ s: AttSession, _ st: AttStatus) async {
-        busyId = s.id; error = nil; info = nil
-        do {
-            try await MoodleAPI.shared.markAttendance(sessionId: s.id, userid: uid, statusId: st.id,
-                                                      password: passwords[s.id])
-            info = "Attendance marked: \(st.description ?? st.acronym ?? "")"
-            await loadSessions()
-            await loadSummary()
-        } catch {
-            if error.localizedDescription.lowercased().contains("password") { needsPass.insert(s.id) }
-            self.error = error.localizedDescription
-        }
-        busyId = nil
-    }
-
-    private func loadSessions() async {
-        do {
-            sessions = try await MoodleAPI.shared.attendanceSessions(userid: uid,
-                                                                     attendanceId: module.instance ?? 0)
-        } catch {
-            if !(error is CancellationError) { self.error = error.localizedDescription }
-        }
-        loading = false
-    }
-
     private func loadSummary() async {
-        guard var c = URLComponents(string: module.url ?? "") else { summaryNote = nil; return }
+        defer { loading = false }
+        guard var c = URLComponents(string: module.url ?? "") else { note = nil; return }
         var q = c.queryItems ?? []
         q.removeAll { $0.name == "view" }
         q.append(URLQueryItem(name: "view", value: "4"))   // 4 = all past sessions
         c.queryItems = q
         guard let u = c.url, let html = await MoodleAPI.shared.fetchHTML(u, userid: uid) else {
-            summaryNote = "Couldn't load your attendance percentage."
+            note = "Couldn't load your attendance percentage."
             return
         }
         let s = MoodleAPI.shared.parseAttendance(html)
-        if s.rows.isEmpty { summaryNote = "No attendance percentage found." } else { summary = s }
+        if s.rows.isEmpty {
+            note = "No attendance percentage found."
+            // Debug: uncomment to inspect what the page returned
+            // print(String(html.prefix(4000)))
+        } else {
+            summary = s
+        }
     }
 }
 
