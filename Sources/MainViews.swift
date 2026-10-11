@@ -171,14 +171,26 @@ struct CoursesView: View {
                         ZStack(alignment: .topTrailing) {
                             NavigationLink { CourseDetailView(course: c) } label: { CourseCard(course: c) }
                                 .buttonStyle(.plain)
-                            Button { Task { await toggleStar(c) } } label: {
-                                Image(systemName: starred ? "star.fill" : "star")
-                                    .foregroundColor(starred ? Theme.accent : Color.white.opacity(0.85))
-                                    .padding(10)
-                                    .background(Color.black.opacity(0.45))
-                                    .clipShape(Circle())
+                            if filter == .hidden {
+                                Button { Task { await toggleHide(c) } } label: {
+                                    Label("Show again", systemImage: "eye")
+                                        .font(.footnote.weight(.semibold))
+                                        .foregroundColor(.black)
+                                        .padding(.horizontal, 12).padding(.vertical, 7)
+                                        .background(Theme.accent)
+                                        .clipShape(Capsule())
+                                }
+                                .padding(10)
+                            } else {
+                                Button { Task { await toggleStar(c) } } label: {
+                                    Image(systemName: starred ? "star.fill" : "star")
+                                        .foregroundColor(starred ? Theme.accent : Color.white.opacity(0.85))
+                                        .padding(10)
+                                        .background(Color.black.opacity(0.45))
+                                        .clipShape(Circle())
+                                }
+                                .padding(10)
                             }
-                            .padding(10)
                         }
                         .contextMenu {
                             Button { Task { await toggleStar(c) } } label: {
@@ -284,7 +296,20 @@ struct CoursesView: View {
             let r: CourseList = try await MoodleAPI.shared.call(
                 "core_course_get_enrolled_courses_by_timeline_classification",
                 ["classification": filter.classification, "limit": 0, "offset": 0, "sort": "fullname"])
-            courses = r.courses
+            var list = r.courses
+            if filter == .hidden && list.isEmpty {
+                let a: CourseList? = try? await MoodleAPI.shared.call(
+                    "core_course_get_enrolled_courses_by_timeline_classification",
+                    ["classification": "allincludinghidden", "limit": 0, "offset": 0, "sort": "fullname"])
+                let b: CourseList? = try? await MoodleAPI.shared.call(
+                    "core_course_get_enrolled_courses_by_timeline_classification",
+                    ["classification": "all", "limit": 0, "offset": 0, "sort": "fullname"])
+                if let a, let b {
+                    let visible = Set(b.courses.map { $0.id })
+                    list = a.courses.filter { !visible.contains($0.id) }
+                }
+            }
+            courses = list
             favOverride = [:]
         } catch {
             if !(error is CancellationError), (error as? URLError)?.code != .cancelled {
