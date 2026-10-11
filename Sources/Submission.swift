@@ -1,7 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-// MARK: - Debug log (temporary, remove once attendance works)
+// MARK: - Debug log (only shown on the attendance page when loading fails)
 
 actor DebugLog {
     static let shared = DebugLog()
@@ -11,23 +11,86 @@ actor DebugLog {
     func text() -> String { lines.joined(separator: "\n") }
 }
 
-// MARK: - API helpers
+// MARK: - Attendance model
+
+enum AttKind: String, CaseIterable, Identifiable {
+    case present = "Present"
+    case late = "Late"
+    case excused = "Excused"
+    case absent = "Absent"
+    case pending = "Not taken"
+    case other = "Other"
+
+    var id: String { rawValue }
+
+    var color: Color {
+        switch self {
+        case .present: return Tone.green
+        case .late: return Tone.amber
+        case .excused: return Tone.blue
+        case .absent: return Tone.red
+        case .pending, .other: return Theme.muted
+        }
+    }
+
+    static func from(_ status: String) -> AttKind {
+        let t = status.lowercased().trimmingCharacters(in: .whitespaces)
+        if t.isEmpty || t == "?" || t.contains("not taken") || t.contains("unknown") { return .pending }
+        if t.contains("absent") || t == "a" { return .absent }
+        if t.contains("excus") || t == "e" { return .excused }
+        if t.contains("late") || t == "l" { return .late }
+        if t.contains("present") || t == "p" { return .present }
+        return .other
+    }
+}
+
+struct AttRecord: Identifiable {
+    let id = UUID()
+    var date: String
+    var time: String
+    var desc: String
+    var status: String
+    var points: String
+    var remarks: String
+    var kind: AttKind
+}
 
 struct AttSummary {
     var rows: [(String, String)] = []
     var points: String?
-    var absent: [String] = []
+    var records: [AttRecord] = []
+    func count(_ k: AttKind) -> Int { records.filter { $0.kind == k }.count }
 }
+
+// MARK: - API helpers
 
 extension MoodleAPI {
 
+    // ---- Course actions (star / remove from view) ----
+
+    func setFavourite(_ courseId: Int, _ favourite: Bool) async throws {
+        _ = try await raw("core_course_set_favourite_courses",
+                          ["courses": [["id": courseId, "favourite": favourite ? 1 : 0]]])
+    }
+
+    // "Removed from view" is stored by Moodle as a user preference, the same one the website uses.
+    func setHidden(_ courseId: Int, _ hidden: Bool) async throws {
+        let key = "block_myoverview_hidden_course_\(courseId)"
+        if hidden {
+            _ = try await raw("core_user_update_user_preferences",
+                              ["preferences": [["name": key, "value": "1"]]])
+        } else {
+            _ = try await raw("core_user_update_user_preferences", ["emptypreferences": [key]])
+        }
+    }
+
     // ---- Attendance (read-only, parsed from the website page) ----
-    // Percentage / absences are not in the web-service API, so the attendance page is fetched and parsed.
+    // Sessions / percentage are not in the web-service API, so the attendance page is fetched and parsed.
 
     func fetchHTML(_ url: URL, userid: Int) async -> String? {
         func get(_ u: URL, _ tag: String) async -> String? {
             do {
-                let (d, r) = try await MoodleAPI.session.data(from: u)
+                let (d, r) = try await URLSession.shared.data(from: u)
                 let code = (r as? HTTPURLResponse)?.statusCode ?? -1
                 await DebugLog.shared.add("\(tag): status \(code), final path \(r.url?.path ?? "nil"), \(d.count) bytes")
                 if (r.url?.path ?? "").contains("/login/") {
@@ -66,10 +129,24 @@ extension MoodleAPI {
                 .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
                 .trimmingCharacters(in: .whitespaces)
         }
+        func hasYear(_ s: String) -> Bool {
+            s.range(of: "\\b(19|20)\\d{2}\\b", options: .regularExpression) != nil
+        }
+        // "Mon 5Oct 2026 9AM - 11AM" -> ("Mon 5Oct 2026", "9AM - 11AM")
+        func splitDate(_ s: String) -> (String, String) {
+            if let r = s.range(of: "\\d{1,2}(:\\d{2})?\\s*[AaPp][Mm]|\\d{1,2}:\\d{2}", options: .regularExpression) {
+                let d = s[..<r.lowerBound].trimmingCharacters(in: .whitespaces)
+                let t = s[r.lowerBound...].trimmingCharacters(in: .whitespaces)
+                return d.isEmpty ? (s, "") : (d, t)
+            }
+            return (s, "")
+        }
+
         let cleaned = html.replacingOccurrences(of: "<script[\\s\\S]*?</script>|<style[\\s\\S]*?</style>",
                                                 with: " ", options: [.regularExpression, .caseInsensitive])
         let text = strip(cleaned)
         var sum = AttSummary()
+
         for g in groups("(Percentage[^%\\d]{0,60}?)([\\d.]+)\\s*%", text).prefix(3) {
             let label = g[0].trimmingCharacters(in: CharacterSet(charactersIn: ": ").union(.whitespaces))
             sum.rows.append((label, g[1] + "%"))
@@ -77,15 +154,61 @@ extension MoodleAPI {
         if let g = groups("Points[^\\d]{0,60}?([\\d.]+)\\s*/\\s*([\\d.]+)", text).first {
             sum.points = "\(g[0]) / \(g[1]) points"
         }
-        for tr in groups("<tr[^>]*>([\\s\\S]*?)</tr>", cleaned) {
-            let cells = groups("<t[dh][^>]*>([\\s\\S]*?)</t[dh]>", tr[0]).map { strip($0[0]) }
-            guard cells.count >= 2,
-                  cells[0].range(of: "\\b(19|20)\\d{2}\\b", options: .regularExpression) != nil,
-                  cells.contains(where: { $0.caseInsensitiveCompare("Absent") == .orderedSame })
-            else { continue }
-            let d = cells[0].replacingOccurrences(of: "\\s*\\d{1,2}(:\\d{2})?\\s*[AaPp][Mm].*$",
-                                                  with: "", options: .regularExpression)
-            sum.absent.append(d.isEmpty ? cells[0] : d)
+
+        // Session table: columns are found from the header row (Date / Description / Status / Points / Remarks);
+        // if there is no usable header the cells are recognised by their content instead.
+        for table in groups("<table[^>]*>([\\s\\S]*?)</table>", cleaned) {
+            var map: [String: Int] = [:]
+            for tr in groups("<tr[^>]*>([\\s\\S]*?)</tr>", table[0]) {
+                let rawCells = groups("<t([dh])[^>]*>([\\s\\S]*?)</t[dh]>", tr[0])
+                let cells = rawCells.map { strip($0[1]) }
+                guard !cells.isEmpty else { continue }
+
+                if rawCells.allSatisfy({ $0[0].lowercased() == "h" }) {
+                    map = [:]
+                    for (i, c) in cells.enumerated() {
+                        let l = c.lowercased()
+                        if map["date"] == nil && (l.contains("date") || l == "time") { map["date"] = i }
+                        else if l.contains("description") { map["desc"] = i }
+                        else if l.contains("status") { map["status"] = i }
+                        else if l.contains("point") { map["points"] = i }
+                        else if l.contains("remark") { map["remarks"] = i }
+                    }
+                    continue
+                }
+
+                let di = map["date"] ?? cells.firstIndex(where: { hasYear($0) })
+                guard cells.count >= 3, let dIdx = di, dIdx < cells.count, hasYear(cells[dIdx]) else { continue }
+
+                func cell(_ k: String) -> String {
+                    guard let i = map[k], i < cells.count else { return "" }
+                    return cells[i]
+                }
+                var status = cell("status")
+                if map["status"] == nil {
+                    status = cells.first(where: { !hasYear($0) && !$0.isEmpty && AttKind.from($0) != .pending
+                                                    && AttKind.from($0) != .other }) ?? ""
+                    if status.isEmpty && cells.contains("?") { status = "?" }
+                }
+                var points = cell("points")
+                if map["points"] == nil {
+                    points = cells.first(where: {
+                        $0.range(of: "^[\\d.]+\\s*/\\s*[\\d.]+$", options: .regularExpression) != nil }) ?? ""
+                }
+                let (d, t) = splitDate(cells[dIdx])
+                sum.records.append(AttRecord(date: d, time: t, desc: cell("desc"), status: status,
+                                             points: points, remarks: cell("remarks"),
+                                             kind: AttKind.from(status)))
+            }
+        }
+
+        // No percentage on the page: work one out from the sessions
+        if sum.rows.isEmpty && !sum.records.isEmpty {
+            let attended = sum.count(.present) + sum.count(.late) + sum.count(.excused)
+            let taken = attended + sum.count(.absent)
+            if taken > 0 {
+                sum.rows.append(("Attended (calculated)", String(format: "%.1f%%", Double(attended) * 100 / Double(taken))))
+            }
         }
         return sum
     }
@@ -118,6 +241,20 @@ extension MoodleAPI {
         throw APIError(message: "Upload failed for \(name)")
     }
 
+    // Downloads a file that is already part of the submission so it can be re-uploaded into a new draft.
+    func downloadToTemp(_ f: FileRef) async throws -> URL {
+        guard let s = f.fileurl, let u = fileURL(s) else { throw APIError(message: "Bad file link") }
+        let (d, _) = try await URLSession.shared.data(from: u)
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("keep-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let dest = dir.appendingPathComponent(f.filename ?? "file")
+        try d.write(to: dest)
+        return dest
+    }
+
+    // A draft item id that has no files in it: saving it clears the submitted files.
+    func emptyDraftId() -> Int { Int.random(in: 900_000_000...999_999_999) }
+
     private func throwIfWarnings(_ data: Data) throws {
         if let arr = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]],
            let m = arr.first?["message"] as? String {
@@ -141,6 +278,29 @@ extension MoodleAPI {
                                  ["assignmentid": assignId, "acceptsubmissionstatement": 1])
         try throwIfWarnings(data)
     }
+
+    // Removes the student's own submission. Uses Moodle's remove-submission function; if the site does not
+    // expose it to the mobile service, falls back to saving an empty submission (blank text, empty file area).
+    func removeSubmission(assignId: Int, userid: Int, hasText: Bool, hasFiles: Bool) async throws {
+        do {
+            let data: Data
+            do {
+                data = try await raw("mod_assign_remove_submission", ["userid": userid, "assignid": assignId])
+            } catch let e as APIError where e.code == "invalidparameter" {
+                data = try await raw("mod_assign_remove_submission", ["userid": userid, "assignmentid": assignId])
+            }
+            if let o = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+               (o["status"] as? Bool) == false || (o["status"] as? Int) == 0 {
+                let m = ((o["warnings"] as? [[String: Any]])?.first?["message"] as? String)
+                    ?? "Couldn't remove the submission"
+                throw APIError(message: m.plainText, code: "removefailed")
+            }
+        } catch let e as APIError where e.code != "removefailed" {
+            try await saveSubmission(assignId: assignId,
+                                     text: hasText ? "" : nil,
+                                     draftItemId: hasFiles ? emptyDraftId() : nil)
+        }
+    }
 }
 
 // MARK: - Attendance screen (read-only)
@@ -152,21 +312,35 @@ struct AttendanceView: View {
     @State private var note: String? = "Loading attendance..."
     @State private var loading = true
     @State private var debugText = ""
+    @State private var kindFilter: AttKind? = nil
+    @State private var reversed = false
 
     private var uid: Int { app.site?.userid ?? 0 }
+
+    private var shown: [AttRecord] {
+        let r = (summary?.records ?? []).filter { kindFilter == nil || $0.kind == kindFilter }
+        return reversed ? r.reversed() : r
+    }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 summaryCard
-                if !debugText.isEmpty {
-                    Text(debugText)
-                        .font(.system(.caption2, design: .monospaced))
-                        .foregroundColor(Theme.muted)
-                        .textSelection(.enabled)
+                if let s = summary, !s.records.isEmpty {
+                    filterBar(s)
+                    sessionsCard
                 }
                 if loading {
                     ProgressView().tint(Theme.accent).frame(maxWidth: .infinity)
+                }
+                if !debugText.isEmpty {
+                    DisclosureGroup("Details") {
+                        Text(debugText)
+                            .font(.system(.caption2, design: .monospaced))
+                            .foregroundColor(Theme.muted)
+                            .textSelection(.enabled)
+                    }
+                    .foregroundColor(Theme.muted)
                 }
                 NavigationLink {
                     WebActivityView(url: URL(string: module.url ?? "") ?? Site.url, title: module.name)
@@ -183,25 +357,30 @@ struct AttendanceView: View {
         .task { await loadSummary() }
     }
 
+    // ---- summary ----
+
     @ViewBuilder private var summaryCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 12) {
             Text("ATTENDANCE").font(.caption).foregroundColor(Theme.muted)
             if let s = summary {
-                ForEach(Array(s.rows.enumerated()), id: \.offset) { _, r in
-                    HStack(spacing: 6) {
-                        Text(r.0).foregroundColor(Theme.txt)
-                        Text(r.1).font(.title3.bold()).foregroundColor(Theme.accent)
+                ForEach(Array(s.rows.enumerated()), id: \.offset) { i, r in
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text(r.1).font(i == 0 ? Font.largeTitle.bold() : Font.title3.bold()).foregroundColor(Theme.accent)
+                            Text(r.0).foregroundColor(Theme.txt)
+                        }
+                        if i == 0, let p = Double(r.1.replacingOccurrences(of: "%", with: "")) {
+                            ProgressView(value: min(max(p, 0), 100), total: 100).tint(Theme.accent)
+                        }
                     }
                 }
                 if let p = s.points { Text(p).font(.caption).foregroundColor(Theme.muted) }
-                if !s.absent.isEmpty {
-                    Text("ABSENT (\(s.absent.count))")
-                        .font(.caption).foregroundColor(Theme.muted).padding(.top, 6)
-                    ForEach(Array(s.absent.prefix(8).enumerated()), id: \.offset) { _, d in
-                        Text(d).font(.subheadline).foregroundColor(Theme.txt)
-                    }
-                    if s.absent.count > 8 {
-                        Text("+ \(s.absent.count - 8) more").font(.caption).foregroundColor(Theme.muted)
+                if !s.records.isEmpty {
+                    HStack(spacing: 8) {
+                        ForEach(AttKind.allCases) { k in
+                            let n = s.count(k)
+                            if n > 0 { StatusPill(text: "\(k.rawValue) \(n)", color: k.color) }
+                        }
                     }
                 }
             } else if let n = note {
@@ -212,30 +391,91 @@ struct AttendanceView: View {
         .glowCard()
     }
 
+    // ---- sessions ----
+
+    private func filterBar(_ s: AttSummary) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 20) {
+                Button { kindFilter = nil } label: {
+                    Text("All \(s.records.count)")
+                        .fontWeight(kindFilter == nil ? .semibold : .regular)
+                        .foregroundColor(kindFilter == nil ? Theme.accent : Theme.txt)
+                }
+                ForEach(AttKind.allCases) { k in
+                    let n = s.count(k)
+                    if n > 0 {
+                        Button { kindFilter = k } label: {
+                            Text("\(k.rawValue) \(n)")
+                                .fontWeight(kindFilter == k ? .semibold : .regular)
+                                .foregroundColor(kindFilter == k ? Theme.accent : Theme.txt)
+                        }
+                    }
+                }
+                Button { reversed.toggle() } label: {
+                    Image(systemName: "arrow.up.arrow.down").foregroundColor(Theme.muted)
+                }
+            }
+        }
+    }
+
+    private var sessionsCard: some View {
+        VStack(spacing: 0) {
+            ForEach(shown) { r in recordRow(r) }
+            if shown.isEmpty {
+                Text("No sessions with this status.").foregroundColor(Theme.muted).padding(14)
+            }
+        }
+        .glowCard()
+    }
+
+    private func recordRow(_ r: AttRecord) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(r.date).fontWeight(.medium).foregroundColor(Theme.txt)
+                if !r.time.isEmpty { Text(r.time).font(.caption).foregroundColor(Theme.accent) }
+                if !r.desc.isEmpty { Text(r.desc).font(.caption).foregroundColor(Theme.muted) }
+                if !r.remarks.isEmpty {
+                    Text(r.remarks).font(.caption).italic().foregroundColor(Theme.muted)
+                }
+            }
+            Spacer()
+            VStack(alignment: .trailing, spacing: 4) {
+                StatusPill(text: r.status.isEmpty || r.status == "?" ? AttKind.pending.rawValue : r.status,
+                           color: r.kind.color)
+                if !r.points.isEmpty {
+                    Text(r.points).font(.caption).foregroundColor(Theme.muted)
+                }
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(Rectangle().fill(Theme.line).frame(height: 1), alignment: .bottom)
+    }
+
     private func loadSummary() async {
         defer { loading = false }
         guard var c = URLComponents(string: module.url ?? "") else { note = nil; return }
         var q = c.queryItems ?? []
         q.removeAll { $0.name == "view" }
-        q.append(URLQueryItem(name: "view", value: "4"))   // 4 = all past sessions
+        q.append(URLQueryItem(name: "view", value: "4"))   // 4 = all sessions
         c.queryItems = q
         guard let u = c.url, let html = await MoodleAPI.shared.fetchHTML(u, userid: uid) else {
-            note = "Couldn't load your attendance percentage."
+            note = "Couldn't load your attendance."
             debugText = await DebugLog.shared.text()
             return
         }
         let s = MoodleAPI.shared.parseAttendance(html)
-        if s.rows.isEmpty {
-            note = "No attendance percentage found."
-            // Debug: uncomment to inspect what the page returned
-            // print(String(html.prefix(4000)))
+        if s.rows.isEmpty && s.records.isEmpty {
+            note = "No attendance data found on the page."
+            debugText = await DebugLog.shared.text()
         } else {
             summary = s
+            debugText = ""
         }
     }
 }
 
-// MARK: - Assignment screen with built-in submission
+// MARK: - Assignment screen with built-in submission (submit, edit, remove)
 
 struct AssignmentView: View {
     let courseId: Int
@@ -249,8 +489,12 @@ struct AssignmentView: View {
     @State private var text = ""
     @State private var textLoaded = false
     @State private var picked: [URL] = []
+    @State private var removedFiles: Set<String> = []
     @State private var showPicker = false
+    @State private var confirmRemove = false
     @State private var busy = false
+
+    private var uid: Int { app.site?.userid ?? 0 }
 
     private var existingFiles: [FileRef] {
         var out: [FileRef] = []
@@ -265,6 +509,7 @@ struct AssignmentView: View {
 
     private var subStatus: String { status?.lastattempt?.submission?.status ?? "" }
     private var canEdit: Bool { status?.lastattempt?.canedit?.value ?? true }
+    private var hasSubmission: Bool { ["draft", "submitted", "reopened"].contains(subStatus) }
 
     private func savedText(_ s: StatusResp?) -> String? {
         let plugins = s?.lastattempt?.submission?.plugins ?? []
@@ -343,21 +588,28 @@ struct AssignmentView: View {
                 Text("This assignment doesn't accept online submissions.").foregroundColor(Theme.muted)
             } else if !canEdit {
                 Text("Submission is locked.").foregroundColor(Theme.muted)
-                ForEach(existingFiles) { f in fileRow(f) }
+                ForEach(existingFiles) { f in fileLink(f) }
             } else {
                 if fileOn { fileSection }
                 if textOn { textSection }
                 if let message { Text(message).font(.footnote).foregroundColor(Theme.accent) }
                 actionButtons(a)
+                if hasSubmission { removeButton }
                 if busy { ProgressView().tint(Theme.accent).frame(maxWidth: .infinity) }
             }
         }
         .padding(16).frame(maxWidth: .infinity, alignment: .leading)
         .glowCard()
+        .confirmationDialog("Remove your submission?", isPresented: $confirmRemove, titleVisibility: .visible) {
+            Button("Remove submission", role: .destructive) { Task { await removeSubmission(a) } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Your submitted files and text will be deleted. You can submit again while the assignment is still open.")
+        }
     }
 
     @ViewBuilder private var fileSection: some View {
-        ForEach(existingFiles) { f in fileRow(f) }
+        ForEach(existingFiles) { f in editableFileRow(f) }
         ForEach(picked, id: \.self) { u in
             HStack {
                 Image(systemName: "doc.badge.plus").foregroundColor(Theme.accent)
@@ -371,8 +623,8 @@ struct AssignmentView: View {
         Button { showPicker = true } label: {
             Label("Add file", systemImage: "paperclip").foregroundColor(Theme.accent)
         }
-        if !existingFiles.isEmpty && !picked.isEmpty {
-            Text("Saving replaces the files already submitted.")
+        if !removedFiles.isEmpty {
+            Text("\(removedFiles.count) file(s) will be removed when you save.")
                 .font(.caption).foregroundColor(Theme.muted)
         }
     }
@@ -390,9 +642,11 @@ struct AssignmentView: View {
     @ViewBuilder private func actionButtons(_ a: Assign) -> some View {
         let usesDrafts = a.submissiondrafts == 1
         let canSubmitDraft = subStatus == "draft" || status?.lastattempt?.cansubmit?.value == true
+        let saveLabel = hasSubmission ? (usesDrafts ? "Save changes" : "Update submission")
+                                      : (usesDrafts ? "Save draft" : "Submit")
         HStack(spacing: 12) {
             Button { Task { await save(a, submit: false) } } label: {
-                Text(usesDrafts ? "Save draft" : "Submit")
+                Text(saveLabel)
                     .fontWeight(.semibold).foregroundColor(.black)
                     .frame(maxWidth: .infinity).padding(.vertical, 12)
                     .background(Theme.accent)
@@ -411,7 +665,19 @@ struct AssignmentView: View {
         .disabled(busy)
     }
 
-    @ViewBuilder private func fileRow(_ f: FileRef) -> some View {
+    private var removeButton: some View {
+        Button(role: .destructive) { confirmRemove = true } label: {
+            Label("Remove submission", systemImage: "trash")
+                .frame(maxWidth: .infinity).padding(.vertical, 12)
+                .background(Theme.surface2)
+                .foregroundColor(.red.opacity(0.85))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+        }
+        .disabled(busy)
+    }
+
+    // Read-only file row (locked submissions)
+    @ViewBuilder private func fileLink(_ f: FileRef) -> some View {
         if let s = f.fileurl, let u = MoodleAPI.shared.fileURL(s) {
             NavigationLink { FileViewer(url: u, title: f.filename ?? "File") } label: {
                 HStack {
@@ -421,6 +687,35 @@ struct AssignmentView: View {
                 }
             }
             .buttonStyle(.plain)
+        }
+    }
+
+    // File row with a remove / undo button (editable submissions)
+    @ViewBuilder private func editableFileRow(_ f: FileRef) -> some View {
+        let removed = removedFiles.contains(f.id)
+        HStack(spacing: 12) {
+            if let s = f.fileurl, let u = MoodleAPI.shared.fileURL(s), !removed {
+                NavigationLink { FileViewer(url: u, title: f.filename ?? "File") } label: {
+                    HStack {
+                        Image(systemName: "doc").foregroundColor(Theme.accent)
+                        Text(f.filename ?? "File").foregroundColor(Theme.txt).lineLimit(1)
+                        Spacer()
+                    }
+                }
+                .buttonStyle(.plain)
+            } else {
+                HStack {
+                    Image(systemName: "doc").foregroundColor(Theme.muted)
+                    Text(f.filename ?? "File").strikethrough().foregroundColor(Theme.muted).lineLimit(1)
+                    Spacer()
+                }
+            }
+            Button {
+                if removed { removedFiles.remove(f.id) } else { removedFiles.insert(f.id) }
+            } label: {
+                Image(systemName: removed ? "arrow.uturn.backward.circle" : "trash")
+                    .foregroundColor(removed ? Theme.accent : Color.red.opacity(0.85))
+            }
         }
     }
 
@@ -446,15 +741,26 @@ struct AssignmentView: View {
         busy = true; message = nil
         do {
             var item: Int? = nil
-            for f in picked {
-                item = try await MoodleAPI.shared.uploadDraft(f, itemid: item ?? 0)
+            let keep = existingFiles.filter { !removedFiles.contains($0.id) }
+            if a.enabled("file") && (!picked.isEmpty || !removedFiles.isEmpty) {
+                // Saving files replaces the whole file area, so rebuild it: files being kept + new files.
+                var toUpload: [URL] = []
+                for f in keep { toUpload.append(try await MoodleAPI.shared.downloadToTemp(f)) }
+                toUpload.append(contentsOf: picked)
+                for f in toUpload {
+                    item = try await MoodleAPI.shared.uploadDraft(f, itemid: item ?? 0)
+                }
+                if toUpload.isEmpty { item = MoodleAPI.shared.emptyDraftId() }   // everything removed
             }
             let body: String? = a.enabled("onlinetext") ? text : nil
             try await MoodleAPI.shared.saveSubmission(assignId: a.id, text: body, draftItemId: item)
             if submit { try await MoodleAPI.shared.submitForGrading(assignId: a.id) }
             picked = []
+            removedFiles = []
             if submit {
                 message = "Submitted for grading."
+            } else if hasSubmission {
+                message = "Changes saved."
             } else {
                 message = a.submissiondrafts == 1 ? "Draft saved." : "Submitted."
             }
@@ -465,10 +771,28 @@ struct AssignmentView: View {
         busy = false
     }
 
+    private func removeSubmission(_ a: Assign) async {
+        busy = true; message = nil
+        do {
+            try await MoodleAPI.shared.removeSubmission(assignId: a.id, userid: uid,
+                                                        hasText: a.enabled("onlinetext"),
+                                                        hasFiles: a.enabled("file"))
+            picked = []
+            removedFiles = []
+            text = ""
+            textLoaded = false
+            message = "Submission removed."
+            await loadStatus(a)
+        } catch {
+            message = error.localizedDescription
+        }
+        busy = false
+    }
+
     private func loadStatus(_ a: Assign) async {
         let s: StatusResp? = try? await MoodleAPI.shared.call(
             "mod_assign_get_submission_status",
-            ["assignid": a.id, "userid": app.site?.userid ?? 0])
+            ["assignid": a.id, "userid": uid])
         status = s
         if !textLoaded {
             if let t = savedText(s) { text = t.plainText }
