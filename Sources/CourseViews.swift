@@ -401,8 +401,11 @@ struct WebView: UIViewRepresentable {
     let url: URL
     var theme = true
 
+    func makeCoordinator() -> WebCoordinator { WebCoordinator() }
+
     func makeUIView(context: Context) -> WKWebView {
         let cfg = WKWebViewConfiguration()
+        cfg.allowsInlineMediaPlayback = true
         if theme {
             cfg.userContentController.addUserScript(
                 WKUserScript(source: WebTheme.js, injectionTime: .atDocumentStart, forMainFrameOnly: false))
@@ -411,21 +414,86 @@ struct WebView: UIViewRepresentable {
         w.isOpaque = false
         w.backgroundColor = .black
         w.scrollView.backgroundColor = .black
+        w.allowsBackForwardNavigationGestures = true
+        w.navigationDelegate = context.coordinator
+        w.uiDelegate = context.coordinator
+        let rc = UIRefreshControl()
+        rc.addTarget(context.coordinator, action: #selector(WebCoordinator.reload(_:)), for: .valueChanged)
+        w.scrollView.refreshControl = rc
+        context.coordinator.webView = w
         w.load(URLRequest(url: url))
         return w
     }
     func updateUIView(_ uiView: WKWebView, context: Context) {}
 }
 
+// Makes the web view behave like a normal browser: target=_blank links open in place,
+// mailto:/tel: links open their apps, JS alert/confirm dialogs work, pull to refresh, swipe back.
+final class WebCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
+    weak var webView: WKWebView?
+
+    @objc func reload(_ sender: UIRefreshControl) { webView?.reload() }
+
+    private func stopRefreshing(_ w: WKWebView) { w.scrollView.refreshControl?.endRefreshing() }
+
+    func webView(_ w: WKWebView, didFinish navigation: WKNavigation!) { stopRefreshing(w) }
+    func webView(_ w: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { stopRefreshing(w) }
+    func webView(_ w: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        stopRefreshing(w)
+    }
+
+    func webView(_ w: WKWebView, decidePolicyFor action: WKNavigationAction,
+                 decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        if let u = action.request.url, let s = u.scheme?.lowercased(),
+           !["http", "https", "about", "file", "blob", "data"].contains(s) {
+            UIApplication.shared.open(u)
+            decisionHandler(.cancel)
+            return
+        }
+        decisionHandler(.allow)
+    }
+
+    func webView(_ w: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
+                 for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+        if navigationAction.targetFrame == nil { w.load(navigationAction.request) }
+        return nil
+    }
+
+    private func topVC() -> UIViewController? {
+        var vc = UIApplication.shared.connectedScenes
+            .compactMap { ($0 as? UIWindowScene)?.keyWindow }.first?.rootViewController
+        while let p = vc?.presentedViewController { vc = p }
+        return vc
+    }
+
+    func webView(_ w: WKWebView, runJavaScriptAlertPanelWithMessage message: String,
+                 initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
+        guard let vc = topVC() else { completionHandler(); return }
+        let a = UIAlertController(title: nil, message: message, preferredStyle: .alert)
+        a.addAction(UIAlertAction(title: "OK", style: .default) { _ in completionHandler() })
+        vc.present(a, animated: true)
+    }
+
+    func webView(_ w: WKWebView, runJavaScriptConfirmPanelWithMessage message: String,
+                 initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) {
+        guard let vc = topVC() else { completionHandler(false); return }
+        let a = UIAlertController(title: nil, message: message, preferredStyle: .alert)
+        a.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in completionHandler(false) })
+        a.addAction(UIAlertAction(title: "OK", style: .default) { _ in completionHandler(true) })
+        vc.present(a, animated: true)
+    }
+}
+
 struct WebActivityView: View {
     let url: URL
     let title: String
+    var theme = true          // false = show the site untouched (used by the Website tab)
     @EnvironmentObject var app: AppState
     @State private var resolved: URL?
 
     var body: some View {
         Group {
-            if let r = resolved { WebView(url: r) }
+            if let r = resolved { WebView(url: r, theme: theme) }
             else { ProgressView().tint(Theme.accent).frame(maxWidth: .infinity, maxHeight: .infinity) }
         }
         .background(Theme.bg.ignoresSafeArea())
