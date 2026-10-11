@@ -27,7 +27,7 @@ extension MoodleAPI {
     func fetchHTML(_ url: URL, userid: Int) async -> String? {
         func get(_ u: URL, _ tag: String) async -> String? {
             do {
-                let (d, r) = try await URLSession.shared.data(from: u)
+                let (d, r) = try await MoodleAPI.session.data(from: u)
                 let code = (r as? HTTPURLResponse)?.statusCode ?? -1
                 await DebugLog.shared.add("\(tag): status \(code), final path \(r.url?.path ?? "nil"), \(d.count) bytes")
                 if (r.url?.path ?? "").contains("/login/") {
