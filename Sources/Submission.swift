@@ -1,5 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import WebKit
 
 // MARK: - Debug log (only shown on the attendance page when loading fails)
 
@@ -105,11 +106,24 @@ extension MoodleAPI {
         }
         await DebugLog.shared.reset()
         await DebugLog.shared.add("fetching path \(url.path)")
+        await syncCookies()   // pick up a session the web views already have
         if let h = await get(url, "direct") { return h }
         let al = await autologin(url, userid: userid, force: true)
         await DebugLog.shared.add("autologin returned path \(al.path), same as input: \(al == url)")
-        if al != url { return await get(al, "autologin") }
+        if al != url, let h = await get(al, "autologin") {
+            await syncCookies()   // share the new session with the web views
+            return h
+        }
         return nil
+    }
+
+    // Moodle only gives out one auto-login key per 6 minutes, so a single login has to serve both the web views
+    // (WKWebView cookies) and plain URLSession requests. This copies the session cookies in both directions.
+    @MainActor
+    func syncCookies() async {
+        let store = WKWebsiteDataStore.default().httpCookieStore
+        for c in await store.allCookies() { HTTPCookieStorage.shared.setCookie(c) }
+        for c in HTTPCookieStorage.shared.cookies(for: Site.url) ?? [] { await store.setCookie(c) }
     }
 
     func parseAttendance(_ html: String) -> AttSummary {
@@ -460,7 +474,7 @@ struct AttendanceView: View {
         q.append(URLQueryItem(name: "view", value: "4"))   // 4 = all sessions
         c.queryItems = q
         guard let u = c.url, let html = await MoodleAPI.shared.fetchHTML(u, userid: uid) else {
-            note = "Couldn't load your attendance."
+            note = "Couldn't load your attendance. Open any page in the Website tab to sign in, then pull down here to refresh."
             debugText = await DebugLog.shared.text()
             return
         }
