@@ -2,12 +2,28 @@ import SwiftUI
 
 struct RootView: View {
     @EnvironmentObject var app: AppState
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var assignments = AssignmentsModel()
+    @StateObject private var notifs = NotifBadgeModel()
 
     init() {
-        // Tab badge in the app's accent colour with dark text
-        UITabBarItem.appearance().badgeColor = UIColor(Theme.accent)
-        UITabBarItem.appearance().setBadgeTextAttributes([.foregroundColor: UIColor.black], for: .normal)
+        // Tab badges in the app's accent colour with dark text. SwiftUI's .badge ignores
+        // UITabBarItem.appearance().badgeColor, so it is set through UITabBarAppearance instead.
+        // Starts from the tab bar appearance already set elsewhere (if any) so its look is kept.
+        let std = (UITabBar.appearance().standardAppearance.copy() as? UITabBarAppearance) ?? UITabBarAppearance()
+        let edge = (UITabBar.appearance().scrollEdgeAppearance?.copy() as? UITabBarAppearance) ?? std
+        let color = UIColor(Theme.accent)
+        let attrs: [NSAttributedString.Key: Any] = [.foregroundColor: UIColor.black]
+        for ap in [std, edge] {
+            for item in [ap.stackedLayoutAppearance, ap.inlineLayoutAppearance, ap.compactInlineLayoutAppearance] {
+                item.normal.badgeBackgroundColor = color
+                item.normal.badgeTextAttributes = attrs
+                item.selected.badgeBackgroundColor = color
+                item.selected.badgeTextAttributes = attrs
+            }
+        }
+        UITabBar.appearance().standardAppearance = std
+        UITabBar.appearance().scrollEdgeAppearance = edge
     }
 
     var body: some View {
@@ -17,8 +33,9 @@ struct RootView: View {
             NavigationStack { AssignmentsTabView(model: assignments) }
                 .tabItem { Label("Assignments", systemImage: "checklist") }
                 .badge(assignments.badgeCount)   // to-do items due inside the range chosen in the tab
-            NavigationStack { AlertsView() }
+            NavigationStack { AlertsView(badge: notifs) }
                 .tabItem { Label("Alerts", systemImage: "bell") }
+                .badge(notifs.count)   // unread notifications
             NavigationStack {
                 // theme: false -> the site is shown exactly as it is in a normal browser
                 WebActivityView(url: Site.url.appendingPathComponent("my/"), title: "iTa'leem", theme: false)
@@ -27,9 +44,24 @@ struct RootView: View {
             NavigationStack { ProfileView() }
                 .tabItem { Label("Profile", systemImage: "person") }
         }
-        // Load at launch so the badge is right before the Assignments tab is opened
+        // Load at launch so the badges are right before either tab is opened
         .task(id: app.site?.userid) {
             if let uid = app.site?.userid { await assignments.load(uid: uid) }
+        }
+        // Unread alerts: check now, then once a minute while the app is open
+        .task(id: app.site?.userid) {
+            guard let uid = app.site?.userid else { return }
+            while !Task.isCancelled {
+                await notifs.refresh(uid: uid)
+                try? await Task.sleep(nanoseconds: 60_000_000_000)
+            }
+        }
+        .onChange(of: scenePhase) { phase in
+            guard phase == .active, let uid = app.site?.userid else { return }
+            Task {
+                await notifs.refresh(uid: uid)
+                await assignments.load(uid: uid)
+            }
         }
     }
 }
@@ -247,11 +279,38 @@ struct DefaultCover: View {
 
 // MARK: - Alerts
 
+// Unread-notification count shown on the Alerts tab icon
+@MainActor
+final class NotifBadgeModel: ObservableObject {
+    @Published var count = 0
+
+    func refresh(uid: Int) async {
+        do {
+            let n: Int = try await MoodleAPI.shared.call(
+                "message_popup_get_unread_popup_notification_count", ["useridto": uid])
+            count = n
+        } catch {
+            if error is CancellationError { return }
+            // Site doesn't expose the count function: count unread items in the list instead
+            if let r: NotifResp = try? await MoodleAPI.shared.call(
+                "message_popup_get_popup_notifications", ["useridto": uid]) {
+                count = r.notifications.filter { $0.read != true }.count
+            }
+        }
+    }
+}
+
 struct AlertsView: View {
+    @ObservedObject var badge: NotifBadgeModel
     @EnvironmentObject var app: AppState
     @State private var items: [Notif] = []
+    @State private var readIds: Set<Int> = []
     @State private var loading = true
     @State private var error: String?
+
+    private var uid: Int { app.site?.userid ?? 0 }
+    private func isRead(_ n: Notif) -> Bool { n.read == true || readIds.contains(n.id) }
+    private var unread: Int { items.filter { !isRead($0) }.count }
 
     var body: some View {
         ScrollView {
@@ -260,20 +319,23 @@ struct AlertsView: View {
                 ForEach(items) { n in
                     let card = VStack(alignment: .leading, spacing: 4) {
                         Text(n.subject ?? "Notification")
-                            .foregroundColor(Theme.txt).fontWeight(n.read == true ? .regular : .semibold)
+                            .foregroundColor(Theme.txt).fontWeight(isRead(n) ? .regular : .semibold)
                         if let m = n.smallmessage, !m.isEmpty {
                             Text(m.plainText).font(.caption).foregroundColor(Theme.muted).lineLimit(3)
                         }
                         Text(fmt(n.timecreated)).font(.caption2).foregroundColor(Theme.muted)
                     }
                     .padding(14).frame(maxWidth: .infinity, alignment: .leading)
-                    .background(n.read == true ? Theme.bg : Theme.surface2)
+                    .background(isRead(n) ? Theme.bg : Theme.surface2)
                     .glowCard()
 
                     if let s = n.contexturl, let u = URL(string: s) {
                         NavigationLink { WebActivityView(url: u, title: n.subject ?? "Notification") } label: { card }
                             .buttonStyle(.plain)
-                    } else { card }
+                            .simultaneousGesture(TapGesture().onEnded { Task { await markRead(n) } })
+                    } else {
+                        card.onTapGesture { Task { await markRead(n) } }
+                    }
                 }
                 if loading { ProgressView().tint(Theme.accent) }
                 else if items.isEmpty && error == nil { Text("You have no notifications").foregroundColor(Theme.muted) }
@@ -283,20 +345,43 @@ struct AlertsView: View {
         .background(Theme.bg.ignoresSafeArea())
         .navigationTitle("Notifications")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if unread > 0 {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Mark all read") { Task { await markAllRead() } }
+                        .foregroundColor(Theme.accent)
+                }
+            }
+        }
         .refreshable { await load() }
         .task { await load() }
     }
 
     private func load() async {
-        guard let uid = app.site?.userid else { loading = false; return }
+        guard app.site?.userid != nil else { loading = false; return }
         do {
             let r: NotifResp = try await MoodleAPI.shared.call(
                 "message_popup_get_popup_notifications", ["useridto": uid])
             items = r.notifications
+            await badge.refresh(uid: uid)
         } catch {
             if !(error is CancellationError) { self.error = error.localizedDescription }
         }
         loading = false
+    }
+
+    // Opening a notification marks it read (on the server too), so the tab badge goes down
+    private func markRead(_ n: Notif) async {
+        guard !isRead(n) else { return }
+        readIds.insert(n.id)
+        badge.count = max(badge.count - 1, 0)
+        _ = try? await MoodleAPI.shared.raw("core_message_mark_notification_read", ["notificationid": n.id])
+    }
+
+    private func markAllRead() async {
+        for n in items { readIds.insert(n.id) }
+        badge.count = 0
+        _ = try? await MoodleAPI.shared.raw("core_message_mark_all_notifications_as_read", ["useridto": uid])
     }
 }
 
