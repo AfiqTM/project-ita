@@ -1,12 +1,22 @@
 import SwiftUI
 
 struct RootView: View {
+    @EnvironmentObject var app: AppState
+    @StateObject private var assignments = AssignmentsModel()
+
+    init() {
+        // Tab badge in the app's accent colour with dark text
+        UITabBarItem.appearance().badgeColor = UIColor(Theme.accent)
+        UITabBarItem.appearance().setBadgeTextAttributes([.foregroundColor: UIColor.black], for: .normal)
+    }
+
     var body: some View {
         TabView {
             NavigationStack { CoursesView() }
                 .tabItem { Label("My courses", systemImage: "books.vertical") }
-            NavigationStack { AssignmentsTabView() }
+            NavigationStack { AssignmentsTabView(model: assignments) }
                 .tabItem { Label("Assignments", systemImage: "checklist") }
+                .badge(assignments.badgeCount)   // to-do items due inside the range chosen in the tab
             NavigationStack { AlertsView() }
                 .tabItem { Label("Alerts", systemImage: "bell") }
             NavigationStack {
@@ -16,6 +26,10 @@ struct RootView: View {
             .tabItem { Label("Website", systemImage: "globe") }
             NavigationStack { ProfileView() }
                 .tabItem { Label("Profile", systemImage: "person") }
+        }
+        // Load at launch so the badge is right before the Assignments tab is opened
+        .task(id: app.site?.userid) {
+            if let uid = app.site?.userid { await assignments.load(uid: uid) }
         }
     }
 }
