@@ -1,5 +1,6 @@
 import SwiftUI
 import WebKit
+import Security
 
 // The Website tab: the iTa'leem site shown exactly as in a normal browser (no injected scripts or theme).
 // One WKWebView lives for the whole app session, so switching tabs never reloads or loses the page.
@@ -18,6 +19,8 @@ final class SiteBrowser: NSObject, ObservableObject, WKNavigationDelegate, WKUID
     private var observers: [NSKeyValueObservation] = []
     private var started = false
     private var loginRetried = false
+    private var wantedURL: URL?              // last good page, where to resume after a re-login
+    private var retryTask: Task<Void, Never>?
     private var userid = 0
     private var downloads: [ObjectIdentifier: URL] = [:]
 
@@ -57,21 +60,36 @@ final class SiteBrowser: NSObject, ObservableObject, WKNavigationDelegate, WKUID
     }
 
     // ---- loading / sign-in ----
+    //
+    // Order of attempts, so Moodle's one-key-per-6-minutes limit is rarely touched:
+    //   1. the web view's cookie session (restored from the Keychain after a relaunch)
+    //   2. a one-time auto-login key, only when there is no usable session
+    //   3. if Moodle says "too soon", wait out the cooldown and retry automatically
 
-    // Called when the tab first appears. Nothing is loaded at app launch, so the single auto-login key
-    // (Moodle allows one per 6 minutes) isn't spent before it's needed.
+    // Called when the tab first appears.
     func startIfNeeded(userid: Int) async {
         self.userid = userid
         guard !started else { return }
         started = true
+        await restoreSessionCookies()
         await open(home)
     }
 
     func open(_ target: URL, force: Bool = false) async {
         notice = nil
+        retryTask?.cancel(); retryTask = nil
+        wantedURL = target
+        loginRetried = false
         await MoodleAPI.shared.syncCookies()
-        let u = await MoodleAPI.shared.autologin(target, userid: userid, force: force)
-        webView.load(URLRequest(url: u))
+        let api = MoodleAPI.shared
+        let hasSession = await hasSessionCookie()
+        if !force && (hasSession || api.privateToken == nil || api.autologinWait > 0) {
+            webView.load(URLRequest(url: target))      // rely on the saved session
+        } else {
+            loginRetried = true                        // a failed key shouldn't trigger another one
+            let u = await api.autologin(target, userid: userid, force: true)
+            webView.load(URLRequest(url: u))
+        }
     }
 
     func goHome() { Task { await open(home) } }
@@ -80,26 +98,119 @@ final class SiteBrowser: NSObject, ObservableObject, WKNavigationDelegate, WKUID
         if webView.url == nil { goHome() } else { webView.reload() }
     }
 
+    private var resumeURL: URL { wantedURL ?? home }
+
     private func handleFinish(_ w: WKWebView) {
-        if let u = w.url, u.path.contains("/login/") {
+        guard let u = w.url else { return }
+        if u.path.contains("/login/") {
             if !loginRetried {
                 loginRetried = true
-                Task { await retryLogin() }
-            } else {
-                notice = "You're signed out. Sign in on this page, or tap Home in a few minutes to try automatic sign-in again."
+                Task { await recoverSession() }
+            } else if retryTask == nil {
+                notice = "You're signed out. Sign in on this page; the session is saved, so you shouldn't need to again for a while."
             }
         } else {
             loginRetried = false
-            Task { await MoodleAPI.shared.syncCookies() }   // share this login with the app's own page requests
+            retryTask?.cancel(); retryTask = nil
+            if u.host == Site.url.host { wantedURL = u }
+            Task {
+                await saveSessionCookies()
+                await MoodleAPI.shared.syncCookies()   // share this login with the app's own page requests
+            }
         }
     }
 
-    private func retryLogin() async {
-        let u = await MoodleAPI.shared.autologin(home, userid: userid, force: true)
+    // The saved session is gone or expired: get a key if allowed, otherwise wait and retry on our own.
+    private func recoverSession() async {
+        let api = MoodleAPI.shared
+        guard api.privateToken != nil else {
+            notice = "You're signed out. Sign in on this page; the session is saved, so you shouldn't need to again for a while."
+            return
+        }
+        let wait = api.autologinWait
+        if wait > 0 { waitAndRetry(after: wait + 5); return }
+        let u = await api.autologin(resumeURL, userid: userid, force: true)
         if u.path.contains("autologin") {
             webView.load(URLRequest(url: u))
         } else {
-            notice = "Automatic sign-in is limited to once every 6 minutes. Sign in on this page, or tap Home later."
+            waitAndRetry(after: 60)
+        }
+    }
+
+    private func waitAndRetry(after seconds: TimeInterval) {
+        retryTask?.cancel()
+        notice = "Automatic sign-in is on cooldown (Moodle allows one every 6 minutes). Retrying by itself, or sign in on this page."
+        retryTask = Task { [weak self] in
+            var delay = seconds
+            for _ in 0..<8 {
+                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                guard !Task.isCancelled, let self else { return }
+                let wait = MoodleAPI.shared.autologinWait
+                if wait > 0 { delay = wait + 5; continue }
+                let u = await MoodleAPI.shared.autologin(self.resumeURL, userid: self.userid, force: true)
+                if u.path.contains("autologin") {
+                    self.notice = nil
+                    self.retryTask = nil
+                    self.webView.load(URLRequest(url: u))
+                    return
+                }
+                delay = 60
+            }
+            self?.retryTask = nil
+        }
+    }
+
+    // ---- session cookies: kept in the Keychain so they survive the app being closed ----
+    // (WebKit drops cookies that have no expiry date when the app quits.)
+
+    private func hasSessionCookie() async -> Bool {
+        let all = await webView.configuration.websiteDataStore.httpCookieStore.allCookies()
+        return all.contains { $0.name.hasPrefix("MoodleSession") && ($0.expiresDate ?? .distantFuture) > Date() }
+    }
+
+    private func saveSessionCookies() async {
+        guard let host = Site.url.host else { return }
+        let all = await webView.configuration.websiteDataStore.httpCookieStore.allCookies()
+        let mine = all.filter { Self.belongs($0, to: host) }
+        guard !mine.isEmpty else { return }
+        CookieVault.save(mine.map {
+            StoredCookie(name: $0.name, value: $0.value, domain: $0.domain, path: $0.path,
+                         secure: $0.isSecure, httpOnly: $0.isHTTPOnly, expires: $0.expiresDate)
+        })
+    }
+
+    private func restoreSessionCookies() async {
+        let store = webView.configuration.websiteDataStore.httpCookieStore
+        let existing = await store.allCookies()
+        for c in CookieVault.load() {
+            if let e = c.expires, e < Date() { continue }
+            if existing.contains(where: { $0.name == c.name && $0.domain == c.domain && $0.path == c.path }) { continue }
+            var props: [HTTPCookiePropertyKey: Any] = [
+                .name: c.name, .value: c.value, .domain: c.domain, .path: c.path,
+                .expires: c.expires ?? Date().addingTimeInterval(7 * 86400)
+            ]
+            if c.secure { props[.secure] = "TRUE" }
+            if c.httpOnly { props[HTTPCookiePropertyKey("HttpOnly")] = "TRUE" }
+            if let cookie = HTTPCookie(properties: props) { await store.setCookie(cookie) }
+        }
+    }
+
+    private static func belongs(_ c: HTTPCookie, to host: String) -> Bool {
+        host.hasSuffix(c.domain.trimmingCharacters(in: CharacterSet(charactersIn: ".")))
+    }
+
+    /// Call when signing out: forgets the website login too, so the next person isn't signed in.
+    static func wipeSession() {
+        CookieVault.clear()
+        if let host = Site.url.host {
+            for c in HTTPCookieStorage.shared.cookies ?? [] where belongs(c, to: host) {
+                HTTPCookieStorage.shared.deleteCookie(c)
+            }
+        }
+        let store = WKWebsiteDataStore.default()
+        let types = WKWebsiteDataStore.allWebsiteDataTypes()
+        store.fetchDataRecords(ofTypes: types) { records in
+            store.removeData(ofTypes: types, for: records) {}
         }
     }
 
@@ -251,4 +362,45 @@ struct SiteBrowserView: View {
         .background(Theme.surface)
         .overlay(Rectangle().fill(Theme.line).frame(height: 1), alignment: .top)
     }
+}
+
+
+// MARK: - Cookie storage (Keychain)
+
+private struct StoredCookie: Codable {
+    var name: String
+    var value: String
+    var domain: String
+    var path: String
+    var secure: Bool
+    var httpOnly: Bool
+    var expires: Date?
+}
+
+private enum CookieVault {
+    private static var base: [String: Any] {
+        [kSecClass as String: kSecClassGenericPassword,
+         kSecAttrService as String: "italeem.site-cookies",
+         kSecAttrAccount as String: "session"]
+    }
+
+    static func save(_ list: [StoredCookie]) {
+        guard let data = try? JSONEncoder().encode(list) else { return }
+        SecItemDelete(base as CFDictionary)
+        var q = base
+        q[kSecValueData as String] = data
+        q[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        SecItemAdd(q as CFDictionary, nil)
+    }
+
+    static func load() -> [StoredCookie] {
+        var q = base
+        q[kSecReturnData as String] = true
+        q[kSecMatchLimit as String] = kSecMatchLimitOne
+        var out: AnyObject?
+        guard SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess, let d = out as? Data else { return [] }
+        return (try? JSONDecoder().decode([StoredCookie].self, from: d)) ?? []
+    }
+
+    static func clear() { SecItemDelete(base as CFDictionary) }
 }
