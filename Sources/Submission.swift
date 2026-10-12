@@ -176,10 +176,13 @@ extension MoodleAPI {
     // ---- Attendance (read-only, parsed from the website page) ----
     // Sessions / percentage are not in the web-service API, so the attendance page is fetched and parsed.
 
-    func fetchHTML(_ url: URL, userid: Int) async -> String? {
+    /// `allowAutologin: false` = only use the existing web session (cookies). Background work (the widget sync)
+    /// must pass false so it never uses up Moodle's one-key-per-6-minutes auto-login allowance.
+    func fetchHTML(_ url: URL, userid: Int, allowAutologin: Bool = true) async -> String? {
         func get(_ u: URL, _ tag: String) async -> String? {
             do {
-                let (d, r) = try await URLSession.shared.data(from: u)
+                // MoodleAPI.session sends the MoodleMobile User-Agent and shares the cookie storage
+                let (d, r) = try await MoodleAPI.session.data(from: u)
                 let code = (r as? HTTPURLResponse)?.statusCode ?? -1
                 await DebugLog.shared.add("\(tag): status \(code), final path \(r.url?.path ?? "nil"), \(d.count) bytes")
                 if (r.url?.path ?? "").contains("/login/") {
@@ -196,7 +199,12 @@ extension MoodleAPI {
         await DebugLog.shared.add("fetching path \(url.path)")
         await syncCookies()   // pick up a session the web views already have
         if let h = await get(url, "direct") { return h }
-        let al = await autologin(url, userid: userid, force: true)
+        guard allowAutologin else {
+            await DebugLog.shared.add("no web session, auto-login not allowed here")
+            return nil
+        }
+        // Not forced: respects the 6-minute cooldown so we don't burn a request Moodle will reject
+        let al = await autologin(url, userid: userid)
         await DebugLog.shared.add("autologin returned path \(al.path), same as input: \(al == url)")
         if al != url, let h = await get(al, "autologin") {
             await syncCookies()   // share the new session with the web views
@@ -207,10 +215,19 @@ extension MoodleAPI {
 
     // Moodle only gives out one auto-login key per 6 minutes, so a single login has to serve both the web views
     // (WKWebView cookies) and plain URLSession requests. This copies the session cookies in both directions.
+    // Moodle's session cookie is a session-only cookie (dies when the app is killed), so it is given a real
+    // expiry here so the web session survives relaunches.
     @MainActor
     func syncCookies() async {
         let store = WKWebsiteDataStore.default().httpCookieStore
-        for c in await store.allCookies() { HTTPCookieStorage.shared.setCookie(c) }
+        func persistent(_ c: HTTPCookie) -> HTTPCookie {
+            guard c.name.hasPrefix("MoodleSession"), c.expiresDate == nil else { return c }
+            var p = c.properties ?? [:]
+            p.removeValue(forKey: .discard)
+            p[.expires] = Date().addingTimeInterval(7 * 24 * 3600)
+            return HTTPCookie(properties: p) ?? c
+        }
+        for c in await store.allCookies() { HTTPCookieStorage.shared.setCookie(persistent(c)) }
         for c in HTTPCookieStorage.shared.cookies(for: Site.url) ?? [] { await store.setCookie(c) }
     }
 
@@ -605,7 +622,10 @@ struct AttendanceView: View {
         q.append(URLQueryItem(name: "view", value: "4"))   // 4 = all sessions
         c.queryItems = q
         guard let u = c.url, let html = await MoodleAPI.shared.fetchHTML(u, userid: uid) else {
-            note = "Couldn't load your attendance. Open any page in the Website tab to sign in, then pull down here to refresh."
+            let wait = MoodleAPI.shared.autologinWait
+            note = "Couldn't load your attendance." + (wait > 0
+                ? " Auto sign-in is on cooldown (about \(Int(wait / 60) + 1) min). Pull down to refresh after that."
+                : " Open any page in the Website tab to sign in, then pull down here to refresh.")
             debugText = await DebugLog.shared.text()
             return
         }
