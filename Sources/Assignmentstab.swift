@@ -151,14 +151,20 @@ final class AssignmentsModel: ObservableObject {
         if items.isEmpty { loading = true }
         error = nil
         do {
+            // Courses in progress, plus past ones: lecturers sometimes mark a running course as past.
             let cl: CourseList = try await MoodleAPI.shared.call(
                 "core_course_get_enrolled_courses_by_timeline_classification",
                 ["classification": "inprogress", "limit": 0, "offset": 0, "sort": "fullname"])
-            let names = Dictionary(cl.courses.map { ($0.id, $0.fullname) }, uniquingKeysWith: { a, _ in a })
-            guard !cl.courses.isEmpty else { items = []; loading = false; return }
+            let past: CourseList? = try? await MoodleAPI.shared.call(
+                "core_course_get_enrolled_courses_by_timeline_classification",
+                ["classification": "past", "limit": 0, "offset": 0, "sort": "fullname"])
+            var seen = Set<Int>()
+            let courses = (cl.courses + (past?.courses ?? [])).filter { seen.insert($0.id).inserted }
+            let names = Dictionary(courses.map { ($0.id, $0.fullname) }, uniquingKeysWith: { a, _ in a })
+            guard !courses.isEmpty else { items = []; loading = false; return }
 
             let r: AssignResp = try await MoodleAPI.shared.call(
-                "mod_assign_get_assignments", ["courseids": cl.courses.map { $0.id }])
+                "mod_assign_get_assignments", ["courseids": courses.map { $0.id }])
             var base: [(Assign, Int, String)] = []
             for c in r.courses {
                 for a in c.assignments { base.append((a, c.id, names[c.id] ?? "")) }
