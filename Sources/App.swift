@@ -9,6 +9,10 @@ enum Site {
 @main
 struct iTaleemApp: App {
     @StateObject private var app = AppState()
+    @StateObject private var todos = TodoStore()
+    @StateObject private var driveLib = DriveLibrary()
+    @StateObject private var driveAuth = DriveAuth()
+    @StateObject private var catalog = CourseCatalog()
     init() { Theme.applyAppearance() }
 
     var body: some Scene {
@@ -17,6 +21,11 @@ struct iTaleemApp: App {
                 if app.loggedIn { RootView() } else { LoginView() }
             }
             .environmentObject(app)
+            .environmentObject(todos)
+            .environmentObject(driveLib)
+            .environmentObject(driveAuth)
+            .environmentObject(catalog)
+            .onOpenURL { GoogleLink.handle($0) }   // Google sign-in redirect
             .preferredColorScheme(.dark)
             .tint(Theme.accent)
             .background(Theme.bg.ignoresSafeArea())
