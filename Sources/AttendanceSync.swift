@@ -20,7 +20,9 @@ extension MoodleAPI {
         return s.maxPercentValue
     }
 
-    // 2) Fallback: the website page, exactly like the attendance screen does it (needs the web session).
+    // 2) Fallback: the website page, using only the existing web session.
+    //    Background sync must NEVER request an auto-login key (allowAutologin: false), otherwise it
+    //    uses up Moodle's one-key-per-6-minutes allowance and the user gets logged out later.
     fileprivate func webMaxPercent(_ m: Module, uid: Int) async -> Double? {
         guard let base = m.url, !base.isEmpty else { return nil }
         func page(_ view: String?) -> URL? {
@@ -33,7 +35,7 @@ extension MoodleAPI {
         }
         var merged: AttSummary?
         for v in ["4", "5", nil] as [String?] {
-            guard let u = page(v), let html = await fetchHTML(u, userid: uid) else {
+            guard let u = page(v), let html = await fetchHTML(u, userid: uid, allowAutologin: false) else {
                 if merged == nil { return nil }   // not signed in on the web: don't keep trying
                 continue
             }
@@ -104,7 +106,7 @@ enum AttendanceSync {
             }
             for await (id, p) in group { if let p { percent[id] = p } }
         }
-        // Pass 2 (one at a time, so only one auto-login key is ever requested): website page
+        // Pass 2 (one at a time): website page using the existing web session only (never requests a key)
         for (_, m) in found where percent[m.id] == nil {
             if let p = await api.webMaxPercent(m, uid: userid) { percent[m.id] = p }
         }
