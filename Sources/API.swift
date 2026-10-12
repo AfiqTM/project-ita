@@ -268,6 +268,8 @@ struct Notif: Decodable, Identifiable {
     let timecreated: Int?
     let read: Bool?
     let contexturl: String?
+    let component: String?
+    let eventtype: String?
 }
 
 struct DiscResp: Decodable { let discussions: [Discussion] }
