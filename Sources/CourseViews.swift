@@ -366,16 +366,24 @@ struct ParticipantsView: View {
                 if let error { Text(error).font(.footnote).foregroundColor(Theme.muted) }
                 VStack(spacing: 0) {
                     ForEach(shown) { p in
-                        HStack(spacing: 12) {
-                            AsyncImage(url: p.profileimageurlsmall.flatMap { MoodleAPI.shared.fileURL($0) }) { i in
-                                i.resizable().scaledToFill()
-                            } placeholder: { Theme.surface2 }
-                            .frame(width: 34, height: 34).clipShape(Circle())
-                            Text(p.fullname).foregroundColor(Theme.txt)
-                            Spacer()
+                        NavigationLink {
+                            UserProfileView(userid: p.id, courseId: courseId, name: p.fullname,
+                                            imageURL: p.profileimageurlsmall)
+                        } label: {
+                            HStack(spacing: 12) {
+                                AsyncImage(url: p.profileimageurlsmall.flatMap { MoodleAPI.shared.fileURL($0) }) { i in
+                                    i.resizable().scaledToFill()
+                                } placeholder: { Theme.surface2 }
+                                .frame(width: 34, height: 34).clipShape(Circle())
+                                Text(p.fullname).foregroundColor(Theme.txt)
+                                Spacer()
+                                Image(systemName: "chevron.right").font(.caption).foregroundColor(Theme.muted)
+                            }
+                            .padding(12)
+                            .contentShape(Rectangle())
+                            .overlay(Rectangle().fill(Theme.line).frame(height: 1), alignment: .bottom)
                         }
-                        .padding(12)
-                        .overlay(Rectangle().fill(Theme.line).frame(height: 1), alignment: .bottom)
+                        .buttonStyle(.plain)
                     }
                 }
                 .glowCard()
