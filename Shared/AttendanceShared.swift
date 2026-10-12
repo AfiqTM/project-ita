@@ -8,6 +8,17 @@ struct AttendanceItem: Codable, Identifiable, Hashable {
     var id: Int            // attendance activity (cmid)
     var name: String       // subject
     var percent: Double    // maximum possible attendance, 0-100
+
+    /// Name without the "SEM1 BICS 1306 Section 04" prefix, e.g.
+    /// "SEM1 BICS 1306 Section 04 Digital & Embedded Systems" -> "Digital & Embedded Systems".
+    /// Computed only, so it is not part of the saved JSON. Falls back to the full name if stripping leaves nothing.
+    var displayName: String {
+        let pattern = "^\\s*(?:SEM\\s*\\d+\\s+)?[A-Z]{2,6}\\s*\\d{3,4}\\s+(?:SECTION\\s*\\d+\\s+)?"
+        let cleaned = name
+            .replacingOccurrences(of: pattern, with: "", options: [.regularExpression, .caseInsensitive])
+            .trimmingCharacters(in: .whitespaces)
+        return cleaned.isEmpty ? name : cleaned
+    }
 }
 
 struct AttendanceSnapshot: Codable {
@@ -15,9 +26,9 @@ struct AttendanceSnapshot: Codable {
     var updated: Date
 
     static let sample = AttendanceSnapshot(items: [
-        .init(id: 1, name: "Digital Embedded Systems", percent: 90),
-        .init(id: 2, name: "Software Engineering", percent: 96.7),
-        .init(id: 3, name: "Computer Networks", percent: 85)
+        .init(id: 1, name: "SEM1 BICS 1306 Section 04 Digital & Embedded Systems", percent: 90),
+        .init(id: 2, name: "SEM1 BICS 2306 Section 05 Software Engineering", percent: 96.7),
+        .init(id: 3, name: "SEM1 BIIT 2301 Section 04 User Experience Design", percent: 85)
     ], updated: Date())
 }
 
