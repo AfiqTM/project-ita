@@ -29,7 +29,8 @@ final class MoodleAPI {
         set { UserDefaults.standard.set(newValue.timeIntervalSince1970, forKey: "autologin.last") }
     }
     /// Seconds until Moodle will give out another auto-login key (0 = available now).
-    var autologinWait: TimeInterval { max(0, 360 - Date().timeIntervalSince(lastAutologin)) }
+    /// Uses 370s (not 360) as a safety margin for clock drift / server timing.
+    var autologinWait: TimeInterval { max(0, 370 - Date().timeIntervalSince(lastAutologin)) }
 
     // Moodle's autologin function (and some pages) only work for requests whose User-Agent
     // contains "MoodleMobile", which is how the site recognises the official app.
@@ -115,8 +116,8 @@ final class MoodleAPI {
             await DebugLog.shared.add("autologin: no private token stored")
             return target
         }
-        if !force && Date().timeIntervalSince(lastAutologin) <= 360 {
-            await DebugLog.shared.add("autologin: skipped, used less than 6 min ago")
+        if !force && autologinWait > 0 {
+            await DebugLog.shared.add("autologin: skipped, cooldown \(Int(autologinWait))s left")
             return target
         }
         do {
@@ -131,6 +132,11 @@ final class MoodleAPI {
                             URLQueryItem(name: "urltogo", value: target.absoluteString)]
             return c.url ?? target
         } catch {
+            // If Moodle says we're being rate-limited, remember that so we stop hammering it.
+            let msg = error.localizedDescription.lowercased()
+            if msg.contains("cooldown") || msg.contains("minute") || msg.contains("wait") || msg.contains("too many") {
+                lastAutologin = Date()
+            }
             await DebugLog.shared.add("autologin: key request failed: \(error.localizedDescription)")
             return target
         }
