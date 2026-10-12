@@ -46,6 +46,7 @@ struct RootView: View {
         .task(id: app.site?.userid) {
             if let uid = app.site?.userid { await assignments.load(uid: uid) }
         }
+        .task { await NotificationManager.shared.requestPermission() }
         // Home-screen widget data (maximum possible attendance per subject)
         .task(id: app.site?.userid) {
             if let uid = app.site?.userid { await AttendanceSync.refresh(userid: uid) }
@@ -55,15 +56,18 @@ struct RootView: View {
             guard let uid = app.site?.userid else { return }
             while !Task.isCancelled {
                 await notifs.refresh(uid: uid)
+                await NotificationManager.shared.checkIncoming(uid: uid)
                 try? await Task.sleep(nanoseconds: 60_000_000_000)
             }
         }
         .onChange(of: scenePhase) { phase in
+            if phase == .background { NotificationManager.shared.scheduleRefresh() }
             guard phase == .active, let uid = app.site?.userid else { return }
             Task {
                 await notifs.refresh(uid: uid)
                 await assignments.load(uid: uid)
                 await AttendanceSync.refresh(userid: uid)
+                await NotificationManager.shared.checkIncoming(uid: uid)
             }
         }
     }
