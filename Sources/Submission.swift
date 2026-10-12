@@ -103,6 +103,31 @@ struct AttSummary {
         maxPoints = "\(num(maxPts)) / \(num(allPts))"
         maxPercent = String(format: "%.1f%%", maxPts / allPts * 100)
     }
+
+    // The attendance level the student must not fall below
+    static let limitPercent = 80.0
+
+    /// How many of the remaining sessions can still be missed while the final result stays at or above
+    /// the limit, worked out from the maximum possible percentage (every session counts the same).
+    /// Negative = even perfect attendance from now on can't reach the limit. nil = not enough data.
+    func absencesLeft(limit: Double = AttSummary.limitPercent) -> Int? {
+        guard let total, total > 0 else { return nil }
+        var ratio: Double?
+        if let mp = maxPoints {
+            let parts = mp.split(separator: "/").map { Double($0.trimmingCharacters(in: .whitespaces)) }
+            if parts.count == 2, let a = parts[0], let b = parts[1], b > 0 { ratio = a / b }
+        }
+        if ratio == nil, let mpct = maxPercent,
+           let v = Double(mpct.replacingOccurrences(of: "%", with: "").trimmingCharacters(in: .whitespaces)) {
+            ratio = v / 100
+        }
+        guard let r = ratio else { return nil }
+        let slack = (r - limit / 100) * Double(total)      // sessions' worth of points above the limit
+        if slack < -1e-6 { return -1 }
+        var k = Int((slack + 1e-6).rounded(.down))
+        if let taken, total >= taken { k = min(k, total - taken) }
+        return k
+    }
 }
 
 // MARK: - API helpers
@@ -513,10 +538,43 @@ struct AttendanceView: View {
                         Text("\(k) of \(t) sessions taken").font(.caption).foregroundColor(Theme.muted)
                     }
                 }
+                if let k = s.absencesLeft() { absenceRow(k, s) }
             }
             .padding(16).frame(maxWidth: .infinity, alignment: .leading)
             .glowCard()
         }
+    }
+
+    // How many absences are left before the final attendance would fall below 80%
+    private func absenceRow(_ k: Int, _ s: AttSummary) -> some View {
+        let limit = Int(AttSummary.limitPercent)
+        let color: Color = k < 0 ? Tone.red : (k == 0 ? Tone.amber : Tone.green)
+        let remaining: Int? = (s.total != nil && s.taken != nil) ? max(0, s.total! - s.taken!) : nil
+        let title: String
+        let detail: String
+        if k < 0 {
+            title = "Below \(limit)% even with full attendance"
+            detail = "The most you can reach is \(s.maxPercent ?? "-")."
+        } else if k == 0 {
+            title = "No absences to spare"
+            detail = "Your next absence takes you below \(limit)%."
+        } else {
+            title = "\(k) absence\(k == 1 ? "" : "s") available"
+            detail = "Miss more than that and you drop below \(limit)%"
+                + (remaining.map { " (\($0) sessions left)." } ?? ".")
+        }
+        return HStack(spacing: 12) {
+            Text(k < 0 ? "!" : "\(k)")
+                .font(.title.bold()).foregroundColor(color).frame(minWidth: 34)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.subheadline.weight(.semibold)).foregroundColor(Theme.txt)
+                Text(detail).font(.caption).foregroundColor(Theme.muted)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .background(color.opacity(0.12))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
     // ---- summary ----
