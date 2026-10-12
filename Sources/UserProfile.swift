@@ -341,44 +341,56 @@ private enum PhotoCache { static let store = NSCache<NSURL, UIImage>() }
 struct RemoteImage<Placeholder: View>: View {
     let candidates: [URL]
     var contentMode: ContentMode
+    var minPixels: CGFloat
     let placeholder: (Bool) -> Placeholder      // Bool = every candidate failed
     @State private var image: UIImage?
     @State private var failed = false
 
-    init(candidates: [URL], contentMode: ContentMode = .fill,
+    init(candidates: [URL], contentMode: ContentMode = .fill, minPixels: CGFloat = 0,
          @ViewBuilder placeholder: @escaping (Bool) -> Placeholder) {
         self.candidates = candidates
         self.contentMode = contentMode
+        self.minPixels = minPixels
         self.placeholder = placeholder
     }
 
     var body: some View {
         Group {
-            if let image { Image(uiImage: image).resizable().aspectRatio(contentMode: contentMode) }
+            if let image {
+                Image(uiImage: image).resizable().interpolation(.high).aspectRatio(contentMode: contentMode)
+            }
             else { placeholder(failed) }
         }
         .task(id: candidates) { await load() }
     }
 
+    private func pixelWidth(_ i: UIImage) -> CGFloat { i.size.width * i.scale }
+
+    /// Walks the candidates best-first (cache, then network). The first image that is sharp enough
+    /// (>= minPixels wide) wins; a smaller one is only kept as a fallback, so a tiny thumbnail never
+    /// sticks when a better version is available.
     private func load() async {
         image = nil; failed = false
+        var best: UIImage?
         for u in candidates {
-            if let c = PhotoCache.store.object(forKey: u as NSURL) { image = c; return }
-        }
-        for u in candidates {
-            do {
-                let (d, r) = try await MoodleAPI.session.data(from: u)
-                if let h = r as? HTTPURLResponse, h.statusCode != 200 { continue }
-                if let img = UIImage(data: d) {
-                    PhotoCache.store.setObject(img, forKey: u as NSURL)
-                    image = img
-                    return
+            var img = PhotoCache.store.object(forKey: u as NSURL)
+            if img == nil {
+                do {
+                    let (d, r) = try await MoodleAPI.session.data(from: u)
+                    if let h = r as? HTTPURLResponse, h.statusCode != 200 { continue }
+                    if let got = UIImage(data: d) {
+                        PhotoCache.store.setObject(got, forKey: u as NSURL)
+                        img = got
+                    }
+                } catch {
+                    if error is CancellationError || (error as? URLError)?.code == .cancelled { return }
                 }
-            } catch {
-                if error is CancellationError || (error as? URLError)?.code == .cancelled { return }
             }
+            guard let img else { continue }
+            if pixelWidth(img) >= minPixels { image = img; return }
+            if best == nil || pixelWidth(img) > pixelWidth(best!) { best = img }
         }
-        failed = true
+        if let best { image = best } else { failed = true }
     }
 }
 
@@ -396,7 +408,9 @@ struct ProfilePhoto: View {
         ZStack {
             Circle().fill(Theme.surface2)
             Text(initials).font(.system(size: size * 0.36, weight: .semibold)).foregroundColor(Theme.accent)
-            RemoteImage(candidates: PhotoURL.candidates(urls, size: "f1")) { _ in Color.clear }
+            // f3 (large) first so it stays sharp on 3x screens; f1 / the list thumbnail are fallbacks
+            RemoteImage(candidates: PhotoURL.candidates(urls, size: "f3") + PhotoURL.candidates(urls, size: "f1"),
+                        minPixels: size * UIScreen.main.scale) { _ in Color.clear }
                 .frame(width: size, height: size)
                 .clipped()
         }
