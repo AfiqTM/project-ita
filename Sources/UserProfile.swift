@@ -1,0 +1,311 @@
+import SwiftUI
+
+// Profile screen for another student (opened from a course's Participants list), modelled on the
+// Moodle website profile: header + Message button, stats, and About Me / Courses / More Details tabs.
+// Uses only the web-service token. Fields the site hides from students simply don't appear.
+
+// MARK: - Models (all optional: what you can see depends on the site's privacy settings)
+
+struct UPField: Decodable { let name: String?; let value: String?; let shortname: String? }
+struct UPGroup: Decodable { let id: Int?; let name: String? }
+struct UPRole: Decodable { let roleid: Int?; let name: String?; let shortname: String? }
+struct UPCourse: Decodable, Identifiable { let id: Int; let fullname: String?; let shortname: String? }
+struct UPBadge: Decodable, Identifiable { let id: Int; let name: String?; let badgeurl: String? }
+struct UPBadges: Decodable { let badges: [UPBadge]? }
+
+struct UserProfileData: Decodable {
+    let id: Int
+    let fullname: String?
+    let firstname: String?
+    let lastname: String?
+    let email: String?
+    let department: String?
+    let institution: String?
+    let city: String?
+    let country: String?
+    let address: String?
+    let phone1: String?
+    let phone2: String?
+    let interests: String?
+    let description: String?
+    let firstaccess: Int?
+    let lastaccess: Int?
+    let profileimageurl: String?
+    let customfields: [UPField]?
+    let groups: [UPGroup]?
+    let roles: [UPRole]?
+    let enrolledcourses: [UPCourse]?
+}
+
+private enum ProfTab: String, CaseIterable, Identifiable {
+    case about = "About Me", courses = "Courses", more = "More Details"
+    var id: String { rawValue }
+}
+
+// MARK: - View
+
+struct UserProfileView: View {
+    let userid: Int
+    var courseId = 0
+    let name: String
+    var imageURL: String? = nil
+
+    @EnvironmentObject var app: AppState
+    @State private var p: UserProfileData?
+    @State private var badges: [UPBadge] = []
+    @State private var tab: ProfTab = .about
+    @State private var loading = true
+    @State private var note: String?
+
+    private var myId: Int { app.site?.userid ?? 0 }
+    private var displayName: String { p?.fullname ?? name }
+
+    private static let df: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "EEEE, d MMMM yyyy, h:mm a"; return f
+    }()
+    private func dateText(_ ts: Int?) -> String {
+        guard let ts, ts > 0 else { return "Never" }
+        return Self.df.string(from: Date(timeIntervalSince1970: TimeInterval(ts)))
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                header
+                if userid != myId { messageButton }
+                statsCard
+                tabBar
+                switch tab {
+                case .about: aboutTab
+                case .courses: coursesTab
+                case .more: moreTab
+                }
+                if let note { Text(note).font(.footnote).foregroundColor(Theme.muted) }
+                if loading { ProgressView().tint(Theme.accent).frame(maxWidth: .infinity) }
+            }
+            .padding(16)
+        }
+        .background(Theme.bg.ignoresSafeArea())
+        .navigationTitle("Profile")
+        .navigationBarTitleDisplayMode(.inline)
+        .refreshable { await load() }
+        .task { await load() }
+    }
+
+    // ---- header ----
+
+    private var header: some View {
+        HStack(alignment: .center, spacing: 16) {
+            ChatAvatar(name: displayName, url: p?.profileimageurl ?? imageURL, size: 84)
+                .overlay(Circle().stroke(Theme.line, lineWidth: 1))
+            VStack(alignment: .leading, spacing: 8) {
+                Text(displayName).font(.title3.bold()).foregroundColor(Theme.txt)
+                if let la = p?.lastaccess {
+                    (Text("Last access ").fontWeight(.semibold) + Text(dateText(la)))
+                        .font(.caption).foregroundColor(Theme.muted)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private var messageButton: some View {
+        NavigationLink {
+            ChatOpenView(userid: userid, name: displayName, imageURL: p?.profileimageurl ?? imageURL)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "message")
+                Text("Message")
+            }
+            .fontWeight(.semibold).foregroundColor(.black)
+            .frame(maxWidth: .infinity).padding(.vertical, 12)
+            .background(Theme.accent)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+        }
+        .buttonStyle(.plain)
+    }
+
+    // ---- stats ----
+
+    private var statsCard: some View {
+        HStack {
+            stat(p?.enrolledcourses?.count ?? 0, "Courses")
+            stat(p?.groups?.count ?? 0, "Groups")
+            stat(badges.count, "Badges")
+        }
+        .padding(.vertical, 16)
+        .glowCard()
+    }
+
+    private func stat(_ n: Int, _ label: String) -> some View {
+        VStack(spacing: 4) {
+            Text("\(n)").font(.title.bold()).foregroundColor(Theme.txt)
+            Text(label).font(.caption).foregroundColor(Theme.muted)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    // ---- tabs ----
+
+    private var tabBar: some View {
+        HStack(spacing: 22) {
+            ForEach(ProfTab.allCases) { t in
+                Button { tab = t } label: {
+                    VStack(spacing: 6) {
+                        Text(t.rawValue)
+                            .fontWeight(tab == t ? .semibold : .regular)
+                            .foregroundColor(tab == t ? Theme.accent : Theme.txt)
+                        Rectangle().fill(tab == t ? Theme.accent : Color.clear).frame(height: 2)
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+            Spacer()
+        }
+        .overlay(Rectangle().fill(Theme.line).frame(height: 1), alignment: .bottom)
+    }
+
+    private func fieldView(_ k: String, _ v: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(k).font(.subheadline.weight(.semibold)).foregroundColor(Theme.txt)
+            Text(v).font(.subheadline).foregroundColor(Theme.muted).textSelection(.enabled)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func clean(_ s: String?) -> String? {
+        guard let t = s?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty else { return nil }
+        return t
+    }
+
+    // About Me
+
+    private var shortFields: [(String, String)] {
+        guard let p else { return [] }
+        var f: [(String, String)] = []
+        func add(_ k: String, _ v: String?) { if let t = clean(v) { f.append((k, t)) } }
+        add("First name", p.firstname)
+        add("Last name", p.lastname)
+        add("Department", p.department)
+        add("Institution", p.institution)
+        add("City/town", p.city)
+        if let c = clean(p.country) { add("Country", Locale.current.localizedString(forRegionCode: c) ?? c) }
+        add("Phone", p.phone1)
+        add("Mobile", p.phone2)
+        return f
+    }
+
+    private var wideFields: [(String, String)] {
+        guard let p else { return [] }
+        var f: [(String, String)] = []
+        func add(_ k: String, _ v: String?) { if let t = clean(v) { f.append((k, t)) } }
+        add("Email address", p.email)
+        add("Address", p.address)
+        add("Interests", p.interests)
+        return f
+    }
+
+    @ViewBuilder private var aboutTab: some View {
+        let desc = clean(p?.description?.plainText)
+        if shortFields.isEmpty && wideFields.isEmpty && desc == nil {
+            if !loading { Text("Nothing to show here.").foregroundColor(Theme.muted) }
+        } else {
+            VStack(alignment: .leading, spacing: 18) {
+                if let desc { fieldView("About", desc) }
+                if !wideFields.isEmpty {
+                    ForEach(wideFields, id: \.0) { f in fieldView(f.0, f.1) }
+                }
+                LazyVGrid(columns: [GridItem(.flexible(), alignment: .topLeading),
+                                    GridItem(.flexible(), alignment: .topLeading)],
+                          alignment: .leading, spacing: 18) {
+                    ForEach(shortFields, id: \.0) { f in fieldView(f.0, f.1) }
+                }
+            }
+            .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+            .glowCard()
+        }
+    }
+
+    // Courses
+
+    @ViewBuilder private var coursesTab: some View {
+        let list = p?.enrolledcourses ?? []
+        if list.isEmpty {
+            if !loading { Text("No courses to show.").foregroundColor(Theme.muted) }
+        } else {
+            VStack(spacing: 0) {
+                ForEach(list) { c in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(c.fullname ?? c.shortname ?? "Course").foregroundColor(Theme.txt)
+                        if let s = c.shortname, s != c.fullname {
+                            Text(s).font(.caption).foregroundColor(Theme.muted)
+                        }
+                    }
+                    .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+                    .overlay(Rectangle().fill(Theme.line).frame(height: 1), alignment: .bottom)
+                }
+            }
+            .glowCard()
+        }
+    }
+
+    // More Details
+
+    private var moreRows: [(String, String)] {
+        var f: [(String, String)] = []
+        if let p {
+            let roles = (p.roles ?? []).compactMap { r -> String? in
+                let n = (r.name?.isEmpty == false ? r.name : r.shortname)
+                return n?.capitalized
+            }
+            if !roles.isEmpty { f.append(("Roles", roles.joined(separator: ", "))) }
+            let groups = (p.groups ?? []).compactMap { clean($0.name) }
+            if !groups.isEmpty { f.append(("Groups", groups.joined(separator: ", "))) }
+            f.append(("First access to site", dateText(p.firstaccess)))
+            f.append(("Last access to site", dateText(p.lastaccess)))
+            for cf in p.customfields ?? [] {
+                if let n = clean(cf.name), let v = clean(cf.value?.plainText) { f.append((n, v)) }
+            }
+        }
+        let b = badges.compactMap { clean($0.name) }
+        if !b.isEmpty { f.append(("Badges", b.joined(separator: ", "))) }
+        return f
+    }
+
+    @ViewBuilder private var moreTab: some View {
+        let rows = moreRows
+        if rows.isEmpty {
+            if !loading { Text("Nothing to show here.").foregroundColor(Theme.muted) }
+        } else {
+            VStack(alignment: .leading, spacing: 18) {
+                ForEach(rows, id: \.0) { f in fieldView(f.0, f.1) }
+            }
+            .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+            .glowCard()
+        }
+    }
+
+    // ---- loading ----
+
+    private func load() async {
+        defer { loading = false }
+        var got: UserProfileData?
+        if courseId > 0 {
+            let r: [UserProfileData]? = try? await MoodleAPI.shared.call(
+                "core_user_get_course_user_profiles",
+                ["userlist": [["userid": userid, "courseid": courseId]]])
+            got = r?.first
+        }
+        if got == nil {
+            let r: [UserProfileData]? = try? await MoodleAPI.shared.call(
+                "core_user_get_users_by_field", ["field": "id", "values": [userid]])
+            got = r?.first
+        }
+        if let got { p = got; note = nil }
+        else if p == nil { note = "More details aren't available for this person." }
+
+        if let b: UPBadges = try? await MoodleAPI.shared.call("core_badges_get_user_badges", ["userid": userid]) {
+            badges = b.badges ?? []
+        }
+    }
+}
