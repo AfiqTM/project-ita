@@ -302,7 +302,9 @@ struct ChatListView: View {
 
 struct ChatThreadView: View {
     let conv: ChatConv
+    let toUser: Int?          // set when this chat may not exist yet (opened from a profile)
     @EnvironmentObject var app: AppState
+    @State private var convId: Int
     @State private var msgs: [ChatMsg] = []
     @State private var names: [Int: String] = [:]
     @State private var draft = ""
@@ -313,6 +315,12 @@ struct ChatThreadView: View {
     @State private var hasMore = false
 
     private var uid: Int { app.site?.userid ?? 0 }
+
+    init(conv: ChatConv, toUser: Int? = nil) {
+        self.conv = conv
+        self.toUser = toUser
+        _convId = State(initialValue: conv.id)
+    }
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -425,11 +433,11 @@ struct ChatThreadView: View {
     }
 
     private func load(silent: Bool = false) async {
-        guard uid > 0 else { return }
+        guard uid > 0, convId > 0 else { loading = false; return }
         do {
             let r: ChatThreadResp = try await MoodleAPI.shared.call(
                 "core_message_get_conversation_messages",
-                ["currentuserid": uid, "convid": conv.id, "limitfrom": 0, "limitnum": limit, "newest": 1])
+                ["currentuserid": uid, "convid": convId, "limitfrom": 0, "limitnum": limit, "newest": 1])
             for mem in r.members ?? [] { if let n = mem.fullname { names[mem.id] = n } }
             let got = r.messages ?? []
             merge(got)
@@ -444,8 +452,9 @@ struct ChatThreadView: View {
     }
 
     private func markRead() async {
+        guard convId > 0 else { return }
         _ = try? await MoodleAPI.shared.raw("core_message_mark_all_conversation_messages_as_read",
-                                            ["userid": uid, "conversationid": conv.id])
+                                            ["userid": uid, "conversationid": convId])
         await ChatStore.shared.refreshBadge(userid: uid)
     }
 
@@ -454,14 +463,78 @@ struct ChatThreadView: View {
         guard !t.isEmpty, !sending else { return }
         sending = true; error = nil
         do {
-            let sent: [ChatMsg] = try await MoodleAPI.shared.call(
-                "core_message_send_messages_to_conversation",
-                ["conversationid": conv.id, "messages": [["text": t, "textformat": 0]]])
-            draft = ""
-            merge(sent)
+            if convId == 0, let to = toUser {
+                // First message of a brand-new chat: sending it also creates the conversation.
+                let data = try await MoodleAPI.shared.raw(
+                    "core_message_send_instant_messages",
+                    ["messages": [["touserid": to, "text": t, "textformat": 0]]])
+                guard let arr = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]],
+                      let o = arr.first else { throw APIError(message: "Unexpected reply from the site") }
+                if let e = o["errormessage"] as? String, !e.isEmpty { throw APIError(message: e.plainText) }
+                if let cid = o["conversationid"] as? Int, cid > 0 {
+                    convId = cid
+                } else if let found: ChatConv = try? await MoodleAPI.shared.call(
+                    "core_message_get_conversation_between_users",
+                    ["userid": uid, "otheruserid": to, "includecontactrequests": 0, "includeprivacyinfo": 0,
+                     "memberlimit": 0, "memberoffset": 0, "messagelimit": 0, "messageoffset": 0,
+                     "newestmessagefirst": 1]) {
+                    convId = found.id
+                }
+                draft = ""
+                merge([ChatMsg(id: (o["msgid"] as? Int) ?? 0, useridfrom: uid, text: t,
+                               timecreated: (o["timecreated"] as? Int) ?? Int(Date().timeIntervalSince1970))])
+                await load(silent: true)
+            } else {
+                let sent: [ChatMsg] = try await MoodleAPI.shared.call(
+                    "core_message_send_messages_to_conversation",
+                    ["conversationid": convId, "messages": [["text": t, "textformat": 0]]])
+                draft = ""
+                merge(sent)
+            }
         } catch {
             self.error = "Couldn't send: " + error.localizedDescription
         }
         sending = false
+    }
+}
+
+// MARK: - Open (or start) a chat with one person - used by the profile's Message button
+
+struct ChatOpenView: View {
+    let userid: Int
+    let name: String
+    var imageURL: String? = nil
+    @EnvironmentObject var app: AppState
+    @State private var conv: ChatConv?
+
+    var body: some View {
+        Group {
+            if let conv {
+                ChatThreadView(conv: conv, toUser: userid)
+            } else {
+                ProgressView().tint(Theme.accent)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Theme.bg.ignoresSafeArea())
+            }
+        }
+        .task { await find() }
+    }
+
+    private func find() async {
+        let uid = app.site?.userid ?? 0
+        do {
+            let r: ChatConv = try await MoodleAPI.shared.call(
+                "core_message_get_conversation_between_users",
+                ["userid": uid, "otheruserid": userid, "includecontactrequests": 0, "includeprivacyinfo": 0,
+                 "memberlimit": 0, "memberoffset": 0, "messagelimit": 0, "messageoffset": 0,
+                 "newestmessagefirst": 1])
+            conv = ChatConv(id: r.id, name: name, subname: r.subname, imageurl: r.imageurl ?? imageURL,
+                            type: r.type ?? 1, membercount: r.membercount, unreadcount: r.unreadcount,
+                            members: r.members, messages: nil)
+        } catch {
+            // no conversation yet: the thread opens empty and the first message creates it
+            conv = ChatConv(id: 0, name: name, subname: nil, imageurl: imageURL, type: 1,
+                            membercount: 2, unreadcount: 0, members: nil, messages: nil)
+        }
     }
 }
