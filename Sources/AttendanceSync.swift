@@ -1,7 +1,7 @@
 import Foundation
 import WidgetKit
 
-// APP TARGET ONLY. Works out the maximum possible attendance of every in-progress subject that has an
+// APP TARGET ONLY. Works out the maximum possible attendance of every in-progress AND past subject that has an
 // attendance activity, and hands the result to the widget. Reuses the app's existing attendance code
 // (attendanceMobileContent, fetchHTML, parseAttendance, AttSummary.fillMax) without changing it.
 
@@ -71,16 +71,26 @@ enum AttendanceSync {
 
         let api = MoodleAPI.shared
 
-        // Subjects being taken now (falls back to every enrolled course if the site has no course dates)
+        // Subjects being taken now PLUS past ones (a lecturer may have put a subject under "past" by mistake).
+        // Falls back to every enrolled course if the site has no course dates.
         func fetchCourses(_ cls: String) async throws -> [Course] {
             let r: CourseList = try await api.call("core_course_get_enrolled_courses_by_timeline_classification",
                                                    ["classification": cls, "limit": 0, "offset": 0, "sort": "fullname"])
             return r.courses
         }
         var courses: [Course]
+        var currentIDs = Set<Int>()
         do {
             courses = try await fetchCourses("inprogress")
-            if courses.isEmpty { courses = try await fetchCourses("all") }
+            currentIDs = Set(courses.map { $0.id })
+            // a failure here only means no past subjects this time; it shouldn't drop the current ones
+            let past = (try? await fetchCourses("past")) ?? []
+            let have = currentIDs
+            courses += past.filter { !have.contains($0.id) }
+            if courses.isEmpty {
+                courses = try await fetchCourses("all")
+                currentIDs = Set(courses.map { $0.id })
+            }
         } catch { return }   // offline / signed out: keep whatever the widget already has
 
         // Attendance activities of each course
@@ -116,14 +126,19 @@ enum AttendanceSync {
                             uniquingKeysWith: { a, _ in a })
         let perCourse = Dictionary(grouping: found, by: { $0.0.id }).mapValues { $0.count }
 
-        var items: [AttendanceItem] = []
+        var entries: [(isCurrent: Bool, item: AttendanceItem)] = []
         for (c, m) in found {
             guard let p = percent[m.id] ?? old[m.id] else { continue }   // subject with attendance but no readable data: left out
             var name = cleanName(c.fullname.decodedEntities)
             if (perCourse[c.id] ?? 1) > 1 { name += " · " + m.name }
-            items.append(AttendanceItem(id: m.id, name: name, percent: p))
+            entries.append((currentIDs.contains(c.id), AttendanceItem(id: m.id, name: name, percent: p)))
         }
-        items.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        // Current subjects first, then past ones, so past subjects never push current ones off the widget
+        entries.sort {
+            if $0.isCurrent != $1.isCurrent { return $0.isCurrent }
+            return $0.item.name.localizedCaseInsensitiveCompare($1.item.name) == .orderedAscending
+        }
+        let items = entries.map { $0.item }
 
         AttendanceStore.save(AttendanceSnapshot(items: items, updated: Date()))
         lastRun = Date()
