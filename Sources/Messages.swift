@@ -298,7 +298,7 @@ struct ChatListView: View {
     }
 }
 
-// MARK: - Thread (read + reply)
+// MARK: - Thread (read + reply + select + delete for me)
 
 struct ChatThreadView: View {
     let conv: ChatConv
@@ -314,7 +314,22 @@ struct ChatThreadView: View {
     @State private var limit = 50
     @State private var hasMore = false
 
+    // selection / delete
+    @State private var selecting = false
+    @State private var selected: Set<Int> = []
+    @State private var confirmDelete = false
+    @State private var deleting = false
+    @FocusState private var inputFocused: Bool
+
     private var uid: Int { app.site?.userid ?? 0 }
+
+    /// Slightly lighter than the page / input bar so the other person's bubble stands out.
+    private var theirBubble: some View {
+        ZStack {
+            Theme.surface2
+            Color.white.opacity(0.10)
+        }
+    }
 
     init(conv: ChatConv, toUser: Int? = nil) {
         self.conv = conv
@@ -325,7 +340,7 @@ struct ChatThreadView: View {
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(spacing: 6) {
+                LazyVStack(spacing: 0) {
                     if hasMore {
                         Button("Load earlier messages") {
                             limit += 50
@@ -337,12 +352,18 @@ struct ChatThreadView: View {
                         ProgressView().tint(Theme.accent).padding(.top, 40)
                     }
                     ForEach(Array(msgs.enumerated()), id: \.element.id) { i, m in
-                        if i == 0 || !ChatTime.sameDay(msgs[i - 1].timecreated, m.timecreated) {
+                        let prev: ChatMsg? = i > 0 ? msgs[i - 1] : nil
+                        let next: ChatMsg? = i < msgs.count - 1 ? msgs[i + 1] : nil
+                        if prev == nil || !ChatTime.sameDay(prev?.timecreated, m.timecreated) {
                             Text(ChatTime.dayLabel(m.timecreated))
-                                .font(.caption).foregroundColor(Theme.muted)
-                                .frame(maxWidth: .infinity).padding(.vertical, 8)
+                                .font(.caption.weight(.medium)).foregroundColor(Theme.muted)
+                                .padding(.horizontal, 12).padding(.vertical, 4)
+                                .background(Theme.surface2.opacity(0.7))
+                                .clipShape(Capsule())
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 10)
                         }
-                        bubble(m, prev: i > 0 ? msgs[i - 1] : nil)
+                        row(m, prev: prev, next: next)
                     }
                     if let error {
                         Text(error).font(.footnote).foregroundColor(.red.opacity(0.85))
@@ -352,14 +373,51 @@ struct ChatThreadView: View {
                 }
                 .padding(.horizontal, 14).padding(.vertical, 10)
             }
+            .scrollDismissesKeyboard(.interactively)
             .onChange(of: msgs.last?.id) { _ in
-                proxy.scrollTo("bottom", anchor: .bottom)
+                withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("bottom", anchor: .bottom) }
+            }
+            .onChange(of: inputFocused) { focused in
+                if focused {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
+                    }
+                }
             }
         }
         .background(Theme.bg.ignoresSafeArea())
-        .navigationTitle(conv.title)
+        .navigationTitle(selecting ? "\(selected.count) selected" : conv.title)
         .navigationBarTitleDisplayMode(.inline)
-        .safeAreaInset(edge: .bottom) { inputBar }
+        .navigationBarBackButtonHidden(selecting)
+        .toolbar(.hidden, for: .tabBar)      // no tab bar when opened from a profile
+        .toolbar {
+            if selecting {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") { endSelecting() }.foregroundColor(Theme.accent)
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button { confirmDelete = true } label: {
+                        Image(systemName: "trash")
+                    }
+                    .foregroundColor(selected.isEmpty ? Theme.muted : .red.opacity(0.9))
+                    .disabled(selected.isEmpty || deleting)
+                }
+            } else if msgs.contains(where: { $0.id > 0 }) {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Select") { startSelecting(nil) }.foregroundColor(Theme.accent)
+                }
+            }
+        }
+        .confirmationDialog(
+            "Delete \(selected.count) message\(selected.count == 1 ? "" : "s") for you?",
+            isPresented: $confirmDelete, titleVisibility: .visible
+        ) {
+            Button("Delete for me", role: .destructive) { Task { await deleteSelected() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This only removes it from your view. The other person will still see it.")
+        }
+        .safeAreaInset(edge: .bottom) { if !selecting { inputBar } }
         .task {
             await load()
             await markRead()
@@ -370,24 +428,70 @@ struct ChatThreadView: View {
         }
     }
 
-    // ---- bubbles ----
+    // ---- rows & bubbles ----
 
-    private func bubble(_ m: ChatMsg, prev: ChatMsg?) -> some View {
+    private func row(_ m: ChatMsg, prev: ChatMsg?, next: ChatMsg?) -> some View {
+        let isSel = selected.contains(m.id)
+        let sameGroup = prev != nil && prev?.useridfrom == m.useridfrom
+            && ChatTime.sameDay(prev?.timecreated, m.timecreated)
+        return HStack(spacing: 10) {
+            if selecting {
+                Image(systemName: isSel ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundColor(isSel ? Theme.accent : Theme.muted)
+            }
+            bubble(m, prev: prev, next: next)
+        }
+        .padding(.top, sameGroup ? 2 : 10)
+        .padding(.vertical, 1)
+        .background(isSel ? Theme.accent.opacity(0.12) : Color.clear)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if selecting { toggle(m) } else if inputFocused { inputFocused = false }
+        }
+        .contextMenu {
+            if !selecting {
+                Button {
+                    UIPasteboard.general.string = (m.text ?? "").plainText
+                } label: { Label("Copy", systemImage: "doc.on.doc") }
+                if m.id > 0 {
+                    Button { startSelecting(m) } label: { Label("Select", systemImage: "checkmark.circle") }
+                    Button(role: .destructive) {
+                        selected = [m.id]
+                        confirmDelete = true
+                    } label: { Label("Delete for me", systemImage: "trash") }
+                }
+            }
+        }
+    }
+
+    private func bubble(_ m: ChatMsg, prev: ChatMsg?, next: ChatMsg?) -> some View {
         let mine = m.useridfrom == uid
         let text = (m.text ?? "").plainText
         let showName = !mine && conv.type == 2 && prev?.useridfrom != m.useridfrom
+        let lastInGroup = next == nil || next?.useridfrom != m.useridfrom
+            || !ChatTime.sameDay(next?.timecreated, m.timecreated)
         return VStack(alignment: mine ? .trailing : .leading, spacing: 2) {
             if showName, let id = m.useridfrom, let n = names[id] {
-                Text(n).font(.caption).foregroundColor(Theme.muted).padding(.horizontal, 4)
+                Text(n).font(.caption.weight(.medium)).foregroundColor(Theme.accent.opacity(0.85))
+                    .padding(.horizontal, 4)
             }
             Text(text)
                 .foregroundColor(mine ? .black : Theme.txt)
-                .padding(.horizontal, 12).padding(.vertical, 8)
-                .background(mine ? Theme.accent : Theme.surface2)
-                .clipShape(RoundedRectangle(cornerRadius: 16))
-                .textSelection(.enabled)
-            Text(ChatTime.timeOnly(m.timecreated))
-                .font(.system(size: 10)).foregroundColor(Theme.muted).padding(.horizontal, 4)
+                .padding(.horizontal, 13).padding(.vertical, 9)
+                .background {
+                    if mine { Theme.accent } else { theirBubble }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(mine ? Color.clear : Color.white.opacity(0.08), lineWidth: 1)
+                )
+            if lastInGroup {
+                Text(ChatTime.timeOnly(m.timecreated))
+                    .font(.system(size: 10)).foregroundColor(Theme.muted).padding(.horizontal, 4)
+                    .padding(.top, 1)
+            }
         }
         .padding(mine ? .leading : .trailing, 48)
         .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
@@ -397,12 +501,29 @@ struct ChatThreadView: View {
 
     private var inputBar: some View {
         HStack(alignment: .bottom, spacing: 10) {
-            TextField("Message", text: $draft, axis: .vertical)
+            TextField("", text: $draft,
+                      prompt: Text("Message").foregroundColor(Theme.muted),
+                      axis: .vertical)
                 .lineLimit(1...5)
+                .focused($inputFocused)
                 .foregroundColor(Theme.txt)
+                .tint(Theme.accent)
                 .padding(.horizontal, 14).padding(.vertical, 10)
                 .background(Theme.surface2)
-                .clipShape(RoundedRectangle(cornerRadius: 20))
+                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .stroke(inputFocused ? Theme.accent.opacity(0.5) : Theme.line, lineWidth: 1))
+            if inputFocused {
+                Button { inputFocused = false } label: {
+                    Image(systemName: "keyboard.chevron.compact.down")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundColor(Theme.accent)
+                        .frame(width: 38, height: 38)
+                        .background(Theme.surface2)
+                        .clipShape(Circle())
+                }
+                .accessibilityLabel("Hide keyboard")
+            }
             Button { Task { await send() } } label: {
                 Image(systemName: "arrow.up")
                     .font(.system(size: 16, weight: .bold))
@@ -420,6 +541,51 @@ struct ChatThreadView: View {
 
     private var canSend: Bool {
         !sending && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    // ---- selection ----
+
+    private func startSelecting(_ first: ChatMsg?) {
+        inputFocused = false
+        selecting = true
+        selected = first.map { [$0.id] } ?? []
+    }
+
+    private func endSelecting() {
+        selecting = false
+        selected = []
+    }
+
+    private func toggle(_ m: ChatMsg) {
+        guard m.id > 0 else { return }
+        if selected.contains(m.id) { selected.remove(m.id) } else { selected.insert(m.id) }
+    }
+
+    /// "Delete for me": Moodle's core_message_delete_message removes the message from this user's view only.
+    private func deleteSelected() async {
+        let ids = Array(selected)
+        guard !ids.isEmpty, !deleting else { return }
+        deleting = true; error = nil
+        var gone = Set<Int>()
+        var failure: String?
+        for id in ids {
+            do {
+                _ = try await MoodleAPI.shared.raw("core_message_delete_message",
+                                                   ["messageid": id, "userid": uid, "read": 1])
+                gone.insert(id)
+            } catch {
+                failure = error.localizedDescription
+            }
+        }
+        msgs.removeAll { gone.contains($0.id) }
+        selected.subtract(gone)
+        if let failure {
+            error = "Couldn't delete \(ids.count - gone.count) message(s): " + failure
+        } else {
+            endSelecting()
+        }
+        deleting = false
+        await ChatStore.shared.refreshBadge(userid: uid)
     }
 
     // ---- actions ----
@@ -517,6 +683,7 @@ struct ChatOpenView: View {
                     .background(Theme.bg.ignoresSafeArea())
             }
         }
+        .toolbar(.hidden, for: .tabBar)      // hide My courses / Alerts / ... tab bar on the chat page
         .task { await find() }
     }
 
