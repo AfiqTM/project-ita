@@ -25,7 +25,6 @@ struct iTaleemApp: App {
             .environmentObject(driveLib)
             .environmentObject(driveAuth)
             .environmentObject(catalog)
-            .onOpenURL { GoogleLink.handle($0) }   // Google sign-in redirect
             .preferredColorScheme(.dark)
             .tint(Theme.accent)
             .background(Theme.bg.ignoresSafeArea())
