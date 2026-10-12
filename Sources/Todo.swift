@@ -132,6 +132,7 @@ final class TodoStore: ObservableObject {
 
     private func save() {
         if let d = try? JSONEncoder().encode(items) { UserDefaults.standard.set(d, forKey: key) }
+        NotificationManager.shared.scheduleTodos(items)
     }
 
     var pending: [TodoItem] { items.filter { $0.completedAt == nil }.sorted { $0.due < $1.due } }
