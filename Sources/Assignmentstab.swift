@@ -190,6 +190,7 @@ final class AssignmentsModel: ObservableObject {
                 out.append(contentsOf: part)
             }
             items = out
+            NotificationManager.shared.scheduleAssignments(out)
         } catch {
             if !(error is CancellationError), (error as? URLError)?.code != .cancelled {
                 self.error = error.localizedDescription
