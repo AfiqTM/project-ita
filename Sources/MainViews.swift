@@ -537,6 +537,8 @@ struct AlertsView: View {
 
 struct ProfileView: View {
     @EnvironmentObject var app: AppState
+    @EnvironmentObject var todos: TodoStore
+    @EnvironmentObject var driveAuth: DriveAuth
 
     var body: some View {
         ScrollView {
@@ -548,8 +550,24 @@ struct ProfileView: View {
                 Text(app.site?.fullname ?? "").font(.title3.weight(.semibold)).foregroundColor(Theme.txt)
                 Text(app.site?.sitename ?? "iTa'leem").foregroundColor(Theme.muted)
 
-                FinalExamCalculator()
-                    .padding(.top, 6)
+                VStack(spacing: 0) {
+                    NavigationLink { CAMSCalculatorScreen() } label: {
+                        ProfileRow(icon: "function", title: "CAMS Calculator",
+                                   subtitle: "Marks needed in the final exam", showLine: true)
+                    }
+                    NavigationLink { MyDriveView() } label: {
+                        ProfileRow(icon: "externaldrive", title: "My Drive",
+                                   subtitle: driveAuth.email ?? "Browse your Google Drive", showLine: true)
+                    }
+                    NavigationLink { TodoListView() } label: {
+                        let n = todos.pending.count
+                        ProfileRow(icon: "checklist", title: "To-Do List",
+                                   subtitle: n == 0 ? "Nothing to do" : "\(n) to do", badge: n, showLine: false)
+                    }
+                }
+                .buttonStyle(.plain)
+                .glowCard()
+                .padding(.top, 6)
 
                 Button(role: .destructive) { SiteBrowser.wipeSession(); AttendanceStore.clear(); app.signOut() } label: {
                     Text("Sign out").frame(maxWidth: .infinity).padding(.vertical, 12)
@@ -560,6 +578,47 @@ struct ProfileView: View {
             }
             .padding(24)
         }
+        .background(Theme.bg.ignoresSafeArea())
+        .navigationTitle("Profile")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+struct ProfileRow: View {
+    let icon: String
+    let title: String
+    let subtitle: String
+    var badge = 0
+    var showLine = true
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Image(systemName: icon).foregroundColor(Theme.accent).frame(width: 26)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).foregroundColor(Theme.txt).fontWeight(.semibold)
+                Text(subtitle).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
+            }
+            Spacer()
+            if badge > 0 {
+                Text("\(badge)").font(.caption.weight(.bold)).foregroundColor(.black)
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(Theme.accent).clipShape(Capsule())
+            }
+            Image(systemName: "chevron.right").font(.caption).foregroundColor(Theme.muted)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .overlay(Rectangle().fill(Theme.line).frame(height: showLine ? 1 : 0), alignment: .bottom)
+    }
+}
+
+// The calculator now lives on its own screen (Profile > CAMS Calculator)
+struct CAMSCalculatorScreen: View {
+    var body: some View {
+        ScrollView {
+            FinalExamCalculator().padding(16)
+        }
         .scrollDismissesKeyboard(.interactively)
         .toolbar {
             ToolbarItemGroup(placement: .keyboard) {
@@ -568,7 +627,7 @@ struct ProfileView: View {
             }
         }
         .background(Theme.bg.ignoresSafeArea())
-        .navigationTitle("Profile")
+        .navigationTitle("CAMS Calculator")
         .navigationBarTitleDisplayMode(.inline)
     }
 }
