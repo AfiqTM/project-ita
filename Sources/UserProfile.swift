@@ -96,8 +96,12 @@ struct UserProfileView: View {
 
     private var header: some View {
         HStack(alignment: .center, spacing: 16) {
-            ChatAvatar(name: displayName, url: p?.profileimageurl ?? imageURL, size: 84)
-                .overlay(Circle().stroke(Theme.line, lineWidth: 1))
+            NavigationLink {
+                PhotoViewer(name: displayName, urls: [p?.profileimageurl, imageURL])
+            } label: {
+                ProfilePhoto(name: displayName, urls: [p?.profileimageurl, imageURL], size: 84)
+            }
+            .buttonStyle(.plain)
             VStack(alignment: .leading, spacing: 8) {
                 Text(displayName).font(.title3.bold()).foregroundColor(Theme.txt)
                 if let la = p?.lastaccess {
@@ -111,7 +115,7 @@ struct UserProfileView: View {
 
     private var messageButton: some View {
         NavigationLink {
-            ChatOpenView(userid: userid, name: displayName, imageURL: p?.profileimageurl ?? imageURL)
+            ChatOpenView(userid: userid, name: displayName, imageURL: imageURL ?? p?.profileimageurl)
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "message")
@@ -307,5 +311,128 @@ struct UserProfileView: View {
         if let b: UPBadges = try? await MoodleAPI.shared.call("core_badges_get_user_badges", ["userid": userid]) {
             badges = b.badges ?? []
         }
+    }
+}
+
+// MARK: - Profile photos
+
+/// Candidate URLs for a profile picture, best first. Moodle serves each picture in sizes:
+/// f1 = 100px, f2 = 35px, f3 = original. Each address is tried with the web-service token and without it,
+/// and the address that already works in the participants list is kept as the last fallback.
+enum PhotoURL {
+    static func candidates(_ strings: [String?], size: String) -> [URL] {
+        var out: [URL] = []
+        func add(_ u: URL?) { if let u, !out.contains(u) { out.append(u) } }
+        for case let s? in strings {
+            let resized = s.replacingOccurrences(of: "/f[123](?=\\?|$)", with: "/\(size)",
+                                                 options: .regularExpression)
+            for v in (resized == s ? [s] : [resized, s]) {
+                add(MoodleAPI.shared.fileURL(v))
+                add(URL(string: v))
+            }
+        }
+        return out
+    }
+}
+
+private enum PhotoCache { static let store = NSCache<NSURL, UIImage>() }
+
+/// Loads the first candidate URL that really returns an image (a failed one just moves on to the next).
+struct RemoteImage<Placeholder: View>: View {
+    let candidates: [URL]
+    var contentMode: ContentMode
+    let placeholder: (Bool) -> Placeholder      // Bool = every candidate failed
+    @State private var image: UIImage?
+    @State private var failed = false
+
+    init(candidates: [URL], contentMode: ContentMode = .fill,
+         @ViewBuilder placeholder: @escaping (Bool) -> Placeholder) {
+        self.candidates = candidates
+        self.contentMode = contentMode
+        self.placeholder = placeholder
+    }
+
+    var body: some View {
+        Group {
+            if let image { Image(uiImage: image).resizable().aspectRatio(contentMode: contentMode) }
+            else { placeholder(failed) }
+        }
+        .task(id: candidates) { await load() }
+    }
+
+    private func load() async {
+        image = nil; failed = false
+        for u in candidates {
+            if let c = PhotoCache.store.object(forKey: u as NSURL) { image = c; return }
+        }
+        for u in candidates {
+            do {
+                let (d, r) = try await MoodleAPI.session.data(from: u)
+                if let h = r as? HTTPURLResponse, h.statusCode != 200 { continue }
+                if let img = UIImage(data: d) {
+                    PhotoCache.store.setObject(img, forKey: u as NSURL)
+                    image = img
+                    return
+                }
+            } catch {
+                if error is CancellationError || (error as? URLError)?.code == .cancelled { return }
+            }
+        }
+        failed = true
+    }
+}
+
+/// Round avatar used in the profile header (falls back to initials).
+struct ProfilePhoto: View {
+    let name: String
+    let urls: [String?]
+    var size: CGFloat = 84
+
+    private var initials: String {
+        String(name.split(separator: " ").prefix(2).compactMap { $0.first }).uppercased()
+    }
+
+    var body: some View {
+        ZStack {
+            Circle().fill(Theme.surface2)
+            Text(initials).font(.system(size: size * 0.36, weight: .semibold)).foregroundColor(Theme.accent)
+            RemoteImage(candidates: PhotoURL.candidates(urls, size: "f1")) { _ in Color.clear }
+                .frame(width: size, height: size)
+                .clipped()
+        }
+        .frame(width: size, height: size)
+        .clipShape(Circle())
+        .overlay(Circle().stroke(Theme.line, lineWidth: 1))
+    }
+}
+
+/// Full-size photo (opened by tapping the avatar). The navigation bar's back button returns to the profile.
+/// Pinch to zoom, double-tap to zoom in / out.
+struct PhotoViewer: View {
+    let name: String
+    let urls: [String?]
+    @State private var scale: CGFloat = 1
+    @GestureState private var pinch: CGFloat = 1
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            RemoteImage(candidates: PhotoURL.candidates(urls, size: "f3"), contentMode: .fit) { failed in
+                if failed {
+                    Text("No photo available").foregroundColor(Theme.muted)
+                } else {
+                    ProgressView().tint(Theme.accent)
+                }
+            }
+            .scaleEffect(max(1, min(scale * pinch, 5)))
+            .gesture(
+                MagnificationGesture()
+                    .updating($pinch) { value, state, _ in state = value }
+                    .onEnded { value in scale = max(1, min(scale * value, 5)) }
+            )
+            .onTapGesture(count: 2) { withAnimation { scale = scale > 1 ? 1 : 2.5 } }
+        }
+        .navigationTitle(name)
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
