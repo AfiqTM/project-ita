@@ -51,6 +51,13 @@ struct AttendanceWidgetView: View {
     }
     private var compact: Bool { family == .systemSmall }
 
+    /// One font size for every row (name and percentage), depending only on widget size.
+    private var rowFontSize: CGFloat { compact ? 11 : 13 }
+
+    /// Fixed width for the percentage column, wide enough for "100%" and "93.3%",
+    /// so every percentage sits in the same spot regardless of the name length.
+    private var percentWidth: CGFloat { compact ? 40 : 48 }
+
     var body: some View {
         VStack(alignment: .leading, spacing: compact ? 5 : 7) {
             Text("MAX ATTENDANCE")
@@ -84,15 +91,18 @@ struct AttendanceWidgetView: View {
 
     private func row(_ i: AttendanceItem) -> some View {
         HStack(spacing: 6) {
-            Text(i.name)
-                .font(.system(size: compact ? 11 : 13))
+            Text(i.displayName)   // "SEM1 BICS 1306 Section 04 ..." prefix removed
+                .font(.system(size: rowFontSize))
                 .foregroundColor(W.txt)
                 .lineLimit(1)
-                .minimumScaleFactor(0.75)
+                .truncationMode(.tail)
             Spacer(minLength: 4)
             Text(formatPercent(i.percent))
-                .font(.system(size: compact ? 12 : 14, weight: .bold))
+                .font(.system(size: rowFontSize, weight: .bold))
+                .monospacedDigit()
                 .foregroundColor(W.accent)
+                .lineLimit(1)
+                .frame(width: percentWidth, alignment: .trailing)   // same column for every row
         }
     }
 }
