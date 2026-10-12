@@ -1,94 +1,234 @@
 import SwiftUI
 import UIKit
 import QuickLook
-import GoogleSignIn      // Swift package: https://github.com/google/GoogleSignIn-iOS  (product "GoogleSignIn")
+import Security
+import CryptoKit
+import AuthenticationServices
 
-// MARK: - Google sign-in (login is remembered in the keychain by the SDK)
+// MARK: - Google login (plain OAuth 2.0 + PKCE in a system sheet, no SDK / package needed)
+//
+// SETUP: paste the OAuth *iOS* client ID from Google Cloud Console below.
+// (Bundle ID of the client must match the app's: com.afiq.italeem)
 
-/// Called from App.swift for the Google redirect URL.
-enum GoogleLink {
-    static func handle(_ url: URL) { _ = GIDSignIn.sharedInstance.handle(url) }
+enum GoogleConfig {
+    static let clientID = "305018415943-p5u9hpcf6jj5nl45q50irqail65eadug.apps.googleusercontent.com"
+
+    static var configured: Bool { !clientID.hasPrefix("PASTE") }
+    /// "123-abc.apps.googleusercontent.com" -> "com.googleusercontent.apps.123-abc"
+    static var scheme: String {
+        "com.googleusercontent.apps." + (clientID.components(separatedBy: ".apps.googleusercontent.com").first ?? "")
+    }
+    static var redirect: String { scheme + ":/oauth2redirect" }
+    static let scope = "openid email https://www.googleapis.com/auth/drive.readonly"
 }
 
 enum DriveError: LocalizedError {
-    case notSignedIn, unsupported, http(Int, String?)
+    case notSignedIn, unsupported, http(Int, String?), message(String)
     var errorDescription: String? {
         switch self {
         case .notSignedIn: return "You're not signed in to Google."
         case .unsupported: return "This type of file can't be previewed here."
         case .http(let code, let msg): return msg ?? "Google Drive returned an error (\(code))."
+        case .message(let m): return m
         }
+    }
+}
+
+struct GoogleTokens: Codable {
+    var accessToken: String
+    var refreshToken: String
+    var expiry: Date
+    var email: String?
+}
+
+/// Tokens live in the keychain, so the login survives restarts.
+enum GoogleKeychain {
+    private static func query() -> [String: Any] {
+        [kSecClass as String: kSecClassGenericPassword,
+         kSecAttrService as String: "italeem-google",
+         kSecAttrAccount as String: "tokens"]
+    }
+    static func save(_ t: GoogleTokens) {
+        guard let d = try? JSONEncoder().encode(t) else { return }
+        SecItemDelete(query() as CFDictionary)
+        var q = query()
+        q[kSecValueData as String] = d
+        q[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+        SecItemAdd(q as CFDictionary, nil)
+    }
+    static func load() -> GoogleTokens? {
+        var q = query()
+        q[kSecReturnData as String] = true
+        q[kSecMatchLimit as String] = kSecMatchLimitOne
+        var out: AnyObject?
+        guard SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess,
+              let d = out as? Data else { return nil }
+        return try? JSONDecoder().decode(GoogleTokens.self, from: d)
+    }
+    static func delete() { SecItemDelete(query() as CFDictionary) }
+}
+
+final class GoogleWebAuth: NSObject, ASWebAuthenticationPresentationContextProviding {
+    private var session: ASWebAuthenticationSession?
+
+    func start(url: URL, scheme: String) async throws -> URL {
+        try await withCheckedThrowingContinuation { cont in
+            let s = ASWebAuthenticationSession(url: url, callbackURLScheme: scheme) { cb, err in
+                if let cb { cont.resume(returning: cb) }
+                else { cont.resume(throwing: err ?? DriveError.message("Google sign-in was cancelled.")) }
+            }
+            s.presentationContextProvider = self
+            s.prefersEphemeralWebBrowserSession = false      // reuses the browser's Google session
+            self.session = s
+            if !s.start() { cont.resume(throwing: DriveError.message("Couldn't open the Google sign-in screen.")) }
+        }
+    }
+
+    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+        UIApplication.shared.connectedScenes
+            .compactMap { ($0 as? UIWindowScene)?.keyWindow }.first ?? ASPresentationAnchor()
     }
 }
 
 @MainActor
 final class DriveAuth: ObservableObject {
-    static let scope = "https://www.googleapis.com/auth/drive.readonly"
-
-    @Published private(set) var user: GIDGoogleUser?
-    @Published private(set) var restoring = true
+    @Published private(set) var tokens: GoogleTokens?
+    @Published private(set) var restoring = false        // login is restored instantly from the keychain
     @Published private(set) var busy = false
     @Published var error: String?
 
-    var isSignedIn: Bool { user != nil }
-    var email: String? { user?.profile?.email }
+    private let web = GoogleWebAuth()
 
-    init() { restore() }
+    var isSignedIn: Bool { tokens != nil }
+    var email: String? { tokens?.email }
 
-    /// Brings back the previous login at launch, so the user never has to sign in again.
-    private func restore() {
-        guard GIDSignIn.sharedInstance.hasPreviousSignIn() else { restoring = false; return }
-        GIDSignIn.sharedInstance.restorePreviousSignIn { [weak self] user, _ in
-            Task { @MainActor in
-                guard let self else { return }
-                if let user, user.grantedScopes?.contains(Self.scope) == true { self.user = user }
-                self.restoring = false
-            }
-        }
-    }
+    init() { tokens = GoogleKeychain.load() }
+
+    // ---- sign in / out ----
 
     func signIn() {
-        guard let vc = Self.topViewController() else {
-            error = "Couldn't open the Google sign-in screen."
+        guard GoogleConfig.configured else {
+            error = "Paste your Google client ID into GoogleConfig.clientID (MyDrive.swift) first."
             return
         }
         busy = true; error = nil
-        GIDSignIn.sharedInstance.signIn(withPresenting: vc, hint: nil, additionalScopes: [Self.scope]) { [weak self] result, err in
-            Task { @MainActor in
-                guard let self else { return }
-                self.busy = false
-                if let u = result?.user {
-                    if u.grantedScopes?.contains(Self.scope) == true { self.user = u }
-                    else { self.error = "Drive access wasn't granted. Tick the Drive permission and try again." }
-                } else if let e = err as NSError?, e.code != -5 {      // -5 = user closed the sign-in window
-                    self.error = e.localizedDescription
-                }
-            }
+        Task {
+            defer { busy = false }
+            do { try await performSignIn() }
+            catch let e as ASWebAuthenticationSessionError where e.code == .canceledLogin { /* user closed it */ }
+            catch { self.error = error.localizedDescription }
         }
     }
 
     func signOut() {
-        GIDSignIn.sharedInstance.signOut()
-        user = nil
+        GoogleKeychain.delete()
+        tokens = nil
     }
 
-    /// A fresh access token (refreshed automatically when it has expired)
-    func accessToken() async throws -> String {
-        guard let user else { throw DriveError.notSignedIn }
-        return try await withCheckedThrowingContinuation { cont in
-            user.refreshTokensIfNeeded { u, err in
-                if let t = u?.accessToken.tokenString { cont.resume(returning: t) }
-                else { cont.resume(throwing: err ?? DriveError.notSignedIn) }
-            }
+    private func performSignIn() async throws {
+        let verifier = Self.randomString()
+        let challenge = Self.base64url(Data(SHA256.hash(data: Data(verifier.utf8))))
+        let state = UUID().uuidString
+
+        var c = URLComponents(string: "https://accounts.google.com/o/oauth2/v2/auth")!
+        c.queryItems = [
+            URLQueryItem(name: "client_id", value: GoogleConfig.clientID),
+            URLQueryItem(name: "redirect_uri", value: GoogleConfig.redirect),
+            URLQueryItem(name: "response_type", value: "code"),
+            URLQueryItem(name: "scope", value: GoogleConfig.scope),
+            URLQueryItem(name: "code_challenge", value: challenge),
+            URLQueryItem(name: "code_challenge_method", value: "S256"),
+            URLQueryItem(name: "state", value: state),
+            URLQueryItem(name: "access_type", value: "offline"),
+            URLQueryItem(name: "prompt", value: "consent")]       // makes Google hand out a refresh token
+
+        let cb = try await web.start(url: c.url!, scheme: GoogleConfig.scheme)
+        let items = URLComponents(url: cb, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        func val(_ n: String) -> String? { items.first { $0.name == n }?.value }
+        if let e = val("error") { throw DriveError.message("Google sign-in failed (\(e)).") }
+        guard val("state") == state, let code = val("code") else {
+            throw DriveError.message("Google sign-in failed. Please try again.")
         }
+
+        let r = try await Self.tokenRequest([
+            "client_id": GoogleConfig.clientID,
+            "code": code,
+            "code_verifier": verifier,
+            "redirect_uri": GoogleConfig.redirect,
+            "grant_type": "authorization_code"])
+        guard let at = r.access_token, let rt = r.refresh_token else {
+            throw DriveError.message(r.error_description ?? r.error ?? "Google didn't return a login.")
+        }
+        guard (r.scope ?? "").contains("drive.readonly") else {
+            throw DriveError.message("Drive access wasn't granted. Tick the Drive permission and try again.")
+        }
+        let t = GoogleTokens(accessToken: at, refreshToken: rt,
+                             expiry: Date().addingTimeInterval(TimeInterval(r.expires_in ?? 3600)),
+                             email: Self.email(fromIDToken: r.id_token))
+        GoogleKeychain.save(t)
+        tokens = t
     }
 
-    private static func topViewController() -> UIViewController? {
-        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-        let scene = scenes.first { $0.activationState == .foregroundActive } ?? scenes.first
-        var vc = scene?.keyWindow?.rootViewController
-        while let p = vc?.presentedViewController { vc = p }
-        return vc
+    /// A valid access token (renewed automatically with the saved refresh token)
+    func accessToken() async throws -> String {
+        guard var t = tokens else { throw DriveError.notSignedIn }
+        if t.expiry > Date().addingTimeInterval(60) { return t.accessToken }
+        let r = try await Self.tokenRequest([
+            "client_id": GoogleConfig.clientID,
+            "refresh_token": t.refreshToken,
+            "grant_type": "refresh_token"])
+        guard let at = r.access_token else {
+            if r.error == "invalid_grant" { signOut() }       // login was revoked / expired
+            throw DriveError.message(r.error == "invalid_grant"
+                ? "Your Google login expired. Please sign in again."
+                : (r.error_description ?? r.error ?? "Couldn't refresh the Google login."))
+        }
+        t.accessToken = at
+        t.expiry = Date().addingTimeInterval(TimeInterval(r.expires_in ?? 3600))
+        GoogleKeychain.save(t)
+        tokens = t
+        return at
+    }
+
+    // ---- helpers ----
+
+    private struct TokenResponse: Decodable {
+        let access_token: String?; let expires_in: Int?; let refresh_token: String?
+        let id_token: String?; let scope: String?; let error: String?; let error_description: String?
+    }
+
+    private static func tokenRequest(_ params: [String: String]) async throws -> TokenResponse {
+        var allowed = CharacterSet.alphanumerics
+        allowed.insert(charactersIn: "-._~")
+        func e(_ s: String) -> String { s.addingPercentEncoding(withAllowedCharacters: allowed) ?? s }
+        var req = URLRequest(url: URL(string: "https://oauth2.googleapis.com/token")!)
+        req.httpMethod = "POST"
+        req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        req.httpBody = params.map { "\(e($0.key))=\(e($0.value))" }.joined(separator: "&").data(using: .utf8)
+        let (data, _) = try await URLSession.shared.data(for: req)
+        return try JSONDecoder().decode(TokenResponse.self, from: data)
+    }
+
+    private static func base64url(_ d: Data) -> String {
+        d.base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+    }
+
+    private static func randomString() -> String {
+        var bytes = [UInt8](repeating: 0, count: 32)
+        _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+        return base64url(Data(bytes))
+    }
+
+    private static func email(fromIDToken t: String?) -> String? {
+        guard let part = t?.split(separator: ".").dropFirst().first else { return nil }
+        var b = String(part).replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+        while b.count % 4 != 0 { b += "=" }
+        guard let d = Data(base64Encoded: b),
+              let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return nil }
+        return o["email"] as? String
     }
 }
 
