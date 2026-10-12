@@ -4,37 +4,66 @@ import WebKit
 // MARK: - Course detail (Course / Participants / Grades tabs)
 
 enum CourseTab: String, CaseIterable, Identifiable {
-    case course = "Course", participants = "Participants", grades = "Grades"
+    case course = "Course", participants = "Participants", drive = "My Drive", todo = "To-Do", grades = "Grades"
     var id: String { rawValue }
 }
 
 struct CourseDetailView: View {
     let course: Course
+    @EnvironmentObject var todos: TodoStore
+    @EnvironmentObject var drive: DriveLibrary
     @State private var tab: CourseTab = .course
+
+    private var todoCount: Int { todos.count(for: course.id) }
+    private var driveCount: Int { drive.files(for: course.id).count }
+
+    // My Drive / To-Do only appear when something is saved for this subject
+    private var tabs: [CourseTab] {
+        CourseTab.allCases.filter { t in
+            switch t {
+            case .drive: return driveCount > 0
+            case .todo: return todoCount > 0
+            default: return true
+            }
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 26) {
-                ForEach(CourseTab.allCases) { t in
-                    Button { tab = t } label: {
-                        Text(t.rawValue)
-                            .fontWeight(tab == t ? .semibold : .regular)
-                            .foregroundColor(tab == t ? Theme.accent : Color(white: 0.66))
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 26) {
+                    ForEach(tabs) { t in
+                        Button { tab = t } label: {
+                            HStack(spacing: 6) {
+                                Text(t.rawValue)
+                                    .fontWeight(tab == t ? .semibold : .regular)
+                                    .foregroundColor(tab == t ? Theme.accent : Color(white: 0.66))
+                                if t == .todo {
+                                    Text("\(todoCount)")
+                                        .font(.caption2.weight(.bold)).foregroundColor(.black)
+                                        .padding(.horizontal, 6).padding(.vertical, 2)
+                                        .background(Theme.accent).clipShape(Capsule())
+                                }
+                            }
+                        }
                     }
                 }
-                Spacer()
+                .padding(.horizontal, 16).padding(.vertical, 12)
             }
-            .padding(.horizontal, 16).padding(.vertical, 12)
 
             switch tab {
             case .course: CourseContentView(courseId: course.id)
             case .participants: ParticipantsView(courseId: course.id)
+            case .drive: CourseDriveTab(courseId: course.id)
+            case .todo: CourseTodoTab(courseId: course.id)
             case .grades: GradesView(courseId: course.id)
             }
         }
         .background(Theme.bg.ignoresSafeArea())
         .navigationTitle(course.shortname ?? course.fullname)
         .navigationBarTitleDisplayMode(.inline)
+        // the open tab goes away when its last item is removed
+        .onChange(of: tabs) { new in if !new.contains(tab) { tab = .course } }
     }
 }
 
