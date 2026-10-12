@@ -157,11 +157,15 @@ struct CoursesView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text("Hello,").foregroundColor(Theme.muted)
-                    Text(firstTwoNames).foregroundColor(Theme.accent).fontWeight(.semibold)
+                HStack {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text("Hello,").foregroundColor(Theme.muted)
+                        Text(firstTwoNames).foregroundColor(Theme.accent).fontWeight(.semibold)
+                    }
+                    .font(.title3)
+                    Spacer()
+                    MessagesButton()   // chat icon + unread badge (Messages.swift)
                 }
-                .font(.title3)
 
                 searchBar
                 suggestionList
