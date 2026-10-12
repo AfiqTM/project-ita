@@ -13,7 +13,7 @@ struct iTaleemApp: App {
     @StateObject private var driveLib = DriveLibrary()
     @StateObject private var driveAuth = DriveAuth()
     @StateObject private var catalog = CourseCatalog()
-    init() { Theme.applyAppearance() }
+    init() { Theme.applyAppearance(); NotificationManager.shared.setup() }
 
     var body: some Scene {
         WindowGroup {
