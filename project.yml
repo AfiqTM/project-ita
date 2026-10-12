@@ -20,6 +20,13 @@ targets:
       properties:
         com.apple.security.application-groups:
           - group.com.afiq.italeem
+    info:
+      path: Plists/iTaleem-Info.plist
+      properties:
+        UIBackgroundModes:
+          - fetch
+        BGTaskSchedulerPermittedIdentifiers:
+          - italeem.refresh
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.afiq.italeem
