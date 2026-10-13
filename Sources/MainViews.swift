@@ -503,12 +503,20 @@ struct AlertsView: View {
         .background(Theme.bg.ignoresSafeArea())
         .navigationTitle("Notifications")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
+        .safeAreaInset(edge: .bottom) {
             if unread > 0 {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Mark all read") { Task { await markAllRead() } }
-                        .foregroundColor(Theme.accent)
+                Button { Task { await markAllRead() } } label: {
+                    Text("Mark all read")
+                        .fontWeight(.semibold)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .foregroundColor(Theme.bg)
+                        .background(Theme.accent)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(Theme.bg.ignoresSafeArea())
             }
         }
         .refreshable { await load() }
