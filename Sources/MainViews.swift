@@ -40,7 +40,7 @@ struct RootView: View {
             NavigationStack { SiteBrowserView(browser: browser) }
                 .tabItem { Label("Website", systemImage: "globe") }
             NavigationStack { ProfileView() }
-                .tabItem { Label("Profile", systemImage: "person") }
+                .tabItem { Label("Others", systemImage: "ellipsis.circle") }
         }
         // Load at launch so the badges are right before either tab is opened
         .task(id: app.site?.userid) {
@@ -51,13 +51,13 @@ struct RootView: View {
         .task(id: app.site?.userid) {
             if let uid = app.site?.userid { await AttendanceSync.refresh(userid: uid) }
         }
-        // Unread alerts: check now, then once a minute while the app is open
+        // Unread alerts: check now, then every 15 s while the app is open
         .task(id: app.site?.userid) {
             guard let uid = app.site?.userid else { return }
             while !Task.isCancelled {
                 await notifs.refresh(uid: uid)
                 await NotificationManager.shared.checkIncoming(uid: uid)
-                try? await Task.sleep(nanoseconds: 60_000_000_000)
+                try? await Task.sleep(nanoseconds: 15_000_000_000)
             }
         }
         .onChange(of: scenePhase) { phase in
@@ -547,16 +547,17 @@ struct ProfileView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 18) {
-                if let s = app.site?.userpictureurl, let u = MoodleAPI.shared.fileURL(s) {
-                    AsyncImage(url: u) { img in img.resizable().scaledToFill() } placeholder: { Theme.surface2 }
-                        .frame(width: 96, height: 96).clipShape(Circle())
-                }
-                Text(app.site?.fullname ?? "").font(.title3.weight(.semibold)).foregroundColor(Theme.txt)
-                Text(app.site?.sitename ?? "iTa'leem").foregroundColor(Theme.muted)
-
                 VStack(spacing: 0) {
+                    NavigationLink {
+                        UserProfileView(userid: app.site?.userid ?? 0,
+                                        name: app.site?.fullname ?? "My Profile",
+                                        imageURL: app.site?.userpictureurl)
+                    } label: {
+                        ProfileRow(icon: "person.crop.circle", title: "My Profile",
+                                   subtitle: app.site?.fullname ?? "Your details", showLine: true)
+                    }
                     NavigationLink { CAMSCalculatorScreen() } label: {
-                        ProfileRow(icon: "function", title: "CAMS Calculator",
+                        ProfileRow(icon: "function", title: "Final Exam Calculator",
                                    subtitle: "Marks needed in the final exam", showLine: true)
                     }
                     NavigationLink { MyDriveView() } label: {
@@ -571,19 +572,11 @@ struct ProfileView: View {
                 }
                 .buttonStyle(.plain)
                 .glowCard()
-                .padding(.top, 6)
-
-                Button(role: .destructive) { SiteBrowser.wipeSession(); AttendanceStore.clear(); app.signOut() } label: {
-                    Text("Sign out").frame(maxWidth: .infinity).padding(.vertical, 12)
-                        .background(Theme.surface2).foregroundColor(.red.opacity(0.85))
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                }
-                .padding(.top, 6)
             }
             .padding(24)
         }
         .background(Theme.bg.ignoresSafeArea())
-        .navigationTitle("Profile")
+        .navigationTitle("Others")
         .navigationBarTitleDisplayMode(.inline)
     }
 }
@@ -617,7 +610,7 @@ struct ProfileRow: View {
     }
 }
 
-// The calculator now lives on its own screen (Profile > CAMS Calculator)
+// The calculator lives on its own screen (Others > Final Exam Calculator)
 struct CAMSCalculatorScreen: View {
     var body: some View {
         ScrollView {
@@ -631,7 +624,7 @@ struct CAMSCalculatorScreen: View {
             }
         }
         .background(Theme.bg.ignoresSafeArea())
-        .navigationTitle("CAMS Calculator")
+        .navigationTitle("Final Exam Calculator")
         .navigationBarTitleDisplayMode(.inline)
     }
 }
@@ -734,7 +727,7 @@ struct FinalExamCalculator: View {
         HStack(spacing: 10) {
             Image(systemName: "function").foregroundColor(Theme.accent)
             VStack(alignment: .leading, spacing: 2) {
-                Text("Final exam calculator").font(.headline).foregroundColor(Theme.txt)
+                Text("Final Exam Calculator").font(.headline).foregroundColor(Theme.txt)
                 Text("Marks needed for each grade").font(.caption).foregroundColor(Theme.muted)
             }
             Spacer()
