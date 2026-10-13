@@ -556,18 +556,18 @@ struct ProfileView: View {
                         ProfileRow(icon: "person.crop.circle", title: "My Profile",
                                    subtitle: app.site?.fullname ?? "Your details", showLine: true)
                     }
+                    NavigationLink { TodoListView() } label: {
+                        let n = todos.pending.count
+                        ProfileRow(icon: "checklist", title: "To-Do List",
+                                   subtitle: n == 0 ? "Nothing to do" : "\(n) to do", badge: n, showLine: true)
+                    }
                     NavigationLink { CAMSCalculatorScreen() } label: {
                         ProfileRow(icon: "function", title: "Final Exam Calculator",
                                    subtitle: "Marks needed in the final exam", showLine: true)
                     }
                     NavigationLink { MyDriveView() } label: {
                         ProfileRow(icon: "externaldrive", title: "My Drive",
-                                   subtitle: driveAuth.email ?? "Browse your Google Drive", showLine: true)
-                    }
-                    NavigationLink { TodoListView() } label: {
-                        let n = todos.pending.count
-                        ProfileRow(icon: "checklist", title: "To-Do List",
-                                   subtitle: n == 0 ? "Nothing to do" : "\(n) to do", badge: n, showLine: false)
+                                   subtitle: driveAuth.email ?? "Browse your Google Drive", showLine: false)
                     }
                 }
                 .buttonStyle(.plain)
