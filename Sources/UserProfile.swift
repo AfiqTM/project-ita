@@ -1,4 +1,5 @@
 import SwiftUI
+import UserNotifications
 
 // Profile screen for another student (opened from a course's Participants list), modelled on the
 // Moodle website profile: header + Message button, stats, and About Me / Courses / More Details tabs.
@@ -96,7 +97,11 @@ struct UserProfileView: View {
     // ---- sign out (own profile only) ----
 
     private var signOutButton: some View {
-        Button(role: .destructive) { SiteBrowser.wipeSession(); AttendanceStore.clear(); app.signOut() } label: {
+        Button(role: .destructive) {
+            SiteBrowser.wipeSession(); AttendanceStore.clear()
+            UNUserNotificationCenter.current().setBadgeCount(0) { _ in }
+            app.signOut()
+        } label: {
             Text("Sign out").frame(maxWidth: .infinity).padding(.vertical, 12)
                 .background(Theme.surface2).foregroundColor(.red.opacity(0.85))
                 .clipShape(RoundedRectangle(cornerRadius: 12))
