@@ -772,8 +772,8 @@ struct AssignmentView: View {
                 if let error { Text(error).font(.footnote).foregroundColor(Theme.muted) }
                 if let a = assign {
                     infoCard(a)
-                    if let intro = a.intro?.plainText, !intro.isEmpty {
-                        Text(intro).foregroundColor(Theme.txt)
+                    if let intro = a.intro?.linkedText, !intro.characters.isEmpty {
+                        Text(intro).foregroundColor(Theme.txt).tint(Theme.accent)
                             .padding(16).frame(maxWidth: .infinity, alignment: .leading)
                             .glowCard()
                     }
@@ -1252,5 +1252,80 @@ struct SharePickerSheet: View {
         } catch {
             self.error = error.localizedDescription
         }
+    }
+}
+
+
+// MARK: - HTML -> text with tappable links (assignment description)
+
+extension String {
+    /// Turns Moodle HTML into display text where <a href> links and bare URLs are tappable.
+    var linkedText: AttributedString {
+        func clean(_ h: String) -> String {
+            h.replacingOccurrences(of: "<br\\s*/?>|</p>|</div>|</li>|</h[1-6]>", with: "\n",
+                                   options: [.regularExpression, .caseInsensitive])
+                .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+                .decodedEntities
+        }
+        func resolve(_ href: String) -> URL? {
+            let h = href.decodedEntities.trimmingCharacters(in: .whitespacesAndNewlines)
+            if h.isEmpty || h.hasPrefix("#") || h.lowercased().hasPrefix("javascript") { return nil }
+            var abs = h
+            if !h.lowercased().hasPrefix("http") && !h.lowercased().hasPrefix("mailto:") && !h.lowercased().hasPrefix("tel:") {
+                abs = Site.url.absoluteString + (h.hasPrefix("/") ? h : "/" + h)
+            }
+            if abs.contains("pluginfile.php") { return MoodleAPI.shared.fileURL(abs) }   // files need the token
+            return URL(string: abs) ?? abs.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)
+                .flatMap { URL(string: $0) }
+        }
+
+        var pieces: [(String, URL?)] = []
+        let ns = self as NSString
+        var last = 0
+        if let re = try? NSRegularExpression(pattern: "<a\\b[^>]*?href\\s*=\\s*([\"'])(.*?)\\1[^>]*>([\\s\\S]*?)</a>",
+                                             options: [.caseInsensitive]) {
+            for m in re.matches(in: self, range: NSRange(location: 0, length: ns.length)) {
+                pieces.append((clean(ns.substring(with: NSRange(location: last, length: m.range.location - last))), nil))
+                let label = clean(ns.substring(with: m.range(at: 3))).trimmingCharacters(in: .whitespacesAndNewlines)
+                let url = resolve(ns.substring(with: m.range(at: 2)))
+                pieces.append((label.isEmpty ? ns.substring(with: m.range(at: 2)) : label, url))
+                last = m.range.location + m.range.length
+            }
+        }
+        pieces.append((clean(ns.substring(from: last)), nil))
+
+        // trim the very start / end
+        if let f = pieces.first, f.1 == nil {
+            pieces[0].0 = String(f.0.drop(while: { $0.isWhitespace || $0.isNewline }))
+        }
+        if let l = pieces.last, l.1 == nil {
+            var t = l.0
+            while let c = t.last, c.isWhitespace || c.isNewline { t.removeLast() }
+            pieces[pieces.count - 1].0 = t
+        }
+
+        let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
+        var out = AttributedString()
+        func link(_ text: String, _ url: URL) {
+            var a = AttributedString(text)
+            a.link = url
+            a.foregroundColor = Theme.accent
+            a.underlineStyle = .single
+            out += a
+        }
+        for (text, url) in pieces {
+            if let url { link(text, url); continue }
+            // plain text: make bare URLs tappable too
+            let t = text as NSString
+            var pos = 0
+            for m in detector?.matches(in: text, range: NSRange(location: 0, length: t.length)) ?? [] {
+                guard let u = m.url else { continue }
+                out += AttributedString(t.substring(with: NSRange(location: pos, length: m.range.location - pos)))
+                link(t.substring(with: m.range), u)
+                pos = m.range.location + m.range.length
+            }
+            out += AttributedString(t.substring(from: pos))
+        }
+        return out
     }
 }
