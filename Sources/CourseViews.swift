@@ -12,7 +12,6 @@ struct CourseDetailView: View {
     let course: Course
     @EnvironmentObject var todos: TodoStore
     @EnvironmentObject var drive: DriveLibrary
-    @EnvironmentObject var teams: TeamsHub
     @State private var tab: CourseTab = .course
 
     private var todoCount: Int { todos.count(for: course.id) }
@@ -63,14 +62,6 @@ struct CourseDetailView: View {
         .background(Theme.bg.ignoresSafeArea())
         .navigationTitle(course.shortname ?? course.fullname)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            // Teams class linked to this course (Others > Microsoft Teams > hold a class > Link to a course)
-            ToolbarItem(placement: .navigationBarTrailing) {
-                if let t = teams.linkedTeam(for: course.id) {
-                    NavigationLink { TeamsClassView(team: t) } label: { TeamsGlyph() }
-                }
-            }
-        }
         // the open tab goes away when its last item is removed
         .onChange(of: tabs) { new in if !new.contains(tab) { tab = .course } }
     }
