@@ -13,6 +13,9 @@ struct iTaleemApp: App {
     @StateObject private var driveLib = DriveLibrary()
     @StateObject private var driveAuth = DriveAuth()
     @StateObject private var catalog = CourseCatalog()
+    @StateObject private var teamsAuth = TeamsAuth()
+    @StateObject private var teamsLib = TeamsLibrary()
+    @StateObject private var teamsCatalog = TeamsCatalog()
     init() { Theme.applyAppearance(); NotificationManager.shared.setup() }
 
     var body: some Scene {
@@ -25,6 +28,9 @@ struct iTaleemApp: App {
             .environmentObject(driveLib)
             .environmentObject(driveAuth)
             .environmentObject(catalog)
+            .environmentObject(teamsAuth)
+            .environmentObject(teamsLib)
+            .environmentObject(teamsCatalog)
             .preferredColorScheme(.dark)
             .tint(Theme.accent)
             .background(Theme.bg.ignoresSafeArea())
