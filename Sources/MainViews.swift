@@ -560,6 +560,7 @@ struct ProfileView: View {
     @EnvironmentObject var app: AppState
     @EnvironmentObject var todos: TodoStore
     @EnvironmentObject var driveAuth: DriveAuth
+    @EnvironmentObject var teamsAuth: TeamsAuth
 
     var body: some View {
         ScrollView {
@@ -584,7 +585,11 @@ struct ProfileView: View {
                     }
                     NavigationLink { MyDriveView() } label: {
                         ProfileRow(icon: "externaldrive", title: "My Drive",
-                                   subtitle: driveAuth.email ?? "Browse your Google Drive", showLine: false)
+                                   subtitle: driveAuth.email ?? "Browse your Google Drive", showLine: true)
+                    }
+                    NavigationLink { TeamsHomeView() } label: {
+                        ProfileRow(icon: "person.2.fill", title: "Microsoft Teams",
+                                   subtitle: teamsAuth.email ?? "Classes, work and files", showLine: false)
                     }
                 }
                 .buttonStyle(.plain)
