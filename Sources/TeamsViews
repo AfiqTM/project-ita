@@ -1,0 +1,504 @@
+import SwiftUI
+
+// MARK: - Class row (Others > Microsoft Teams)
+
+struct TeamRow: View {
+    let team: TGTeam
+    let linkedName: String?
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Image(systemName: "person.2.fill").foregroundColor(Theme.accent).frame(width: 26)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(team.displayName).foregroundColor(Theme.txt).fontWeight(.semibold)
+                    .multilineTextAlignment(.leading)
+                if let l = linkedName {
+                    Label(l, systemImage: "link").font(.caption).foregroundColor(Theme.accent).lineLimit(1)
+                }
+            }
+            Spacer()
+            Image(systemName: "chevron.right").font(.caption).foregroundColor(Theme.muted)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .overlay(Rectangle().fill(Theme.line).frame(height: 1), alignment: .bottom)
+    }
+}
+
+// MARK: - Link to a course
+
+struct TeamLinkSheet: View {
+    let team: TGTeam
+    @EnvironmentObject var hub: TeamsHub
+    @EnvironmentObject var catalog: CourseCatalog
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("“\(team.displayName)” will show a Teams icon on the course you pick.")
+                        .font(.footnote).foregroundColor(Theme.muted)
+                    if catalog.courses.isEmpty {
+                        Text(catalog.loaded ? "No courses found." : "Loading courses…")
+                            .foregroundColor(Theme.muted).padding(.top, 20)
+                    } else {
+                        VStack(spacing: 0) {
+                            ForEach(catalog.courses) { c in
+                                let on = hub.courseId(forTeam: team.id) == c.id
+                                Button {
+                                    if on { hub.unlink(teamId: team.id) } else { hub.link(team, to: c.id) }
+                                    dismiss()
+                                } label: {
+                                    HStack(spacing: 12) {
+                                        Image(systemName: on ? "checkmark.circle.fill" : "circle")
+                                            .foregroundColor(on ? Theme.accent : Theme.muted)
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(c.subjectName).foregroundColor(Theme.txt)
+                                                .multilineTextAlignment(.leading)
+                                            if let other = hub.linkedTeam(for: c.id), other.teamId != team.id {
+                                                Text("Currently: \(other.teamName)")
+                                                    .font(.caption).foregroundColor(Theme.muted)
+                                            }
+                                        }
+                                        Spacer()
+                                    }
+                                    .padding(14).contentShape(Rectangle())
+                                    .overlay(Rectangle().fill(Theme.line).frame(height: 1), alignment: .bottom)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .glowCard()
+                    }
+                }
+                .padding(16)
+            }
+            .background(Theme.bg.ignoresSafeArea())
+            .navigationTitle("Link to a course")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Cancel") { dismiss() }.fontWeight(.semibold)
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
+        .task { await catalog.loadIfNeeded() }
+    }
+}
+
+// MARK: - Class page (opened from the Teams icon on a course, or from Others)
+
+enum TeamsTab: String, CaseIterable, Identifiable {
+    case files = "Files", work = "Work", posts = "Posts"
+    var id: String { rawValue }
+}
+
+struct TeamsClassView: View {
+    let team: TeamLink
+    @State private var tab: TeamsTab = .files
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 26) {
+                    ForEach(TeamsTab.allCases) { t in
+                        Button { tab = t } label: {
+                            Text(t.rawValue)
+                                .fontWeight(tab == t ? .semibold : .regular)
+                                .foregroundColor(tab == t ? Theme.accent : Color(white: 0.66))
+                        }
+                    }
+                }
+                .padding(.horizontal, 16).padding(.vertical, 12)
+            }
+            switch tab {
+            case .files: TeamsFilesTab(teamId: team.teamId)
+            case .work: TeamsWorkTab(teamId: team.teamId)
+            case .posts: TeamsPostsTab(teamId: team.teamId)
+            }
+        }
+        .background(Theme.bg.ignoresSafeArea())
+        .navigationTitle(team.teamName)
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+// MARK: Files
+
+struct TeamsFilesTab: View {
+    let teamId: String
+    @EnvironmentObject var hub: TeamsHub
+    @State private var channels: [TGChannel] = []
+    @State private var loading = true
+    @State private var error: String?
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 0) {
+                if loading { ProgressView().tint(Theme.accent).padding(.top, 30) }
+                else if let e = error { TeamsInfo(text: e) }
+                else if channels.isEmpty { TeamsInfo(text: "No channels.") }
+                else {
+                    VStack(spacing: 0) {
+                        ForEach(channels) { c in
+                            NavigationLink {
+                                TeamsFolderView(source: .channel(team: teamId, channel: c.id), title: c.displayName)
+                            } label: {
+                                TeamsFileRow(icon: "folder.fill", title: c.displayName, subtitle: "Channel files")
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .glowCard()
+                    .padding(16)
+                }
+            }
+        }
+        .background(Theme.bg.ignoresSafeArea())
+        .task(id: teamId) {
+            loading = true; error = nil
+            do { channels = try await hub.channels(teamId) } catch { self.error = error.localizedDescription }
+            loading = false
+        }
+    }
+}
+
+enum TeamsFolderSource: Hashable {
+    case channel(team: String, channel: String)
+    case item(drive: String, id: String)
+}
+
+@MainActor
+final class TeamsFolderModel: ObservableObject {
+    @Published var items: [TGItem] = []
+    @Published var drive = ""
+    @Published var loading = true
+    @Published var error: String?
+
+    func load(_ s: TeamsFolderSource, hub: TeamsHub) async {
+        loading = true; error = nil
+        do {
+            var driveId: String, itemId: String
+            switch s {
+            case .channel(let t, let c):
+                let f: TGItem = try await hub.graph("/teams/\(hub.enc(t))/channels/\(hub.enc(c))/filesFolder", TGItem.self)
+                driveId = f.parentReference?.driveId ?? ""
+                itemId = f.id
+            case .item(let d, let i):
+                driveId = d; itemId = i
+            }
+            drive = driveId
+            let list = try await hub.graphAll("/drives/\(hub.enc(driveId))/items/\(hub.enc(itemId))/children?$top=200", TGItem.self)
+            items = list.sorted {
+                if $0.isFolder != $1.isFolder { return $0.isFolder }
+                return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+            }
+        } catch {
+            self.error = error.localizedDescription
+        }
+        loading = false
+    }
+}
+
+struct TeamsFolderView: View {
+    let source: TeamsFolderSource
+    let title: String
+    @EnvironmentObject var hub: TeamsHub
+    @StateObject private var model = TeamsFolderModel()
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 0) {
+                if model.loading { ProgressView().tint(Theme.accent).padding(.top, 30) }
+                else if let e = model.error { TeamsInfo(text: e) }
+                else if model.items.isEmpty { TeamsInfo(text: "This folder is empty.") }
+                else {
+                    VStack(spacing: 0) {
+                        ForEach(model.items) { it in
+                            if it.isFolder {
+                                NavigationLink {
+                                    TeamsFolderView(source: .item(drive: model.drive, id: it.id), title: it.name)
+                                } label: {
+                                    TeamsFileRow(icon: "folder.fill", title: it.name,
+                                                 subtitle: "\(it.folder?.childCount ?? 0) items")
+                                }
+                                .buttonStyle(.plain)
+                            } else {
+                                NavigationLink {
+                                    TeamsFilePreview(item: it, drive: model.drive)
+                                } label: {
+                                    TeamsFileRow(icon: teamsIcon(it.name), title: it.name,
+                                                 subtitle: teamsSub(it))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                    .glowCard()
+                    .padding(16)
+                }
+            }
+        }
+        .background(Theme.bg.ignoresSafeArea())
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
+        .refreshable { await model.load(source, hub: hub) }
+        .task { await model.load(source, hub: hub) }
+    }
+
+    private func teamsSub(_ it: TGItem) -> String {
+        var parts: [String] = []
+        if let s = it.size { parts.append(ByteCountFormatter.string(fromByteCount: Int64(s), countStyle: .file)) }
+        let d = tgDate(it.lastModifiedDateTime)
+        if d != "-" { parts.append(d) }
+        return parts.joined(separator: " · ")
+    }
+}
+
+func teamsIcon(_ name: String) -> String {
+    switch (name as NSString).pathExtension.lowercased() {
+    case "pdf": return "doc.richtext"
+    case "ppt", "pptx": return "rectangle.on.rectangle"
+    case "xls", "xlsx", "csv": return "tablecells"
+    case "doc", "docx", "txt", "rtf": return "doc.text"
+    case "png", "jpg", "jpeg", "gif", "heic": return "photo"
+    case "mp4", "mov", "m4v": return "play.rectangle"
+    case "mp3", "m4a", "wav": return "waveform"
+    case "zip", "rar": return "archivebox"
+    default: return "doc"
+    }
+}
+
+struct TeamsFileRow: View {
+    let icon: String
+    let title: String
+    let subtitle: String
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Image(systemName: icon).foregroundColor(Theme.accent).frame(width: 26)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).foregroundColor(Theme.txt).multilineTextAlignment(.leading)
+                if !subtitle.isEmpty {
+                    Text(subtitle).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
+                }
+            }
+            Spacer()
+            Image(systemName: "chevron.right").font(.caption).foregroundColor(Theme.muted)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .overlay(Rectangle().fill(Theme.line).frame(height: 1), alignment: .bottom)
+    }
+}
+
+struct TeamsInfo: View {
+    let text: String
+    var body: some View {
+        VStack(spacing: 12) {
+            Text(text).font(.footnote).foregroundColor(Theme.muted).multilineTextAlignment(.center)
+            NavigationLink { TeamsWebScreen() } label: {
+                Label("Open Teams website", systemImage: "globe").font(.footnote.weight(.semibold))
+                    .foregroundColor(Theme.accent)
+            }
+        }
+        .frame(maxWidth: .infinity).padding(24)
+    }
+}
+
+// MARK: File preview (download + Quick Look)
+
+struct TeamsFilePreview: View {
+    let item: TGItem
+    let drive: String
+    @EnvironmentObject var hub: TeamsHub
+    @State private var local: URL?
+    @State private var error: String?
+
+    var body: some View {
+        Group {
+            if let u = local { QuickLookView(url: u) }
+            else if let e = error {
+                VStack(spacing: 14) {
+                    Text(e).font(.footnote).foregroundColor(Theme.muted).multilineTextAlignment(.center)
+                    if let w = item.webUrl, let url = URL(string: w) {
+                        Link(destination: url) {
+                            Label("Open in browser", systemImage: "safari").fontWeight(.semibold)
+                                .foregroundColor(Theme.accent)
+                        }
+                    }
+                }.padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ProgressView().tint(Theme.accent).frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .background(Theme.bg.ignoresSafeArea())
+        .navigationTitle(item.name)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if let u = local {
+                ToolbarItem(placement: .navigationBarTrailing) { ShareLink(item: u) }
+            }
+        }
+        .task { await download() }
+    }
+
+    private func download() async {
+        do {
+            var dl = item.downloadUrl
+            if dl == nil {
+                let fresh: TGItem = try await hub.graph("/drives/\(hub.enc(drive))/items/\(hub.enc(item.id))", TGItem.self)
+                dl = fresh.downloadUrl
+            }
+            guard let s = dl, let url = URL(string: s) else { throw TeamsError.http(404) }
+            let (tmp, _) = try await URLSession.shared.download(from: url)
+            let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let dest = dir.appendingPathComponent(item.name)
+            try FileManager.default.moveItem(at: tmp, to: dest)
+            local = dest
+        } catch {
+            self.error = "Couldn't open this file. \(error.localizedDescription)"
+        }
+    }
+}
+
+// MARK: Work (assignments)
+
+struct TeamsWorkTab: View {
+    let teamId: String
+    @EnvironmentObject var hub: TeamsHub
+    @State private var items: [TGAssignment] = []
+    @State private var loading = true
+    @State private var error: String?
+    @State private var open: Set<String> = []
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 0) {
+                if loading { ProgressView().tint(Theme.accent).padding(.top, 30) }
+                else if let e = error { TeamsInfo(text: "Work isn't available for this class. \(e)") }
+                else if items.isEmpty { TeamsInfo(text: "No assignments yet.") }
+                else {
+                    VStack(spacing: 0) {
+                        ForEach(items) { a in
+                            VStack(alignment: .leading, spacing: 6) {
+                                Button {
+                                    if open.contains(a.id) { open.remove(a.id) } else { open.insert(a.id) }
+                                } label: {
+                                    HStack(alignment: .top, spacing: 14) {
+                                        Image(systemName: "square.and.pencil").foregroundColor(Theme.accent).frame(width: 26)
+                                        VStack(alignment: .leading, spacing: 3) {
+                                            Text(a.displayName).foregroundColor(Theme.txt).fontWeight(.semibold)
+                                                .multilineTextAlignment(.leading)
+                                            Text("Due \(tgDate(a.dueDateTime))" + (a.status.map { " · \($0.capitalized)" } ?? ""))
+                                                .font(.caption).foregroundColor(Theme.muted)
+                                        }
+                                        Spacer()
+                                        Image(systemName: open.contains(a.id) ? "chevron.up" : "chevron.down")
+                                            .font(.caption).foregroundColor(Theme.muted)
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                                if open.contains(a.id) {
+                                    let t = (a.instructions?.content ?? "").plainText
+                                    Text(t.isEmpty ? "No instructions." : t)
+                                        .font(.footnote).foregroundColor(Theme.txt).padding(.leading, 40)
+                                }
+                            }
+                            .padding(14)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .overlay(Rectangle().fill(Theme.line).frame(height: 1), alignment: .bottom)
+                        }
+                    }
+                    .glowCard()
+                    .padding(16)
+                }
+            }
+        }
+        .background(Theme.bg.ignoresSafeArea())
+        .task(id: teamId) {
+            loading = true; error = nil
+            do {
+                items = try await hub.graphAll("/education/classes/\(hub.enc(teamId))/assignments?$top=50", TGAssignment.self)
+                    .sorted { ($0.dueDateTime ?? "") > ($1.dueDateTime ?? "") }
+            } catch { self.error = error.localizedDescription }
+            loading = false
+        }
+    }
+}
+
+// MARK: Posts (channel conversations)
+
+struct TeamsPostsTab: View {
+    let teamId: String
+    @EnvironmentObject var hub: TeamsHub
+    @State private var channels: [TGChannel] = []
+    @State private var picked: TGChannel?
+    @State private var posts: [TGMessage] = []
+    @State private var loading = true
+    @State private var error: String?
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                if channels.count > 1 {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(channels) { c in
+                                Button { picked = c } label: {
+                                    Text(c.displayName).font(.footnote.weight(.semibold))
+                                        .foregroundColor(picked == c ? .black : Theme.txt)
+                                        .padding(.horizontal, 12).padding(.vertical, 6)
+                                        .background(picked == c ? Theme.accent : Theme.surface2)
+                                        .clipShape(Capsule())
+                                }
+                            }
+                        }
+                    }
+                }
+                if loading { ProgressView().tint(Theme.accent).frame(maxWidth: .infinity).padding(.top, 30) }
+                else if let e = error { TeamsInfo(text: "Posts can't be shown here. \(e)") }
+                else if posts.isEmpty { TeamsInfo(text: "No posts.") }
+                else {
+                    VStack(spacing: 0) {
+                        ForEach(posts) { m in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(m.from?.user?.displayName ?? "Teams").fontWeight(.semibold).foregroundColor(Theme.txt)
+                                Text(tgDate(m.createdDateTime)).font(.caption).foregroundColor(Theme.muted)
+                                let body = (m.body?.content ?? "").plainText
+                                if !body.isEmpty { Text(body).font(.footnote).foregroundColor(Theme.txt).padding(.top, 2) }
+                            }
+                            .padding(14)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .overlay(Rectangle().fill(Theme.line).frame(height: 1), alignment: .bottom)
+                        }
+                    }
+                    .glowCard()
+                }
+            }
+            .padding(16)
+        }
+        .background(Theme.bg.ignoresSafeArea())
+        .task(id: teamId) {
+            do {
+                channels = try await hub.channels(teamId)
+                picked = channels.first
+            } catch { self.error = error.localizedDescription; loading = false }
+        }
+        .task(id: picked) {
+            guard let c = picked else { return }
+            loading = true; error = nil
+            do {
+                let r: TGList<TGMessage> = try await hub.graph(
+                    "/teams/\(hub.enc(teamId))/channels/\(hub.enc(c.id))/messages?$top=30", TGList<TGMessage>.self)
+                posts = r.value.filter { !($0.body?.content ?? "").isEmpty }
+            } catch { self.error = error.localizedDescription }
+            loading = false
+        }
+    }
+}
