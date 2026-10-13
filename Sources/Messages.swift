@@ -388,11 +388,10 @@ struct ChatThreadView: View {
         .background(Theme.bg.ignoresSafeArea())
         .navigationTitle(selecting ? "\(selected.count) selected" : conv.title)
         .navigationBarTitleDisplayMode(.inline)
-        // No back arrow: go back by swiping in from the left edge (see SwipeBack.swift).
+        // No back arrow: go back by swiping in from the left edge (EdgeSwipeBack, bottom of this file).
         // The gesture is switched off while selecting so a stray swipe can't leave the screen.
         .navigationBarBackButtonHidden(true)
-        .onChange(of: selecting) { on in SwipeBack.enabled = !on }
-        .onDisappear { SwipeBack.enabled = true }
+        .background(EdgeSwipeBack(enabled: !selecting))
         .toolbar(.hidden, for: .tabBar)      // no tab bar when opened from a profile
         .toolbar {
             if selecting {
@@ -706,6 +705,44 @@ struct ChatOpenView: View {
             // no conversation yet: the thread opens empty and the first message creates it
             conv = ChatConv(id: 0, name: name, subname: nil, imageurl: imageURL, type: 1,
                             membercount: 2, unreadcount: 0, members: nil, messages: nil)
+        }
+    }
+}
+
+// MARK: - Edge swipe back (only for screens that hide the back arrow)
+
+/// Hiding the back arrow switches off iOS's swipe-from-the-left-edge gesture. This puts it back for the
+/// screen it is attached to and restores the previous behaviour when that screen goes away, so no other
+/// screen is touched. It is iOS's own edge gesture, so taps, scrolling and long-presses in the middle of
+/// the screen are not affected.
+private struct EdgeSwipeBack: UIViewControllerRepresentable {
+    var enabled: Bool
+
+    func makeUIViewController(context: Context) -> Controller { Controller() }
+
+    func updateUIViewController(_ vc: Controller, context: Context) { vc.enabled = enabled }
+
+    final class Controller: UIViewController, UIGestureRecognizerDelegate {
+        var enabled = true
+        private weak var previousDelegate: UIGestureRecognizerDelegate?
+        private weak var gesture: UIGestureRecognizer?
+
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            guard let g = navigationController?.interactivePopGestureRecognizer, g.delegate !== self else { return }
+            previousDelegate = g.delegate
+            gesture = g
+            g.delegate = self
+        }
+
+        override func viewDidDisappear(_ animated: Bool) {
+            super.viewDidDisappear(animated)
+            if let g = gesture, g.delegate === self { g.delegate = previousDelegate }
+            gesture = nil
+        }
+
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            enabled && (navigationController?.viewControllers.count ?? 0) > 1
         }
     }
 }
