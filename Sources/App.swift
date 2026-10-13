@@ -13,9 +13,7 @@ struct iTaleemApp: App {
     @StateObject private var driveLib = DriveLibrary()
     @StateObject private var driveAuth = DriveAuth()
     @StateObject private var catalog = CourseCatalog()
-    @StateObject private var teamsAuth = TeamsAuth()
-    @StateObject private var teamsLib = TeamsLibrary()
-    @StateObject private var teamsCatalog = TeamsCatalog()
+    @StateObject private var teams = TeamsHub()
     init() { Theme.applyAppearance(); NotificationManager.shared.setup() }
 
     var body: some Scene {
@@ -28,9 +26,7 @@ struct iTaleemApp: App {
             .environmentObject(driveLib)
             .environmentObject(driveAuth)
             .environmentObject(catalog)
-            .environmentObject(teamsAuth)
-            .environmentObject(teamsLib)
-            .environmentObject(teamsCatalog)
+            .environmentObject(teams)
             .preferredColorScheme(.dark)
             .tint(Theme.accent)
             .background(Theme.bg.ignoresSafeArea())
@@ -72,9 +68,12 @@ final class AppState: ObservableObject {
         MoodleAPI.shared.privateToken = nil
         site = nil
         loggedIn = false
-        WKWebsiteDataStore.default().removeData(
-            ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(),
-            modifiedSince: .distantPast) {}
+        // clear iTa'leem's web data but keep the Microsoft Teams sign-in
+        let store = WKWebsiteDataStore.default()
+        store.fetchDataRecords(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes()) { recs in
+            let mine = recs.filter { !TeamsHub.isMicrosoftHost($0.displayName) }
+            store.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), for: mine) {}
+        }
     }
 }
 
