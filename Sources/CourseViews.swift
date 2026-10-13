@@ -361,6 +361,8 @@ struct GradesView: View {
             }
             .padding(16)
         }
+        .scrollDismissesKeyboard(.interactively)
+        .keyboardDoneButton()
         .task {
             do {
                 let r: GradesResp = try await MoodleAPI.shared.call(
