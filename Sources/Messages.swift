@@ -388,7 +388,11 @@ struct ChatThreadView: View {
         .background(Theme.bg.ignoresSafeArea())
         .navigationTitle(selecting ? "\(selected.count) selected" : conv.title)
         .navigationBarTitleDisplayMode(.inline)
-        .navigationBarBackButtonHidden(selecting)
+        // No back arrow: go back by swiping in from the left edge (see SwipeBack.swift).
+        // The gesture is switched off while selecting so a stray swipe can't leave the screen.
+        .navigationBarBackButtonHidden(true)
+        .onChange(of: selecting) { on in SwipeBack.enabled = !on }
+        .onDisappear { SwipeBack.enabled = true }
         .toolbar(.hidden, for: .tabBar)      // no tab bar when opened from a profile
         .toolbar {
             if selecting {
