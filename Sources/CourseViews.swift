@@ -12,9 +12,7 @@ struct CourseDetailView: View {
     let course: Course
     @EnvironmentObject var todos: TodoStore
     @EnvironmentObject var drive: DriveLibrary
-    @EnvironmentObject var teamsLib: TeamsLibrary
     @State private var tab: CourseTab = .course
-    @State private var pickingTeam = false
 
     private var todoCount: Int { todos.count(for: course.id) }
     private var driveCount: Int { drive.files(for: course.id).count }
@@ -27,21 +25,6 @@ struct CourseDetailView: View {
             case .todo: return todoCount > 0
             default: return true
             }
-        }
-    }
-
-    /// Top-right Teams icon: opens the linked class, or asks which class to link
-    @ViewBuilder private var teamsButton: some View {
-        if let team = teamsLib.team(for: course.id) {
-            NavigationLink { TeamDetailView(team: team) } label: { TeamsGlyph(size: 26) }
-                .contextMenu {
-                    Button { pickingTeam = true } label: { Label("Change class…", systemImage: "link") }
-                    Button(role: .destructive) { teamsLib.unlink(courseId: course.id) } label: {
-                        Label("Unlink class", systemImage: "minus.circle")
-                    }
-                }
-        } else {
-            Button { pickingTeam = true } label: { TeamsGlyph(size: 26).opacity(0.55) }
         }
     }
 
@@ -79,10 +62,6 @@ struct CourseDetailView: View {
         .background(Theme.bg.ignoresSafeArea())
         .navigationTitle(course.shortname ?? course.fullname)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) { teamsButton }
-        }
-        .sheet(isPresented: $pickingTeam) { PickTeamSheet(course: course) }
         // the open tab goes away when its last item is removed
         .onChange(of: tabs) { new in if !new.contains(tab) { tab = .course } }
     }
