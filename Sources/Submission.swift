@@ -739,7 +739,7 @@ struct AssignmentView: View {
     @State private var confirmRemove = false
     @State private var busy = false
     @State private var introFiles: [IntroFile] = []      // files the lecturer attached to the assignment
-    @State private var showGemini = false
+    @State private var showShare = false
 
     private var uid: Int { app.site?.userid ?? 0 }
 
@@ -797,7 +797,7 @@ struct AssignmentView: View {
                       allowsMultipleSelection: true) { result in
             if case .success(let urls) = result { addFiles(urls) }
         }
-        .sheet(isPresented: $showGemini) { GeminiPickerSheet(files: introFiles) }
+        .sheet(isPresented: $showShare) { SharePickerSheet(files: introFiles) }
     }
 
     // ---- lecturer's attached files (same as the "attachments" shown on the Moodle website) ----
@@ -824,9 +824,9 @@ struct AssignmentView: View {
                     }
                 }
             }
-            Button { showGemini = true } label: { GeminiButtonLabel() }
+            Button { showShare = true } label: { ShareButtonLabel() }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Send to Gemini")
+                .accessibilityLabel("Share files")
         }
         .padding(16).frame(maxWidth: .infinity, alignment: .leading)
         .glowCard()
@@ -1102,7 +1102,7 @@ struct AssignmentView: View {
 }
 
 
-// MARK: - Lecturer attachments + "Send to Gemini"
+// MARK: - Lecturer attachments + share
 
 // Only the bits of mod_assign_get_assignments needed for the lecturer's attached files
 // (decoded separately so the existing Assign model stays untouched).
@@ -1124,38 +1124,17 @@ struct IntroResp: Decodable {
     let courses: [Course]
 }
 
-// Four-point concave star (the Gemini silhouette), drawn by hand so it can be restyled.
-struct SparkleShape: Shape {
-    func path(in r: CGRect) -> Path {
-        let c = CGPoint(x: r.midX, y: r.midY)
-        let t = CGPoint(x: r.midX, y: r.minY), rt = CGPoint(x: r.maxX, y: r.midY)
-        let b = CGPoint(x: r.midX, y: r.maxY), l = CGPoint(x: r.minX, y: r.midY)
-        let k = r.width * 0.09   // how far the pinch control points sit from the centre
-        var p = Path()
-        p.move(to: t)
-        p.addQuadCurve(to: rt, control: CGPoint(x: c.x + k, y: c.y - k))
-        p.addQuadCurve(to: b,  control: CGPoint(x: c.x + k, y: c.y + k))
-        p.addQuadCurve(to: l,  control: CGPoint(x: c.x - k, y: c.y + k))
-        p.addQuadCurve(to: t,  control: CGPoint(x: c.x - k, y: c.y - k))
-        p.closeSubpath()
-        return p
-    }
-}
-
-// Gemini-style sparkle recoloured to the app's tan accent, inside a themed tile (48pt = easy to tap).
-struct GeminiButtonLabel: View {
+// Share icon in a themed tile (48pt = easy to tap).
+struct ShareButtonLabel: View {
     var size: CGFloat = 48
     var body: some View {
-        let grad = LinearGradient(colors: [Color(hex: 0xF0DDBB), Theme.accent, Color(hex: 0x9C7F55)],
-                                  startPoint: .topLeading, endPoint: .bottomTrailing)
         ZStack {
             RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.surface2)
             RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Theme.line, lineWidth: 1)
-            SparkleShape().fill(grad).frame(width: size * 0.5, height: size * 0.5)
-                .offset(x: -size * 0.04, y: size * 0.04)
-                .shadow(color: Theme.accent.opacity(0.35), radius: 6)
-            SparkleShape().fill(grad).frame(width: size * 0.2, height: size * 0.2)
-                .offset(x: size * 0.22, y: -size * 0.22)
+            Image(systemName: "square.and.arrow.up")
+                .font(.system(size: size * 0.42, weight: .medium))
+                .foregroundColor(Theme.accent)
+                .offset(y: -size * 0.02)
         }
         .frame(width: size, height: size)
         .contentShape(Rectangle())
@@ -1163,7 +1142,7 @@ struct GeminiButtonLabel: View {
 }
 
 enum Sharer {
-    /// Opens the iOS share sheet with the given files (Gemini appears in it once it is installed).
+    /// Opens the iOS share sheet with the given files (Gemini and other apps appear in it).
     @MainActor static func present(_ urls: [URL]) {
         guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
                 .first(where: { $0.activationState == .foregroundActive }),
@@ -1177,7 +1156,7 @@ enum Sharer {
     }
 }
 
-struct GeminiPickerSheet: View {
+struct SharePickerSheet: View {
     let files: [IntroFile]
     @State private var selected: Set<String>
     @State private var busy = false
@@ -1193,8 +1172,8 @@ struct GeminiPickerSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 12) {
-                GeminiButtonLabel(size: 40)
-                Text("Send to Gemini").font(.title3.bold()).foregroundColor(Theme.txt)
+                ShareButtonLabel(size: 40)
+                Text("Share").font(.title3.bold()).foregroundColor(Theme.txt)
                 Spacer()
             }
             Button {
@@ -1238,7 +1217,7 @@ struct GeminiPickerSheet: View {
             Button { Task { await send() } } label: {
                 HStack {
                     if busy { ProgressView().tint(.black) }
-                    Text(busy ? "Preparing..." : "Share \(selected.count) file\(selected.count == 1 ? "" : "s")")
+                    Text(busy ? "Preparing..." : (selected.count == 1 ? "Share file" : "Share files"))
                         .fontWeight(.semibold)
                 }
                 .foregroundColor(.black)
@@ -1262,7 +1241,7 @@ struct GeminiPickerSheet: View {
             for f in files where selected.contains(f.id) {
                 guard let s = f.fileurl, let u = MoodleAPI.shared.fileURL(s) else { continue }
                 let (d, _) = try await URLSession.shared.data(from: u)
-                let dir = FileManager.default.temporaryDirectory.appendingPathComponent("gemini-" + UUID().uuidString)
+                let dir = FileManager.default.temporaryDirectory.appendingPathComponent("share-" + UUID().uuidString)
                 try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
                 let dest = dir.appendingPathComponent(f.filename ?? "file")
                 try d.write(to: dest)
