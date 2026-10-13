@@ -208,13 +208,17 @@ struct MessagesOverlay: View {
                 guard wasHorizontal, !presenter.chatOpen else { dragX = 0; return }
                 let far = g.translation.width > width * 0.33 || g.predictedEndTranslation.width > width * 0.6
                 if far {
-                    withAnimation(.easeOut(duration: 0.2)) { dragX = width }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                    // Quick finish, shorter the further you already dragged (about 0.12 to 0.22 s),
+                    // like the app's other slides.
+                    let remaining = max(0, width - dragX) / max(width, 1)
+                    let dur = 0.12 + 0.10 * Double(remaining)
+                    withAnimation(.easeOut(duration: dur)) { dragX = width }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + dur) {
                         var t = Transaction(); t.disablesAnimations = true
                         withTransaction(t) { presenter.isOpen = false; dragX = 0 }
                     }
                 } else {
-                    withAnimation(.easeOut(duration: 0.2)) { dragX = 0 }
+                    withAnimation(.easeOut(duration: 0.15)) { dragX = 0 }   // snap back
                 }
             }
     }
