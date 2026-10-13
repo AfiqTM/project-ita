@@ -1,6 +1,7 @@
 import SwiftUI
 import WebKit
 import Security
+import AuthenticationServices
 
 // The Website tab: the iTa'leem site shown exactly as in a normal browser (no injected scripts or theme).
 // One WKWebView lives for the whole app session, so switching tabs never reloads or loses the page.
@@ -15,6 +16,7 @@ final class SiteBrowser: NSObject, ObservableObject, WKNavigationDelegate, WKUID
     @Published var canGoForward = false
     @Published var currentURL: URL?
     @Published var notice: String?
+    @Published var needsSignIn = false      // shows the "Sign in with Safari" button
 
     private var observers: [NSKeyValueObservation] = []
     private var started = false
@@ -23,6 +25,7 @@ final class SiteBrowser: NSObject, ObservableObject, WKNavigationDelegate, WKUID
     private var retryTask: Task<Void, Never>?
     private var userid = 0
     private var downloads: [ObjectIdentifier: URL] = [:]
+    private let webAuth = WebAuth()
 
     private var home: URL { Site.url.appendingPathComponent("my/") }
 
@@ -107,10 +110,12 @@ final class SiteBrowser: NSObject, ObservableObject, WKNavigationDelegate, WKUID
                 loginRetried = true
                 Task { await recoverSession() }
             } else if retryTask == nil {
-                notice = "You're signed out. Sign in on this page; the session is saved, so you shouldn't need to again for a while."
+                notice = "You're signed out. Tap Sign in to use Safari's saved password."
+                needsSignIn = true
             }
         } else {
             loginRetried = false
+            needsSignIn = false
             retryTask?.cancel(); retryTask = nil
             if u.host == Site.url.host { wantedURL = u }
             Task {
@@ -124,7 +129,8 @@ final class SiteBrowser: NSObject, ObservableObject, WKNavigationDelegate, WKUID
     private func recoverSession() async {
         let api = MoodleAPI.shared
         guard api.privateToken != nil else {
-            notice = "You're signed out. Sign in on this page; the session is saved, so you shouldn't need to again for a while."
+            notice = "You're signed out. Tap Sign in to use Safari's saved password."
+            needsSignIn = true
             return
         }
         let wait = api.autologinWait
@@ -137,9 +143,27 @@ final class SiteBrowser: NSObject, ObservableObject, WKNavigationDelegate, WKUID
         }
     }
 
+    // Signs in through the system browser sheet, which has Safari's saved passwords (and handles 2FA).
+    // It returns a fresh token, then the tab is signed in with the usual one-time key.
+    func signInWithSafari() async {
+        do {
+            let s = try await webAuth.start()
+            MoodleAPI.shared.token = s.token
+            MoodleAPI.shared.privateToken = s.privateToken
+            Keychain.save(s)
+            needsSignIn = false
+            notice = nil
+            await open(resumeURL, force: true)
+        } catch {
+            if let e = error as? ASWebAuthenticationSessionError, e.code == .canceledLogin { return }
+            notice = "Sign-in failed: \(error.localizedDescription)"
+        }
+    }
+
     private func waitAndRetry(after seconds: TimeInterval) {
         retryTask?.cancel()
-        notice = "Automatic sign-in is on cooldown (Moodle allows one every 6 minutes). Retrying by itself, or sign in on this page."
+        needsSignIn = true
+        notice = "Automatic sign-in is on cooldown (Moodle allows one every 6 minutes). Retrying by itself, or tap Sign in."
         retryTask = Task { [weak self] in
             var delay = seconds
             for _ in 0..<8 {
@@ -332,6 +356,18 @@ struct SiteBrowserView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Theme.surface2)
                     .onTapGesture { browser.notice = nil }
+            }
+            if browser.needsSignIn {
+                Button { Task { await browser.signInWithSafari() } } label: {
+                    Text("Sign in")
+                        .fontWeight(.semibold)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .foregroundColor(Theme.bg)
+                        .background(Theme.accent)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+                .padding(.horizontal, 16).padding(.vertical, 8)
             }
             SiteWebHost(webView: browser.webView)
             bar
