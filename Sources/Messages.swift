@@ -197,39 +197,68 @@ struct ChatListView: View {
     @State private var loading = true
     @State private var error: String?
     @State private var onlyUnread = false
+    @State private var pendingDelete: ChatConv?
 
     private var uid: Int { app.site?.userid ?? 0 }
     private var shown: [ChatConv] { onlyUnread ? convs.filter { $0.unread > 0 } : convs }
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 0) {
-                    Picker("", selection: $onlyUnread) {
-                        Text("All").tag(false)
-                        Text("Unread").tag(true)
-                    }
-                    .pickerStyle(.segmented)
-                    .padding(.horizontal, 16).padding(.vertical, 10)
+            // A List (instead of ScrollView + buttons) gives native swipe actions: while a row is being
+            // swiped it never counts as a tap, so a chat can't open by accident.
+            List {
+                Picker("", selection: $onlyUnread) {
+                    Text("All").tag(false)
+                    Text("Unread").tag(true)
+                }
+                .pickerStyle(.segmented)
+                .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
 
-                    if let error {
-                        Text(error).font(.footnote).foregroundColor(Theme.muted)
-                            .padding(16).frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    if loading && convs.isEmpty {
-                        ProgressView().tint(Theme.accent).padding(.top, 40)
-                    } else if shown.isEmpty && error == nil {
-                        Text(onlyUnread ? "No unread messages." : "No messages yet.")
-                            .foregroundColor(Theme.muted).padding(.top, 40)
-                    }
-                    LazyVStack(spacing: 0) {
-                        ForEach(shown) { c in
-                            NavigationLink { ChatThreadView(conv: c) } label: { row(c) }
-                                .buttonStyle(.plain)
+                if let error {
+                    Text(error).font(.footnote).foregroundColor(Theme.muted)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .listRowBackground(Color.clear).listRowSeparator(.hidden)
+                }
+                if loading && convs.isEmpty {
+                    ProgressView().tint(Theme.accent)
+                        .frame(maxWidth: .infinity).padding(.top, 30)
+                        .listRowBackground(Color.clear).listRowSeparator(.hidden)
+                } else if shown.isEmpty && error == nil {
+                    Text(onlyUnread ? "No unread messages." : "No messages yet.")
+                        .foregroundColor(Theme.muted)
+                        .frame(maxWidth: .infinity).padding(.top, 30)
+                        .listRowBackground(Color.clear).listRowSeparator(.hidden)
+                }
+
+                ForEach(shown) { c in
+                    row(c)
+                        .background {
+                            NavigationLink { ChatThreadView(conv: c) } label: { EmptyView() }.opacity(0)
                         }
-                    }
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                        // swipe right: mark as read
+                        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                            if c.unread > 0 {
+                                Button { Task { await markRead(c) } } label: {
+                                    Label("Read", systemImage: "envelope.open")
+                                }
+                                .tint(Theme.accent)
+                            }
+                        }
+                        // swipe left: delete (needs a second tap to confirm, no full-swipe)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button(role: .destructive) { pendingDelete = c } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
                 }
             }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
             .background(Theme.bg.ignoresSafeArea())
             .navigationTitle("Messages")
             .navigationBarTitleDisplayMode(.inline)
@@ -240,6 +269,17 @@ struct ChatListView: View {
             }
             .refreshable { await load() }
             .onAppear { Task { await load() } }   // also refreshes when coming back from a thread
+            .confirmationDialog(
+                "Delete this chat?",
+                isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
+                titleVisibility: .visible,
+                presenting: pendingDelete
+            ) { c in
+                Button("Delete for me", role: .destructive) { Task { await delete(c) } }
+                Button("Cancel", role: .cancel) {}
+            } message: { _ in
+                Text("This only removes the chat from your view. The other person will still have it.")
+            }
         }
     }
 
@@ -278,6 +318,25 @@ struct ChatListView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         .overlay(Rectangle().fill(Theme.line).frame(height: 1), alignment: .bottom)
+    }
+
+    private func markRead(_ c: ChatConv) async {
+        _ = try? await MoodleAPI.shared.raw("core_message_mark_all_conversation_messages_as_read",
+                                            ["userid": uid, "conversationid": c.id])
+        await load()
+    }
+
+    /// Removes the chat from this user's view only (Moodle keeps it for the other person).
+    private func delete(_ c: ChatConv) async {
+        do {
+            _ = try await MoodleAPI.shared.raw("core_message_delete_conversations_by_id",
+                                               ["userid": uid, "conversationids": [c.id]])
+            convs.removeAll { $0.id == c.id }
+            error = nil
+        } catch {
+            self.error = "Couldn't delete chat: " + error.localizedDescription
+        }
+        await ChatStore.shared.refreshBadge(userid: uid)
     }
 
     private func load() async {
