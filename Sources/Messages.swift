@@ -631,6 +631,13 @@ struct ChatThreadView: View {
         let t = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !t.isEmpty, !sending else { return }
         sending = true; error = nil
+
+        // Show the message and clear the box straight away; the network call finishes in the background.
+        // The placeholder has a negative id (so it can't be selected/deleted) and is swapped for the real one.
+        let tempId = -Int.random(in: 1...1_000_000_000)
+        draft = ""
+        merge([ChatMsg(id: tempId, useridfrom: uid, text: t, timecreated: Int(Date().timeIntervalSince1970))])
+
         do {
             if convId == 0, let to = toUser {
                 // First message of a brand-new chat: sending it also creates the conversation.
@@ -649,7 +656,7 @@ struct ChatThreadView: View {
                      "newestmessagefirst": 1]) {
                     convId = found.id
                 }
-                draft = ""
+                msgs.removeAll { $0.id == tempId }
                 merge([ChatMsg(id: (o["msgid"] as? Int) ?? 0, useridfrom: uid, text: t,
                                timecreated: (o["timecreated"] as? Int) ?? Int(Date().timeIntervalSince1970))])
                 await load(silent: true)
@@ -657,10 +664,13 @@ struct ChatThreadView: View {
                 let sent: [ChatMsg] = try await MoodleAPI.shared.call(
                     "core_message_send_messages_to_conversation",
                     ["conversationid": convId, "messages": [["text": t, "textformat": 0]]])
-                draft = ""
+                msgs.removeAll { $0.id == tempId }
                 merge(sent)
             }
         } catch {
+            // Failed: take the placeholder away and put the text back so nothing is lost
+            msgs.removeAll { $0.id == tempId }
+            if draft.isEmpty { draft = t }
             self.error = "Couldn't send: " + error.localizedDescription
         }
         sending = false
