@@ -738,6 +738,8 @@ struct AssignmentView: View {
     @State private var showPicker = false
     @State private var confirmRemove = false
     @State private var busy = false
+    @State private var introFiles: [IntroFile] = []      // files the lecturer attached to the assignment
+    @State private var showGemini = false
 
     private var uid: Int { app.site?.userid ?? 0 }
 
@@ -775,6 +777,7 @@ struct AssignmentView: View {
                             .padding(16).frame(maxWidth: .infinity, alignment: .leading)
                             .glowCard()
                     }
+                    if !introFiles.isEmpty { attachmentsCard }
                     submissionCard(a)
                 }
                 NavigationLink {
@@ -794,6 +797,45 @@ struct AssignmentView: View {
                       allowsMultipleSelection: true) { result in
             if case .success(let urls) = result { addFiles(urls) }
         }
+        .sheet(isPresented: $showGemini) { GeminiPickerSheet(files: introFiles) }
+    }
+
+    // ---- lecturer's attached files (same as the "attachments" shown on the Moodle website) ----
+
+    private var attachmentsCard: some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("ATTACHMENTS").font(.caption).foregroundColor(Theme.muted)
+                ForEach(introFiles) { f in
+                    if let s = f.fileurl, let u = MoodleAPI.shared.fileURL(s) {
+                        NavigationLink { FileViewer(url: u, title: f.filename ?? "File") } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: "doc").foregroundColor(Theme.accent)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(f.filename ?? "File").foregroundColor(Theme.accent).lineLimit(2)
+                                    if let t = f.timemodified {
+                                        Text(fmt(t)).font(.caption).foregroundColor(Theme.muted)
+                                    }
+                                }
+                                Spacer(minLength: 0)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            Button { showGemini = true } label: { GeminiButtonLabel() }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Send to Gemini")
+        }
+        .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+        .glowCard()
+    }
+
+    private func loadIntroFiles() async {
+        let r: IntroResp? = try? await MoodleAPI.shared.call(
+            "mod_assign_get_assignments", ["courseids": [courseId]])
+        introFiles = r?.courses.first?.assignments.first { $0.cmid == module.id }?.introattachments ?? []
     }
 
     // ---- info card ----
@@ -1051,9 +1093,185 @@ struct AssignmentView: View {
                 "mod_assign_get_assignments", ["courseids": [courseId]])
             assign = r.courses.first?.assignments.first { $0.cmid == module.id }
             if let a = assign { await loadStatus(a) }
+            await loadIntroFiles()
         } catch {
             if !(error is CancellationError) { self.error = error.localizedDescription }
         }
         loading = false
+    }
+}
+
+
+// MARK: - Lecturer attachments + "Send to Gemini"
+
+// Only the bits of mod_assign_get_assignments needed for the lecturer's attached files
+// (decoded separately so the existing Assign model stays untouched).
+struct IntroFile: Decodable, Identifiable {
+    let filename: String?
+    let fileurl: String?
+    let filesize: Int?
+    let timemodified: Int?
+    var id: String { fileurl ?? filename ?? "file" }
+}
+struct IntroResp: Decodable {
+    struct Course: Decodable {
+        struct A: Decodable {
+            let cmid: Int
+            let introattachments: [IntroFile]?
+        }
+        let assignments: [A]
+    }
+    let courses: [Course]
+}
+
+// Four-point concave star (the Gemini silhouette), drawn by hand so it can be restyled.
+struct SparkleShape: Shape {
+    func path(in r: CGRect) -> Path {
+        let c = CGPoint(x: r.midX, y: r.midY)
+        let t = CGPoint(x: r.midX, y: r.minY), rt = CGPoint(x: r.maxX, y: r.midY)
+        let b = CGPoint(x: r.midX, y: r.maxY), l = CGPoint(x: r.minX, y: r.midY)
+        let k = r.width * 0.09   // how far the pinch control points sit from the centre
+        var p = Path()
+        p.move(to: t)
+        p.addQuadCurve(to: rt, control: CGPoint(x: c.x + k, y: c.y - k))
+        p.addQuadCurve(to: b,  control: CGPoint(x: c.x + k, y: c.y + k))
+        p.addQuadCurve(to: l,  control: CGPoint(x: c.x - k, y: c.y + k))
+        p.addQuadCurve(to: t,  control: CGPoint(x: c.x - k, y: c.y - k))
+        p.closeSubpath()
+        return p
+    }
+}
+
+// Gemini-style sparkle recoloured to the app's tan accent, inside a themed tile (48pt = easy to tap).
+struct GeminiButtonLabel: View {
+    var size: CGFloat = 48
+    var body: some View {
+        let grad = LinearGradient(colors: [Color(hex: 0xF0DDBB), Theme.accent, Color(hex: 0x9C7F55)],
+                                  startPoint: .topLeading, endPoint: .bottomTrailing)
+        ZStack {
+            RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.surface2)
+            RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Theme.line, lineWidth: 1)
+            SparkleShape().fill(grad).frame(width: size * 0.5, height: size * 0.5)
+                .offset(x: -size * 0.04, y: size * 0.04)
+                .shadow(color: Theme.accent.opacity(0.35), radius: 6)
+            SparkleShape().fill(grad).frame(width: size * 0.2, height: size * 0.2)
+                .offset(x: size * 0.22, y: -size * 0.22)
+        }
+        .frame(width: size, height: size)
+        .contentShape(Rectangle())
+    }
+}
+
+enum Sharer {
+    /// Opens the iOS share sheet with the given files (Gemini appears in it once it is installed).
+    @MainActor static func present(_ urls: [URL]) {
+        guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
+                .first(where: { $0.activationState == .foregroundActive }),
+              var top = scene.windows.first(where: { $0.isKeyWindow })?.rootViewController else { return }
+        while let next = top.presentedViewController { top = next }
+        let vc = UIActivityViewController(activityItems: urls, applicationActivities: nil)
+        vc.popoverPresentationController?.sourceView = top.view
+        vc.popoverPresentationController?.sourceRect = CGRect(x: top.view.bounds.midX, y: top.view.bounds.midY,
+                                                              width: 0, height: 0)
+        top.present(vc, animated: true)
+    }
+}
+
+struct GeminiPickerSheet: View {
+    let files: [IntroFile]
+    @State private var selected: Set<String>
+    @State private var busy = false
+    @State private var error: String?
+
+    init(files: [IntroFile]) {
+        self.files = files
+        _selected = State(initialValue: Set(files.map { $0.id }))
+    }
+
+    private var allSelected: Bool { selected.count == files.count }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 12) {
+                GeminiButtonLabel(size: 40)
+                Text("Send to Gemini").font(.title3.bold()).foregroundColor(Theme.txt)
+                Spacer()
+            }
+            Button {
+                selected = allSelected ? [] : Set(files.map { $0.id })
+            } label: {
+                HStack {
+                    Image(systemName: allSelected ? "checkmark.circle.fill" : "circle")
+                        .foregroundColor(allSelected ? Theme.accent : Theme.muted)
+                    Text("Select all").foregroundColor(Theme.txt)
+                    Spacer()
+                    Text("\(selected.count) of \(files.count)").font(.caption).foregroundColor(Theme.muted)
+                }
+                .padding(14).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .glowCard()
+
+            ScrollView {
+                VStack(spacing: 0) {
+                    ForEach(files) { f in
+                        Button {
+                            if selected.contains(f.id) { selected.remove(f.id) } else { selected.insert(f.id) }
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: selected.contains(f.id) ? "checkmark.circle.fill" : "circle")
+                                    .foregroundColor(selected.contains(f.id) ? Theme.accent : Theme.muted)
+                                Text(f.filename ?? "File").foregroundColor(Theme.txt).lineLimit(2)
+                                Spacer(minLength: 0)
+                            }
+                            .padding(14).contentShape(Rectangle())
+                            .overlay(Rectangle().fill(Theme.line).frame(height: 1), alignment: .bottom)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .glowCard()
+            }
+
+            if let error { Text(error).font(.footnote).foregroundColor(.red.opacity(0.85)) }
+
+            Button { Task { await send() } } label: {
+                HStack {
+                    if busy { ProgressView().tint(.black) }
+                    Text(busy ? "Preparing..." : "Share \(selected.count) file\(selected.count == 1 ? "" : "s")")
+                        .fontWeight(.semibold)
+                }
+                .foregroundColor(.black)
+                .frame(maxWidth: .infinity).padding(.vertical, 14)
+                .background(Theme.accent.opacity(selected.isEmpty ? 0.35 : 1))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+            }
+            .disabled(selected.isEmpty || busy)
+        }
+        .padding(16)
+        .background(Theme.bg.ignoresSafeArea())
+        .preferredColorScheme(.dark)
+        .presentationDetents([.medium, .large])
+    }
+
+    private func send() async {
+        busy = true; error = nil
+        defer { busy = false }
+        do {
+            var urls: [URL] = []
+            for f in files where selected.contains(f.id) {
+                guard let s = f.fileurl, let u = MoodleAPI.shared.fileURL(s) else { continue }
+                let (d, _) = try await URLSession.shared.data(from: u)
+                let dir = FileManager.default.temporaryDirectory.appendingPathComponent("gemini-" + UUID().uuidString)
+                try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                let dest = dir.appendingPathComponent(f.filename ?? "file")
+                try d.write(to: dest)
+                urls.append(dest)
+            }
+            guard !urls.isEmpty else { error = "Couldn't download the selected files."; return }
+            Sharer.present(urls)
+        } catch {
+            self.error = error.localizedDescription
+        }
     }
 }
