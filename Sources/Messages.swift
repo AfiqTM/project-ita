@@ -118,12 +118,12 @@ extension View {
 struct MessagesButton: View {
     @EnvironmentObject var app: AppState
     @ObservedObject private var store = ChatStore.shared
-    @State private var show = false
 
     private var uid: Int { app.site?.userid ?? 0 }
 
+    // Pushes onto the current navigation stack (slides in from the right, swipe from the left edge to go back)
     var body: some View {
-        Button { show = true } label: {
+        NavigationLink { ChatListView() } label: {
             Image(systemName: "message")
                 .font(.system(size: 19, weight: .semibold))
                 .foregroundColor(Theme.txt)
@@ -142,12 +142,9 @@ struct MessagesButton: View {
                     }
                 }
         }
+        .buttonStyle(.plain)
         .accessibilityLabel(store.unread > 0 ? "Messages, \(store.unread) unread" : "Messages")
-        .sheet(isPresented: $show, onDismiss: {
-            Task { await store.refreshBadge(userid: uid) }
-        }) {
-            ChatListView().environmentObject(app)
-        }
+        .onAppear { Task { await store.refreshBadge(userid: uid) } }   // refresh when coming back from Messages
         .task(id: uid) {
             while !Task.isCancelled {
                 await store.refreshBadge(userid: uid)
@@ -192,7 +189,6 @@ struct ChatAvatar: View {
 
 struct ChatListView: View {
     @EnvironmentObject var app: AppState
-    @Environment(\.dismiss) private var dismiss
     @State private var convs: [ChatConv] = []
     @State private var loading = true
     @State private var error: String?
@@ -203,7 +199,7 @@ struct ChatListView: View {
     private var shown: [ChatConv] { onlyUnread ? convs.filter { $0.unread > 0 } : convs }
 
     var body: some View {
-        NavigationStack {
+        Group {
             // A List (instead of ScrollView + buttons) gives native swipe actions: while a row is being
             // swiped it never counts as a tap, so a chat can't open by accident.
             List {
@@ -260,13 +256,6 @@ struct ChatListView: View {
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .background(Theme.bg.ignoresSafeArea())
-            .navigationTitle("Messages")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") { dismiss() }.foregroundColor(Theme.accent)
-                }
-            }
             .refreshable { await load() }
             .onAppear { Task { await load() } }   // also refreshes when coming back from a thread
             .confirmationDialog(
@@ -281,6 +270,13 @@ struct ChatListView: View {
                 Text("This only removes the chat from your view. The other person will still have it.")
             }
         }
+        .navigationTitle("Messages")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.visible, for: .navigationBar)   // the Courses screen hides its bar; this one needs it for the title
+        // No back arrow: go back by swiping in from the left edge (same as a chat thread).
+        .navigationBarBackButtonHidden(true)
+        .background(EdgeSwipeBack(enabled: true))
+        .toolbar(.hidden, for: .tabBar)
     }
 
     private func row(_ c: ChatConv) -> some View {
@@ -793,20 +789,22 @@ private struct EdgeSwipeBack: UIViewControllerRepresentable {
 
     final class Controller: UIViewController, UIGestureRecognizerDelegate {
         var enabled = true
-        private weak var previousDelegate: UIGestureRecognizerDelegate?
+        // The system's own delegate, shared by every screen that uses this helper, so two of them in a row
+        // (the Messages list, then a chat opened from it) can never leave a stale delegate behind.
+        private static weak var original: UIGestureRecognizerDelegate?
         private weak var gesture: UIGestureRecognizer?
 
         override func viewDidAppear(_ animated: Bool) {
             super.viewDidAppear(animated)
             guard let g = navigationController?.interactivePopGestureRecognizer, g.delegate !== self else { return }
-            previousDelegate = g.delegate
+            if !(g.delegate is Controller) { Controller.original = g.delegate }
             gesture = g
             g.delegate = self
         }
 
         override func viewDidDisappear(_ animated: Bool) {
             super.viewDidDisappear(animated)
-            if let g = gesture, g.delegate === self { g.delegate = previousDelegate }
+            if let g = gesture, g.delegate === self { g.delegate = Controller.original }
             gesture = nil
         }
 
