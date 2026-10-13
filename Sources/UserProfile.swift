@@ -82,6 +82,7 @@ struct UserProfileView: View {
                 }
                 if let note { Text(note).font(.footnote).foregroundColor(Theme.muted) }
                 if loading { ProgressView().tint(Theme.accent).frame(maxWidth: .infinity) }
+                if userid == myId { signOutButton }
             }
             .padding(16)
         }
@@ -90,6 +91,17 @@ struct UserProfileView: View {
         .navigationBarTitleDisplayMode(.inline)
         .refreshable { await load() }
         .task { await load() }
+    }
+
+    // ---- sign out (own profile only) ----
+
+    private var signOutButton: some View {
+        Button(role: .destructive) { SiteBrowser.wipeSession(); AttendanceStore.clear(); app.signOut() } label: {
+            Text("Sign out").frame(maxWidth: .infinity).padding(.vertical, 12)
+                .background(Theme.surface2).foregroundColor(.red.opacity(0.85))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+        }
+        .padding(.top, 6)
     }
 
     // ---- header ----
