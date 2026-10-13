@@ -7,7 +7,6 @@ struct RootView: View {
     @StateObject private var assignments = AssignmentsModel()
     @StateObject private var notifs = NotifBadgeModel()
     @StateObject private var browser = SiteBrowser()
-    @EnvironmentObject var teams: TeamsHub
     @ObservedObject private var chat = ChatStore.shared   // unread chats, for the app-icon badge
 
     init() {
@@ -69,10 +68,7 @@ struct RootView: View {
             UNUserNotificationCenter.current().setBadgeCount(n) { _ in }
         }
         .onChange(of: scenePhase) { phase in
-            if phase == .background {
-                NotificationManager.shared.scheduleRefresh()
-                Task { await teams.saveCookies() }
-            }
+            if phase == .background { NotificationManager.shared.scheduleRefresh() }
             guard phase == .active, let uid = app.site?.userid else { return }
             Task {
                 await notifs.refresh(uid: uid)
@@ -564,7 +560,6 @@ struct ProfileView: View {
     @EnvironmentObject var app: AppState
     @EnvironmentObject var todos: TodoStore
     @EnvironmentObject var driveAuth: DriveAuth
-    @EnvironmentObject var teams: TeamsHub
 
     var body: some View {
         ScrollView {
@@ -589,14 +584,7 @@ struct ProfileView: View {
                     }
                     NavigationLink { MyDriveView() } label: {
                         ProfileRow(icon: "externaldrive", title: "My Drive",
-                                   subtitle: driveAuth.email ?? "Browse your Google Drive", showLine: true)
-                    }
-                    NavigationLink { TeamsOthersView() } label: {
-                        let n = teams.links.count
-                        ProfileRow(icon: "person.2.fill", title: "Microsoft Teams",
-                                   subtitle: teams.signedIn ? (n == 0 ? "Hold a class to link it to a course" : "\(n) linked to courses")
-                                                            : "Sign in to see your classes",
-                                   showLine: false)
+                                   subtitle: driveAuth.email ?? "Browse your Google Drive", showLine: false)
                     }
                 }
                 .buttonStyle(.plain)
