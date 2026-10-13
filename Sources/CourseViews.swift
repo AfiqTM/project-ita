@@ -339,7 +339,9 @@ struct GradesView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 0) {
+            VStack(spacing: 16) {
+                CamsCalculatorCard(courseId: courseId)
+                VStack(spacing: 0) {
                 if let error { Text(error).font(.footnote).foregroundColor(Theme.muted).padding() }
                 ForEach(items) { g in
                     HStack(alignment: .top) {
@@ -354,8 +356,10 @@ struct GradesView: View {
                     .overlay(Rectangle().fill(Theme.line).frame(height: 1), alignment: .bottom)
                 }
                 if loading { ProgressView().tint(Theme.accent).padding() }
+                }
+                .glowCard()
             }
-            .glowCard().padding(16)
+            .padding(16)
         }
         .task {
             do {
