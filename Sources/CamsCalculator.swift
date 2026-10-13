@@ -93,7 +93,7 @@ struct CamsCalculatorCard: View {
             if open {
                 VStack(spacing: 14) {
                     if groups.isEmpty {
-                        Text("Add a component (quizzes, assignments, ...) to start.")
+                        Text("Add work (quizzes, assignments, ...) to start.")
                             .font(.footnote).foregroundColor(Theme.muted)
                     }
                     ForEach($groups) { $g in
@@ -104,7 +104,7 @@ struct CamsCalculatorCard: View {
                             Button(k) { groups.append(CamsGroup(kind: k)) }
                         }
                     } label: {
-                        Label("Add component", systemImage: "plus.circle").foregroundColor(Theme.accent)
+                        Label("Add work", systemImage: "plus.circle").foregroundColor(Theme.accent)
                     }
                     if !groups.isEmpty {
                         Rectangle().fill(Theme.line).frame(height: 1)
