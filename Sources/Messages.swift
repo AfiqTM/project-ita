@@ -121,9 +121,8 @@ struct MessagesButton: View {
 
     private var uid: Int { app.site?.userid ?? 0 }
 
-    // Pushes onto the current navigation stack (slides in from the right, swipe from the left edge to go back)
     var body: some View {
-        NavigationLink { ChatListView() } label: {
+        Button { MessagesPresenter.shared.open() } label: {
             Image(systemName: "message")
                 .font(.system(size: 19, weight: .semibold))
                 .foregroundColor(Theme.txt)
@@ -144,13 +143,80 @@ struct MessagesButton: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(store.unread > 0 ? "Messages, \(store.unread) unread" : "Messages")
-        .onAppear { Task { await store.refreshBadge(userid: uid) } }   // refresh when coming back from Messages
         .task(id: uid) {
             while !Task.isCancelled {
                 await store.refreshBadge(userid: uid)
                 try? await Task.sleep(nanoseconds: 60_000_000_000)
             }
         }
+    }
+}
+
+// MARK: - Full-screen Messages layer
+//
+// Messages sits in its own layer above the whole TabView (placed in RootView with `.overlay`), so it covers
+// the tab bar without hiding it: nothing has to be hidden and brought back, which is what made the tab bar
+// reappear late after going back. It slides in from the right, and a swipe to the right from anywhere
+// on the screen slides it away again.
+
+final class MessagesPresenter: ObservableObject {
+    static let shared = MessagesPresenter()
+    @Published var isOpen = false
+    /// True while a chat is open inside Messages; that screen has its own swipe-back.
+    @Published var chatOpen = false
+
+    func open() {
+        withAnimation(.easeOut(duration: 0.28)) { isOpen = true }
+    }
+}
+
+struct MessagesOverlay: View {
+    @EnvironmentObject var app: AppState
+    @ObservedObject private var presenter = MessagesPresenter.shared
+    @State private var dragX: CGFloat = 0
+    @State private var horizontal: Bool?    // nil until we know which way this drag is going
+
+    var body: some View {
+        GeometryReader { geo in
+            if presenter.isOpen {
+                NavigationStack { ChatListView() }
+                    .background(Theme.bg.ignoresSafeArea())
+                    .offset(x: dragX)
+                    .shadow(color: .black.opacity(dragX > 0 ? 0.35 : 0), radius: 10)
+                    .transition(.move(edge: .trailing))
+                    .simultaneousGesture(swipeBack(width: geo.size.width))
+            }
+        }
+        .allowsHitTesting(presenter.isOpen)
+        .onChange(of: presenter.isOpen) { open in
+            if !open { Task { await ChatStore.shared.refreshBadge(userid: app.site?.userid ?? 0) } }
+        }
+    }
+
+    private func swipeBack(width: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 12)
+            .onChanged { g in
+                guard !presenter.chatOpen else { return }
+                if horizontal == nil {   // decided once, so scrolling up and down never drags the page
+                    horizontal = g.translation.width > 0 && abs(g.translation.width) > abs(g.translation.height) * 1.3
+                }
+                if horizontal == true { dragX = max(0, g.translation.width) }
+            }
+            .onEnded { g in
+                let wasHorizontal = horizontal == true
+                horizontal = nil
+                guard wasHorizontal, !presenter.chatOpen else { dragX = 0; return }
+                let far = g.translation.width > width * 0.33 || g.predictedEndTranslation.width > width * 0.6
+                if far {
+                    withAnimation(.easeOut(duration: 0.2)) { dragX = width }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        var t = Transaction(); t.disablesAnimations = true
+                        withTransaction(t) { presenter.isOpen = false; dragX = 0 }
+                    }
+                } else {
+                    withAnimation(.easeOut(duration: 0.2)) { dragX = 0 }
+                }
+            }
     }
 }
 
@@ -236,13 +302,12 @@ struct ChatListView: View {
                         .listRowInsets(EdgeInsets())
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)
-                        // swipe right: mark as read
-                        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                        // long-press: mark as read (swiping right is now "go back", from anywhere)
+                        .contextMenu {
                             if c.unread > 0 {
                                 Button { Task { await markRead(c) } } label: {
-                                    Label("Read", systemImage: "envelope.open")
+                                    Label("Mark as read", systemImage: "envelope.open")
                                 }
-                                .tint(Theme.accent)
                             }
                         }
                         // swipe left: delete (needs a second tap to confirm, no full-swipe)
@@ -272,11 +337,6 @@ struct ChatListView: View {
         }
         .navigationTitle("Messages")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar(.visible, for: .navigationBar)   // the Courses screen hides its bar; this one needs it for the title
-        // No back arrow: go back by swiping in from the left edge (same as a chat thread).
-        .navigationBarBackButtonHidden(true)
-        .background(EdgeSwipeBack(enabled: true))
-        .toolbar(.hidden, for: .tabBar)
     }
 
     private func row(_ c: ChatConv) -> some View {
@@ -443,10 +503,12 @@ struct ChatThreadView: View {
         .background(Theme.bg.ignoresSafeArea())
         .navigationTitle(selecting ? "\(selected.count) selected" : conv.title)
         .navigationBarTitleDisplayMode(.inline)
-        // No back arrow: go back by swiping in from the left edge (EdgeSwipeBack, bottom of this file).
+        // No back arrow: go back by swiping right from anywhere (EdgeSwipeBack, bottom of this file).
         // The gesture is switched off while selecting so a stray swipe can't leave the screen.
         .navigationBarBackButtonHidden(true)
         .background(EdgeSwipeBack(enabled: !selecting))
+        .onAppear { MessagesPresenter.shared.chatOpen = true }
+        .onDisappear { MessagesPresenter.shared.chatOpen = false }
         .toolbar(.hidden, for: .tabBar)      // no tab bar when opened from a profile
         .toolbar {
             if selecting {
@@ -774,12 +836,13 @@ struct ChatOpenView: View {
     }
 }
 
-// MARK: - Edge swipe back (only for screens that hide the back arrow)
+// MARK: - Swipe back from anywhere (only for screens that hide the back arrow)
 
-/// Hiding the back arrow switches off iOS's swipe-from-the-left-edge gesture. This puts it back for the
-/// screen it is attached to and restores the previous behaviour when that screen goes away, so no other
-/// screen is touched. It is iOS's own edge gesture, so taps, scrolling and long-presses in the middle of
-/// the screen are not affected.
+/// Hiding the back arrow switches off iOS's swipe-back. This brings it back for the screen it is attached to,
+/// and makes it work from anywhere on the screen, not just the left edge. It drives iOS's own interactive pop
+/// (same animation, same cancel when you let go early) with a pan that starts anywhere. Only a rightward,
+/// mostly-horizontal drag counts, so scrolling and taps are not affected. When the screen goes away the
+/// system's own edge gesture is switched back on, so no other screen is touched.
 private struct EdgeSwipeBack: UIViewControllerRepresentable {
     var enabled: Bool
 
@@ -789,27 +852,42 @@ private struct EdgeSwipeBack: UIViewControllerRepresentable {
 
     final class Controller: UIViewController, UIGestureRecognizerDelegate {
         var enabled = true
-        // The system's own delegate, shared by every screen that uses this helper, so two of them in a row
-        // (the Messages list, then a chat opened from it) can never leave a stale delegate behind.
-        private static weak var original: UIGestureRecognizerDelegate?
-        private weak var gesture: UIGestureRecognizer?
+        private static var active = 0          // screens currently using the helper
+        private weak var edge: UIGestureRecognizer?
+        private var pan: UIPanGestureRecognizer?
 
         override func viewDidAppear(_ animated: Bool) {
             super.viewDidAppear(animated)
-            guard let g = navigationController?.interactivePopGestureRecognizer, g.delegate !== self else { return }
-            if !(g.delegate is Controller) { Controller.original = g.delegate }
-            gesture = g
-            g.delegate = self
+            guard pan == nil,
+                  let e = navigationController?.interactivePopGestureRecognizer,
+                  let host = e.view,
+                  let targets = e.value(forKey: "targets") as? [AnyObject],
+                  let target = targets.first?.value(forKey: "target") else { return }
+            let p = UIPanGestureRecognizer(target: target, action: NSSelectorFromString("handleNavigationTransition:"))
+            p.maximumNumberOfTouches = 1
+            p.delegate = self
+            host.addGestureRecognizer(p)
+            pan = p
+            edge = e
+            e.isEnabled = false                // the full-screen pan replaces it
+            Controller.active += 1
         }
 
         override func viewDidDisappear(_ animated: Bool) {
             super.viewDidDisappear(animated)
-            if let g = gesture, g.delegate === self { g.delegate = Controller.original }
-            gesture = nil
+            guard let p = pan else { return }
+            p.view?.removeGestureRecognizer(p)
+            pan = nil
+            Controller.active = max(0, Controller.active - 1)
+            if Controller.active == 0 { edge?.isEnabled = true }
         }
 
         func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-            enabled && (navigationController?.viewControllers.count ?? 0) > 1
+            guard enabled, view.window != nil,
+                  (navigationController?.viewControllers.count ?? 0) > 1,
+                  let p = gestureRecognizer as? UIPanGestureRecognizer else { return false }
+            let v = p.velocity(in: p.view)
+            return v.x > 0 && abs(v.x) > abs(v.y)
         }
     }
 }
