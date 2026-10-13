@@ -499,26 +499,28 @@ struct AlertsView: View {
                 else if items.isEmpty && error == nil { Text("You have no notifications").foregroundColor(Theme.muted) }
             }
             .padding(16)
+            .padding(.bottom, unread > 0 ? 56 : 0)   // room so the floating button never covers the last card
         }
         .background(Theme.bg.ignoresSafeArea())
         .navigationTitle("Notifications")
         .navigationBarTitleDisplayMode(.inline)
-        .safeAreaInset(edge: .bottom) {
+        .overlay(alignment: .bottom) {
             if unread > 0 {
                 Button { Task { await markAllRead() } } label: {
-                    Text("Mark all read")
+                    Label("Mark all read", systemImage: "checkmark.circle.fill")
                         .fontWeight(.semibold)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
+                        .padding(.horizontal, 22)
+                        .padding(.vertical, 12)
                         .foregroundColor(Theme.bg)
                         .background(Theme.accent)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .clipShape(Capsule())
+                        .shadow(color: .black.opacity(0.45), radius: 8, y: 3)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .background(Theme.bg.ignoresSafeArea())
+                .padding(.bottom, 14)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
+        .animation(.easeInOut(duration: 0.2), value: unread > 0)
         .refreshable { await load() }
         .task { await load() }
     }
