@@ -44,6 +44,7 @@ struct RootView: View {
             NavigationStack { ProfileView() }
                 .tabItem { Label("Others", systemImage: "ellipsis.circle") }
         }
+        .overlay { MessagesOverlay() }   // Messages: full-screen, above the tab bar (Messages.swift)
         // Load at launch so the badges are right before either tab is opened
         .task(id: app.site?.userid) {
             if let uid = app.site?.userid { await assignments.load(uid: uid) }
