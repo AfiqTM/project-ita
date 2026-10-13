@@ -111,6 +111,23 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
         defaults.set(uid, forKey: "notif.uid")   // the background task has no UI to get this from
         await checkAlerts(uid)
         await checkMessages(uid)
+        await updateIconBadge(uid)
+    }
+
+    /// Home-screen icon badge = unread alerts + unread chats. Runs on every check, including the
+    /// background refresh, so the number stays right even when the app isn't open.
+    private func updateIconBadge(_ uid: Int) async {
+        var alerts: Int?
+        if let n: Int = try? await MoodleAPI.shared.call(
+            "message_popup_get_unread_popup_notification_count", ["useridto": uid]) {
+            alerts = n
+        } else if let r: NotifResp = try? await MoodleAPI.shared.call(
+            "message_popup_get_popup_notifications", ["useridto": uid]) {
+            alerts = r.notifications.filter { $0.read != true }.count
+        }
+        guard let alerts else { return }   // offline: leave the badge as it was
+        await ChatStore.shared.refreshBadge(userid: uid)
+        UNUserNotificationCenter.current().setBadgeCount(alerts + ChatStore.shared.unread) { _ in }
     }
 
     private func checkAlerts(_ uid: Int) async {
