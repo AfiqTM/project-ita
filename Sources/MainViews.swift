@@ -1,4 +1,5 @@
 import SwiftUI
+import UserNotifications
 
 struct RootView: View {
     @EnvironmentObject var app: AppState
@@ -6,6 +7,7 @@ struct RootView: View {
     @StateObject private var assignments = AssignmentsModel()
     @StateObject private var notifs = NotifBadgeModel()
     @StateObject private var browser = SiteBrowser()
+    @ObservedObject private var chat = ChatStore.shared   // unread chats, for the app-icon badge
 
     init() {
         // Tab badges in the app's accent colour with dark text. SwiftUI's .badge ignores
@@ -59,6 +61,10 @@ struct RootView: View {
                 await NotificationManager.shared.checkIncoming(uid: uid)
                 try? await Task.sleep(nanoseconds: 15_000_000_000)
             }
+        }
+        // App-icon badge on the home screen = unread alerts + unread chats
+        .onChange(of: notifs.count + chat.unread) { n in
+            UNUserNotificationCenter.current().setBadgeCount(n) { _ in }
         }
         .onChange(of: scenePhase) { phase in
             if phase == .background { NotificationManager.shared.scheduleRefresh() }
