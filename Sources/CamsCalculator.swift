@@ -6,6 +6,9 @@ struct CamsEntry: Codable, Identifiable, Equatable {
     var id = UUID()
     var score = ""
     var outOf = ""
+
+    /// What the mark is out of. Left empty it counts as 20 (the grey "20" shown in the box).
+    var maxValue: Double? { outOf.trimmingCharacters(in: .whitespaces).isEmpty ? 20 : camsNumber(outOf) }
 }
 
 struct CamsGroup: Codable, Identifiable, Equatable {
@@ -29,10 +32,22 @@ struct CamsGroup: Codable, Identifiable, Equatable {
     /// Average of the filled-in entries as a percentage (each entry counts equally).
     var percent: Double? {
         let p = entries.compactMap { e -> Double? in
-            guard let s = camsNumber(e.score), let m = camsNumber(e.outOf), m > 0 else { return nil }
+            guard let s = camsNumber(e.score), let m = e.maxValue, m > 0 else { return nil }
             return s / m * 100
         }
         return p.isEmpty ? nil : p.reduce(0, +) / Double(p.count)
+    }
+    /// Tells the user why a component isn't being counted yet (nil when everything needed is filled in)
+    var hint: String? {
+        let started = entries.contains { !$0.score.isEmpty }
+        guard started else { return nil }
+        let bad = entries.contains {
+            (!$0.score.isEmpty && camsNumber($0.score) == nil)
+                || (!$0.outOf.isEmpty && (camsNumber($0.outOf) ?? 0) <= 0)
+        }
+        if bad { return "Check the boxes: marks and \"out of\" need to be numbers (out of must be above 0)." }
+        if weightValue == nil { return "Set this one's weight % (top right) so it counts in the total." }
+        return nil
     }
     /// Marks this component adds to the overall result, e.g. 75% of a 10% component = 7.5
     var earned: Double? {
@@ -121,15 +136,6 @@ struct CamsCalculatorCard: View {
         }
         .glowCard()
         .onChange(of: groups) { _ in CamsStore.save(groups, courseId) }
-        .toolbar {
-            ToolbarItemGroup(placement: .keyboard) {
-                Spacer()
-                Button("Done") {
-                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
-                                                    to: nil, from: nil, for: nil)
-                }
-            }
-        }
     }
 }
 
@@ -182,7 +188,7 @@ private struct CamsGroupBox: View {
             }
 
             HStack {
-                Button { group.entries.append(CamsEntry()) } label: {
+                Button { group.entries.append(CamsEntry(outOf: group.entries.last?.outOf ?? "")) } label: {
                     Label("Add \(group.title.lowercased())", systemImage: "plus")
                         .font(.footnote).foregroundColor(Theme.accent)
                 }
@@ -195,6 +201,9 @@ private struct CamsGroupBox: View {
                         Text("\(camsFormat(p))%").font(.footnote.weight(.semibold)).foregroundColor(Theme.accent)
                     }
                 }
+            }
+            if let hint = group.hint {
+                Text(hint).font(.caption).foregroundColor(.orange.opacity(0.85))
             }
         }
         .padding(12)
@@ -220,4 +229,39 @@ private struct CamsField: View {
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.line))
     }
+}
+
+// MARK: - Small "Done" button above the keyboard (only covers its own corner, unlike the full-width keyboard bar)
+
+private struct KeyboardDoneButton: ViewModifier {
+    @State private var visible = false
+
+    func body(content: Content) -> some View {
+        content
+            .overlay(alignment: .bottomTrailing) {
+                if visible {
+                    Button {
+                        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
+                                                        to: nil, from: nil, for: nil)
+                    } label: {
+                        Text("Done").fontWeight(.semibold).foregroundColor(.black)
+                            .padding(.horizontal, 16).padding(.vertical, 8)
+                            .background(Theme.accent).clipShape(Capsule())
+                    }
+                    .padding(12)
+                    .transition(.opacity)
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+                withAnimation(.easeOut(duration: 0.15)) { visible = true }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+                withAnimation(.easeOut(duration: 0.15)) { visible = false }
+            }
+    }
+}
+
+extension View {
+    /// Floating "Done" button just above the keyboard (bottom-right) while it is open.
+    func keyboardDoneButton() -> some View { modifier(KeyboardDoneButton()) }
 }
