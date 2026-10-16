@@ -165,6 +165,8 @@ enum OfflinePrefetch {
     // remembered across launches. Opening the app earlier does nothing; switching Offline support on, or
     // allowing mobile data, downloads straight away.
     private static let nextKey = "offline.nextDownload"
+    /// When the last download finished (seconds since 1970; 0 = never). Shown in Offline support.
+    static let lastKey = "offline.lastDownload"
     private static let nextAttendanceKey = "offline.nextAttendanceCopy"
 
     private static func randomGap() -> TimeInterval { .random(in: 10 * 3600 ... 14 * 3600) }
@@ -271,21 +273,12 @@ enum OfflinePrefetch {
         let api = MoodleAPI.shared
 
         var ids = Set<Int>()
-        var ordered: [Int] = []   // in-progress then past, same order the Assignments tab asks in (so its saved copy is found)
         for cls in ["inprogress", "past", "future", "all", "favourites", "hidden"] {
             if let r = await courses(cls), cls == "inprogress" || cls == "past" {
                 ids.formUnion(r.courses.map { $0.id })
-                for c in r.courses where !ordered.contains(c.id) { ordered.append(c.id) }
             }
         }
         _ = try? await api.raw("message_popup_get_popup_notifications", ["useridto": uid])
-
-        // Assignments: the list and each one's submission status, so the Assignments tab and every assignment
-        // screen open (and take a queued submission) with no internet
-        if !ordered.isEmpty,
-           let ar: AssignResp = try? await api.call("mod_assign_get_assignments", ["courseids": ordered]) {
-            await assignmentStatuses(ar, uid: uid)
-        }
 
         let extras = true   // grades and announcements come with every download (it only happens twice a day)
 
@@ -299,21 +292,7 @@ enum OfflinePrefetch {
                 for id in chunk { g.addTask { await course(id, uid: uid, extras: extras) } }
             }
         }
-    }
-
-    /// The submission status of every assignment (4 at a time), saved under the same request the screens make
-    private static func assignmentStatuses(_ r: AssignResp, uid: Int) async {
-        let ids = r.courses.flatMap { $0.assignments.map { $0.id } }
-        var i = 0
-        while i < ids.count {
-            let chunk = Array(ids[i..<min(i + 4, ids.count)])
-            i += 4
-            await withTaskGroup(of: Void.self) { g in
-                for aid in chunk {
-                    g.addTask { _ = try? await MoodleAPI.shared.raw("mod_assign_get_submission_status", ["assignid": aid, "userid": uid]) }
-                }
-            }
-        }
+        UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: lastKey)
     }
 
     /// One course: its contents, and (hourly) its grades, its announcements forum and the latest posts in it.
@@ -325,11 +304,6 @@ enum OfflinePrefetch {
         guard extras else { return }
 
         _ = try? await api.raw("gradereport_user_get_grade_items", ["courseid": id, "userid": uid])
-
-        // The assignment screen asks for its own course's assignments (settings, due date, lecturer's files)
-        if (secs ?? []).contains(where: { $0.modules.contains { $0.modname == "assign" } }) {
-            _ = try? await api.raw("mod_assign_get_assignments", ["courseids": [id]])
-        }
 
         // Announcements: the forum named announcements/news, otherwise the course's first forum
         let forums = (secs ?? []).flatMap { $0.modules }.filter { $0.modname == "forum" && $0.instance != nil }
@@ -444,105 +418,176 @@ struct OfflineBanner: View {
     }
 }
 
-/// Others tab: one row. Tick / untick turns Offline support on or off; tapping the row (or the >) opens the
-/// Offline support screen with every other option (mobile data, course files, delete files).
+/// Others tab: switch offline support on or off, and choose whether downloads may use mobile data
 struct OfflineSupportRow: View {
     @AppStorage(OfflineSettings.key) private var on = true
+    @AppStorage(OfflineSettings.mobileKey) private var mobile = true
+    @AppStorage(OfflinePrefetch.lastKey) private var lastDownload = 0.0
     @EnvironmentObject var app: AppState
+    @ObservedObject private var monitor = OfflineMonitor.shared
     @State private var size = ""
-    @State private var open = false
+    @State private var downloading = false
+    @State private var blocked = false
 
     private func download() {
-        guard let uid = app.site?.userid else { return }
-        Task { await OfflinePrefetch.run(uid: uid, force: true); size = OfflineCache.sizeText() }
+        guard let uid = app.site?.userid, !downloading else { return }
+        downloading = true
+        blocked = !OfflineNet.shared.canDownload
+        Task {
+            await OfflinePrefetch.run(uid: uid, force: true)
+            size = OfflineCache.sizeText()
+            downloading = false
+        }
     }
 
-    private var subtitle: String {
-        guard on else { return "Off · nothing is saved" }
-        return "Opens saved data with no internet" + (size.isEmpty ? "" : " · \(size)")
+    private var lastText: String {
+        guard lastDownload > 0 else { return "Last download: never" }
+        let d = Date(timeIntervalSince1970: lastDownload)
+        return "Last download: " + d.formatted(date: .abbreviated, time: .shortened)
+    }
+
+    private var downloadNowRow: some View {
+        Button { download() } label: {
+            HStack(spacing: 14) {
+                Image(systemName: "arrow.down.circle").foregroundColor(Theme.accent).frame(width: 26)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Download now").foregroundColor(Theme.txt).fontWeight(.semibold)
+                    Text(downloading ? "Downloading…"
+                         : !monitor.isOnline ? "No internet · " + lastText
+                         : blocked ? "Waiting for Wi-Fi · " + lastText
+                         : lastText)
+                        .font(.caption).foregroundColor(Theme.muted).lineLimit(2)
+                }
+                Spacer()
+                if downloading { ProgressView().tint(Theme.accent) }
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!on || downloading || !monitor.isOnline)
     }
 
     var body: some View {
-        HStack(spacing: 14) {
-            Button { open = true } label: {
-                HStack(spacing: 14) {
-                    Image(systemName: "icloud.and.arrow.down").foregroundColor(Theme.accent).frame(width: 26)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Offline support").foregroundColor(Theme.txt).fontWeight(.semibold)
-                        Text(subtitle).font(.caption).foregroundColor(Theme.muted).lineLimit(2)
-                    }
-                    Spacer(minLength: 0)
+        VStack(spacing: 0) {
+            downloadNowRow
+            OfflineQueueSection()
+            HStack(spacing: 14) {
+                Image(systemName: "icloud.and.arrow.down").foregroundColor(Theme.accent).frame(width: 26)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Offline support").foregroundColor(Theme.txt).fontWeight(.semibold)
+                    Text(on ? "Opens saved data with no internet" + (size.isEmpty ? "" : " · \(size)")
+                            : "Off · nothing is saved")
+                        .font(.caption).foregroundColor(Theme.muted).lineLimit(2)
                 }
-                .contentShape(Rectangle())
+                Spacer()
+                Toggle("", isOn: $on).labelsHidden().tint(Theme.accent)
             }
-            .buttonStyle(.plain)
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
 
-            Toggle("", isOn: $on).labelsHidden().tint(Theme.accent)
-
-            Button { open = true } label: {
-                Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundColor(Theme.muted)
-                    .padding(.vertical, 6).padding(.leading, 2)
+            if on {
+                HStack(spacing: 14) {
+                    Image(systemName: "antenna.radiowaves.left.and.right").foregroundColor(Theme.accent).frame(width: 26)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Download on mobile data").foregroundColor(Theme.txt).fontWeight(.semibold)
+                        Text(mobile ? "Saved data also updates on mobile data"
+                                    : "Off · background downloads wait for Wi-Fi")
+                            .font(.caption).foregroundColor(Theme.muted).lineLimit(2)
+                    }
+                    Spacer()
+                    Toggle("", isOn: $mobile).labelsHidden().tint(Theme.accent)
+                }
+                .padding(.horizontal, 14).padding(.bottom, 14)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .buttonStyle(.plain)
+
+            // Course files (PDFs, attachments): their own switch, Wi-Fi rule and storage, see OfflineFiles.swift
+            OfflineFilesSection(offlineOn: on)
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
         .overlay(Rectangle().fill(Theme.line).frame(height: 1), alignment: .bottom)
-        .navigationDestination(isPresented: $open) { OfflineSupportScreen() }
         .onAppear { size = OfflineCache.sizeText() }
-        .onChange(of: open) { v in if !v { size = OfflineCache.sizeText() } }
         .onChange(of: on) { v in
             if v { download() }
             else {
-                OfflineCache.clearAll()   // downloaded course files are separate and stay
+                OfflineCache.clearAll()
                 OfflineMonitor.shared.usingCache = false
                 size = ""
             }
         }
+        .onChange(of: mobile) { v in if v { download() } }   // allowed again: catch up now
     }
 }
 
-/// Offline support > everything else: mobile data for saved data, then Download course files and its options
-struct OfflineSupportScreen: View {
-    @AppStorage(OfflineSettings.key) private var on = true
-    @AppStorage(OfflineSettings.mobileKey) private var mobile = true
-    @EnvironmentObject var app: AppState
+/// Submissions waiting to be sent: shows the file names, and lets the user cancel one before it goes out
+struct OfflineQueueSection: View {
+    @ObservedObject private var queue = OfflineQueue.shared
+    @ObservedObject private var monitor = OfflineMonitor.shared
+    @State private var cancelling: SubmissionJob?
+
+    private func title(_ j: SubmissionJob) -> String {
+        switch (j.kind, j.submit) {
+        case (.remove, _): return "Removal"
+        case (.save, true): return "Submission"
+        case (.save, false): return "Saved changes"
+        }
+    }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 0) {
-                if on {
-                    HStack(spacing: 14) {
-                        Image(systemName: "antenna.radiowaves.left.and.right").foregroundColor(Theme.accent).frame(width: 26)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Download on mobile data").foregroundColor(Theme.txt).fontWeight(.semibold)
-                            Text(mobile ? "Saved data also updates on mobile data"
-                                        : "Off · background downloads wait for Wi-Fi")
-                                .font(.caption).foregroundColor(Theme.muted).lineLimit(2)
-                        }
-                        Spacer()
-                        Toggle("", isOn: $mobile).labelsHidden().tint(Theme.accent)
+        if !queue.jobs.isEmpty {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 14) {
+                    Image(systemName: "tray.and.arrow.up").foregroundColor(Theme.accent).frame(width: 26)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Waiting to upload").foregroundColor(Theme.txt).fontWeight(.semibold)
+                        Text(monitor.isOnline ? "Sending now…" : "Will be sent when you're back online")
+                            .font(.caption).foregroundColor(Theme.muted)
                     }
-                    .padding(.horizontal, 14).padding(.top, 14).padding(.bottom, 14)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                } else {
-                    Text("Offline support is off. Switch it on in Others to save data for use with no internet.")
-                        .font(.caption).foregroundColor(Theme.muted)
-                        .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+                    Spacer()
                 }
+                .padding(.horizontal, 14).padding(.top, 4).padding(.bottom, 10)
 
-                // Course files (PDFs, attachments): their own switch, Wi-Fi rule and storage, see OfflineFiles.swift
-                OfflineFilesSection(offlineOn: on)
+                ForEach(queue.jobs) { j in
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(j.name).font(.subheadline.weight(.semibold)).foregroundColor(Theme.txt)
+                        Text(title(j) + (j.error == nil ? "" : " · couldn't send"))
+                            .font(.caption).foregroundColor(j.error == nil ? Theme.muted : .red)
+                        if let e = j.error {
+                            Text(e).font(.caption).foregroundColor(Theme.muted)
+                        }
+                        ForEach(j.newFiles, id: \.self) { f in
+                            Label(f, systemImage: "doc").font(.caption).foregroundColor(Theme.txt).lineLimit(1)
+                        }
+                        if j.newFiles.isEmpty && j.kind == .save {
+                            Text(j.text == nil ? "No new files" : "Text only").font(.caption).foregroundColor(Theme.muted)
+                        }
+                        HStack(spacing: 18) {
+                            if j.error != nil { Button("Retry") { queue.retryNow(j.id) } }
+                            Button(j.error == nil ? "Cancel upload" : "Discard", role: .destructive) { cancelling = j }
+                        }
+                        .font(.caption.weight(.semibold)).foregroundColor(Theme.accent)
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Theme.surface2)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Theme.line))
+                    .padding(.horizontal, 14).padding(.bottom, 10)
+                }
             }
-            .glowCard()
-            .padding(16)
-        }
-        .background(Theme.bg.ignoresSafeArea())
-        .navigationTitle("Offline support")
-        .navigationBarTitleDisplayMode(.inline)
-        .onChange(of: mobile) { v in   // allowed again: catch up now
-            guard v, on, let uid = app.site?.userid else { return }
-            Task { await OfflinePrefetch.run(uid: uid, force: true) }
+            .padding(.bottom, 4)
+            .confirmationDialog("Cancel this upload?", isPresented: Binding(get: { cancelling != nil },
+                                                                           set: { if !$0 { cancelling = nil } }),
+                                titleVisibility: .visible) {
+                Button("Cancel upload", role: .destructive) {
+                    if let j = cancelling { queue.discard(j.id) }
+                    cancelling = nil
+                }
+                Button("Keep", role: .cancel) { cancelling = nil }
+            } message: {
+                Text("It won't be sent to the site. Your files stay on your phone.")
+            }
         }
     }
 }
