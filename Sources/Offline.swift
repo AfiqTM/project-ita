@@ -271,12 +271,21 @@ enum OfflinePrefetch {
         let api = MoodleAPI.shared
 
         var ids = Set<Int>()
+        var ordered: [Int] = []   // in-progress then past, same order the Assignments tab asks in (so its saved copy is found)
         for cls in ["inprogress", "past", "future", "all", "favourites", "hidden"] {
             if let r = await courses(cls), cls == "inprogress" || cls == "past" {
                 ids.formUnion(r.courses.map { $0.id })
+                for c in r.courses where !ordered.contains(c.id) { ordered.append(c.id) }
             }
         }
         _ = try? await api.raw("message_popup_get_popup_notifications", ["useridto": uid])
+
+        // Assignments: the list and each one's submission status, so the Assignments tab and every assignment
+        // screen open (and take a queued submission) with no internet
+        if !ordered.isEmpty,
+           let ar: AssignResp = try? await api.call("mod_assign_get_assignments", ["courseids": ordered]) {
+            await assignmentStatuses(ar, uid: uid)
+        }
 
         let extras = true   // grades and announcements come with every download (it only happens twice a day)
 
@@ -292,6 +301,21 @@ enum OfflinePrefetch {
         }
     }
 
+    /// The submission status of every assignment (4 at a time), saved under the same request the screens make
+    private static func assignmentStatuses(_ r: AssignResp, uid: Int) async {
+        let ids = r.courses.flatMap { $0.assignments.map { $0.id } }
+        var i = 0
+        while i < ids.count {
+            let chunk = Array(ids[i..<min(i + 4, ids.count)])
+            i += 4
+            await withTaskGroup(of: Void.self) { g in
+                for aid in chunk {
+                    g.addTask { _ = try? await MoodleAPI.shared.raw("mod_assign_get_submission_status", ["assignid": aid, "userid": uid]) }
+                }
+            }
+        }
+    }
+
     /// One course: its contents, and (hourly) its grades, its announcements forum and the latest posts in it.
     /// The requests are identical to the ones the screens make, so the screens find them saved.
     private static func course(_ id: Int, uid: Int, extras: Bool) async {
@@ -301,6 +325,11 @@ enum OfflinePrefetch {
         guard extras else { return }
 
         _ = try? await api.raw("gradereport_user_get_grade_items", ["courseid": id, "userid": uid])
+
+        // The assignment screen asks for its own course's assignments (settings, due date, lecturer's files)
+        if (secs ?? []).contains(where: { $0.modules.contains { $0.modname == "assign" } }) {
+            _ = try? await api.raw("mod_assign_get_assignments", ["courseids": [id]])
+        }
 
         // Announcements: the forum named announcements/news, otherwise the course's first forum
         let forums = (secs ?? []).flatMap { $0.modules }.filter { $0.modname == "forum" && $0.instance != nil }
