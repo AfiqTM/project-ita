@@ -544,81 +544,111 @@ private struct PageInfo: Decodable { let coursemodule: Int?; let content: String
 struct PageModuleView: View {
     let courseId: Int
     let module: Module
-    @State private var html: String?
+    @State private var text: AttributedString?
     @State private var loading = true
 
     var body: some View {
-        Group {
-            if let html { HTMLContentView(html: html) }
-            else if loading { ProgressView().tint(Theme.accent).frame(maxWidth: .infinity, maxHeight: .infinity) }
-            else { Text("Couldn't load this page.").foregroundColor(Theme.muted)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity) }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(module.name)
+                    .fontWeight(.semibold).foregroundColor(Theme.txt)
+                    .multilineTextAlignment(.leading)
+                Rectangle().fill(Theme.line).frame(height: 1)
+                if let text {
+                    Text(text).font(.subheadline).lineSpacing(3)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else if loading {
+                    ProgressView().tint(Theme.accent).frame(maxWidth: .infinity)
+                } else {
+                    Text("Couldn't load this page.").font(.footnote).foregroundColor(Theme.muted)
+                }
+            }
+            .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+            .glowCard(radius: 12)
+            .padding(16)
         }
         .background(Theme.bg.ignoresSafeArea())
         .navigationTitle(module.name)
         .navigationBarTitleDisplayMode(.inline)
         .task {
             if let r: PagesResp = try? await MoodleAPI.shared.call(
-                "mod_page_get_pages_by_courses", ["courseids": [courseId]]) {
-                html = r.pages.first(where: { $0.coursemodule == module.id })?.content
+                "mod_page_get_pages_by_courses", ["courseids": [courseId]]),
+               let html = r.pages.first(where: { $0.coursemodule == module.id })?.content {
+                text = HTMLText.attributed(html)
             }
             loading = false
         }
     }
 }
 
-/// HTML shown with the app's dark look; links open in Safari.
-struct HTMLContentView: UIViewRepresentable {
-    let html: String
+/// Turns Moodle HTML into styled text that matches the app (bold, italics, bullets, tappable links).
+enum HTMLText {
+    static func attributed(_ html: String) -> AttributedString {
+        var out = AttributedString()
+        var bold = 0, italic = 0
+        var link: URL?
+        var newlines = 2            // pretend we start after a blank line so nothing leads with spaces
+        var pendingSpace = false
 
-    func makeCoordinator() -> Coordinator { Coordinator() }
-
-    final class Coordinator: NSObject, WKNavigationDelegate {
-        func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
-                     decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-            if action.navigationType == .linkActivated, let u = action.request.url {
-                UIApplication.shared.open(u)
-                decisionHandler(.cancel)
-            } else { decisionHandler(.allow) }
+        func newline(_ n: Int) {
+            guard newlines < n else { return }
+            out += AttributedString(String(repeating: "\n", count: n - newlines))
+            newlines = n
+            pendingSpace = false
         }
-    }
+        func add(_ s: String) {
+            var a = AttributedString(s)
+            var f = Font.subheadline
+            if bold > 0 { f = f.bold() }
+            if italic > 0 { f = f.italic() }
+            a.font = f
+            a.foregroundColor = Theme.txt
+            if let link { a.link = link; a.foregroundColor = Theme.accent; a.underlineStyle = .single }
+            out += a
+            newlines = 0
+        }
 
-    // pluginfile links (images, attachments) need the user's token to load
-    private func withTokens(_ s: String) -> String {
-        guard let re = try? NSRegularExpression(pattern: "(src|href)=\"([^\"]*pluginfile\\.php[^\"]*)\"") else { return s }
-        var out = s
-        let ns = s as NSString
-        for m in re.matches(in: s, range: NSRange(location: 0, length: ns.length)).reversed() {
-            let attr = ns.substring(with: m.range(at: 1))
-            let link = ns.substring(with: m.range(at: 2)).replacingOccurrences(of: "&amp;", with: "&")
-            if let u = MoodleAPI.shared.fileURL(link) {
-                out = (out as NSString).replacingCharacters(in: m.range, with: "\(attr)=\"\(u.absoluteString)\"")
+        guard let re = try? NSRegularExpression(pattern: "<[^>]+>|[^<]+") else { return AttributedString(html.plainText) }
+        let ns = html as NSString
+        for m in re.matches(in: html, range: NSRange(location: 0, length: ns.length)) {
+            let tok = ns.substring(with: m.range)
+            if tok.hasPrefix("<") {
+                let t = tok.lowercased()
+                let name = t.drop(while: { $0 == "<" || $0 == "/" }).prefix(while: { $0.isLetter || $0.isNumber })
+                let closing = t.hasPrefix("</")
+                switch name {
+                case "br": newline(1)
+                case "p", "div", "ul", "ol", "blockquote", "table": if closing { newline(2) } else { newline(1) }
+                case "li": if closing { newline(1) } else { newline(1); add("•  ") }
+                case "h1", "h2", "h3", "h4", "h5", "h6":
+                    if closing { bold = max(bold - 1, 0); newline(2) } else { newline(2); bold += 1 }
+                case "strong", "b": bold = closing ? max(bold - 1, 0) : bold + 1
+                case "em", "i": italic = closing ? max(italic - 1, 0) : italic + 1
+                case "a":
+                    if closing { link = nil }
+                    else if let r = tok.range(of: "href=\"([^\"]*)\"", options: .regularExpression) {
+                        let raw = String(tok[r]).dropFirst(6).dropLast()
+                        link = URL(string: String(raw).decodedEntities)
+                    }
+                case "tr": if closing { newline(1) }
+                case "td", "th": if closing { pendingSpace = true }
+                default: break
+                }
+            } else {
+                // HTML collapses whitespace; keep a single space between words
+                var s = tok.decodedEntities.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+                if newlines > 0 { s = String(s.drop(while: { $0 == " " })) }
+                if s.isEmpty { continue }
+                if pendingSpace && newlines == 0 { s = " " + s }
+                pendingSpace = false
+                add(s)
             }
+        }
+        // trim trailing blank lines
+        while let last = out.characters.last, last == "\n" || last == " " {
+            out.characters.removeLast()
         }
         return out
     }
-
-    private var page: String {
-        """
-        <html><head><meta name="viewport" content="width=device-width, initial-scale=1">
-        <style>
-        body{background:#000;color:#e6e6e6;font:16px -apple-system,Helvetica,sans-serif;line-height:1.5;
-             margin:0;padding:16px;word-wrap:break-word}
-        a{color:#D2B48C} img,video,iframe{max-width:100%;height:auto}
-        table{border-collapse:collapse;max-width:100%} td,th{border:1px solid #333;padding:6px}
-        h1,h2,h3,h4,strong,b{color:#fff}
-        </style></head><body>\(withTokens(html))</body></html>
-        """
-    }
-
-    func makeUIView(context: Context) -> WKWebView {
-        let w = WKWebView(frame: .zero)
-        w.navigationDelegate = context.coordinator
-        w.isOpaque = false
-        w.backgroundColor = .clear
-        w.scrollView.backgroundColor = .clear
-        w.loadHTMLString(page, baseURL: Site.url)
-        return w
-    }
-    func updateUIView(_ uiView: WKWebView, context: Context) {}
 }
