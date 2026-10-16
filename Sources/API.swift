@@ -305,6 +305,7 @@ struct ModContent: Decodable, Identifiable {
     let fileurl: String?
     let filesize: Int?
     let timemodified: Int?
+    let mimetype: String?
 }
 
 struct EventsResp: Decodable { let events: [TLEvent] }
