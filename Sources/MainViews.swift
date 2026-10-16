@@ -467,6 +467,13 @@ extension Notif {
               let d = items.first(where: { $0.name == "d" })?.value else { return nil }
         return Int(d)
     }
+    /// Activity id from ".../mod/<type>/view.php?id=123" (assignments, pages/announcements, ...)
+    var cmid: Int? {
+        guard let s = contexturl, s.contains("/mod/"),
+              let items = URLComponents(string: s)?.queryItems,
+              let v = items.first(where: { $0.name == "id" })?.value else { return nil }
+        return Int(v)
+    }
 }
 
 struct AlertsView: View {
@@ -501,6 +508,12 @@ struct AlertsView: View {
                     if let d = n.discussionId {
                         // Announcements / forum posts open inside the app, not the website
                         NavigationLink { PostsView(discussionId: d, title: n.subject ?? "Announcement") } label: { card }
+                            .buttonStyle(.plain)
+                            .simultaneousGesture(TapGesture().onEnded { Task { await markRead(n) } })
+                    } else if let cm = n.cmid {
+                        // Announcements, assignments, pages...: opened with the app's own screens
+                        NavigationLink { ModuleLoaderView(cmid: cm, url: n.contexturl.flatMap { URL(string: $0) },
+                                                          title: n.subject ?? "Notification") } label: { card }
                             .buttonStyle(.plain)
                             .simultaneousGesture(TapGesture().onEnded { Task { await markRead(n) } })
                     } else if let s = n.contexturl, let u = URL(string: s) {
