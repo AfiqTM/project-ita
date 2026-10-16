@@ -138,7 +138,7 @@ struct UserProfileView: View {
                 Image(systemName: "message")
                 Text("Message")
             }
-            .fontWeight(.semibold).foregroundColor(.black)
+            .fontWeight(.semibold).foregroundColor(Theme.onAccent)
             .frame(maxWidth: .infinity).padding(.vertical, 12)
             .background(Theme.accent)
             .clipShape(RoundedRectangle(cornerRadius: 12))

@@ -1,31 +1,59 @@
 import SwiftUI
 import UIKit
 
-// Colours taken 1:1 from the "iTa'leem AMOLED Dark" userscript
+// The colours of one theme, as 0xRRGGBB values. The dark one is taken 1:1 from the "iTa'leem AMOLED Dark" userscript.
+// Themes.swift lists the themes the user can pick; each one needs a palette here.
+struct Palette {
+    let bg, surface, surface2, titleBar, line, txt, muted, accent, onAccent: UInt32
+
+    static let amoledDark = Palette(bg: 0x000000, surface: 0x060606, surface2: 0x0b0b0b, titleBar: 0x0a0a0a,
+                                    line: 0x1c1c1c, txt: 0xe6e6e6, muted: 0x9a9a9a, accent: 0xD2B48C,
+                                    onAccent: 0x000000)
+    // Warm off-white page with white cards. The accent is a deeper tan so it stays readable on light
+    // backgrounds (about 5:1 against white), and text on accent buttons is white.
+    static let light = Palette(bg: 0xF7F4EF, surface: 0xFFFFFF, surface2: 0xF1EDE6, titleBar: 0xEEE9E0,
+                               line: 0xE3DDD2, txt: 0x1F1B16, muted: 0x6B6458, accent: 0x8A6A3B,
+                               onAccent: 0xFFFFFF)
+}
+
+// Every colour resolves by itself for the current look (light / dark), so switching theme re-colours
+// the whole app without rebuilding any screen. (Dark is also what an unspecified style means.)
 enum Theme {
-    static let bg       = Color(hex: 0x000000)
-    static let surface  = Color(hex: 0x060606)
-    static let surface2 = Color(hex: 0x0b0b0b)
-    static let titleBar = Color(hex: 0x0a0a0a)   // "General" title bar / table headers
-    static let line     = Color(hex: 0x1c1c1c)
-    static let txt      = Color(hex: 0xe6e6e6)
-    static let muted    = Color(hex: 0x9a9a9a)
-    static let accent   = Color(hex: 0xD2B48C)
+    static func dyn(_ dark: UInt32, _ light: UInt32) -> UIColor {
+        UIColor { $0.userInterfaceStyle == .light ? UIColor(hex: light) : UIColor(hex: dark) }
+    }
+
+    // UIKit versions (navigation bar, tab bar, tab badges)
+    static let uiBg       = dyn(Palette.amoledDark.bg, Palette.light.bg)
+    static let uiTxt      = dyn(Palette.amoledDark.txt, Palette.light.txt)
+    static let uiAccent   = dyn(Palette.amoledDark.accent, Palette.light.accent)
+    static let uiOnAccent = dyn(Palette.amoledDark.onAccent, Palette.light.onAccent)
+
+    static let bg       = Color(uiColor: uiBg)
+    static let surface  = Color(uiColor: dyn(Palette.amoledDark.surface, Palette.light.surface))
+    static let surface2 = Color(uiColor: dyn(Palette.amoledDark.surface2, Palette.light.surface2))
+    static let titleBar = Color(uiColor: dyn(Palette.amoledDark.titleBar, Palette.light.titleBar))   // "General" title bar / table headers
+    static let line     = Color(uiColor: dyn(Palette.amoledDark.line, Palette.light.line))
+    static let txt      = Color(uiColor: uiTxt)
+    static let muted    = Color(uiColor: dyn(Palette.amoledDark.muted, Palette.light.muted))
+    static let accent   = Color(uiColor: uiAccent)
+    /// Text / icons drawn on top of an accent-coloured background (black on the tan, white on the deeper tan)
+    static let onAccent = Color(uiColor: uiOnAccent)
 
     static func applyAppearance() {
         let nav = UINavigationBarAppearance()
         nav.configureWithOpaqueBackground()
-        nav.backgroundColor = .black
+        nav.backgroundColor = uiBg
         nav.shadowColor = .clear
-        nav.titleTextAttributes = [.foregroundColor: UIColor(txt)]
-        nav.largeTitleTextAttributes = [.foregroundColor: UIColor(txt)]
+        nav.titleTextAttributes = [.foregroundColor: uiTxt]
+        nav.largeTitleTextAttributes = [.foregroundColor: uiTxt]
         UINavigationBar.appearance().standardAppearance = nav
         UINavigationBar.appearance().scrollEdgeAppearance = nav
         UINavigationBar.appearance().compactAppearance = nav
 
         let tab = UITabBarAppearance()
         tab.configureWithOpaqueBackground()
-        tab.backgroundColor = .black
+        tab.backgroundColor = uiBg
         tab.shadowColor = .clear
         UITabBar.appearance().standardAppearance = tab
         UITabBar.appearance().scrollEdgeAppearance = tab
@@ -41,17 +69,31 @@ extension Color {
     }
 }
 
-// Soft dark glow behind cards (the 10/30/64px rgba(28,28,28) shadows from the userscript)
+extension UIColor {
+    convenience init(hex: UInt32) {
+        self.init(red: CGFloat((hex >> 16) & 255) / 255,
+                  green: CGFloat((hex >> 8) & 255) / 255,
+                  blue: CGFloat(hex & 255) / 255, alpha: 1)
+    }
+}
+
+// Dark: soft glow behind cards (the 10/30/64px rgba(28,28,28) shadows from the userscript).
+// Light: a gentle drop shadow and a thin outline instead, since a glow doesn't show on a light page.
 struct GlowCard: ViewModifier {
     var radius: CGFloat = 14
+    @Environment(\.colorScheme) private var scheme
     func body(content: Content) -> some View {
+        // One fixed structure (only the values change), so switching theme never rebuilds what is inside the card
+        let light = scheme == .light
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
         let g = Color(white: 28.0 / 255.0)
-        content
+        return content
             .background(Theme.surface)
-            .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
-            .shadow(color: g.opacity(0.85), radius: 5)
-            .shadow(color: g.opacity(0.5), radius: 15)
-            .shadow(color: g.opacity(0.25), radius: 32)
+            .clipShape(shape)
+            .overlay(shape.stroke(Theme.line, lineWidth: light ? 1 : 0))
+            .shadow(color: light ? Color.black.opacity(0.06) : g.opacity(0.85), radius: light ? 6 : 5, y: light ? 2 : 0)
+            .shadow(color: light ? Color.black.opacity(0.04) : g.opacity(0.5), radius: light ? 18 : 15, y: light ? 6 : 0)
+            .shadow(color: light ? Color.clear : g.opacity(0.25), radius: 32)
     }
 }
 extension View {

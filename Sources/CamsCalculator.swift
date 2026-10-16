@@ -271,7 +271,7 @@ private struct KeyboardDoneButton: ViewModifier {
                         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
                                                         to: nil, from: nil, for: nil)
                     } label: {
-                        Text("Done").fontWeight(.semibold).foregroundColor(.black)
+                        Text("Done").fontWeight(.semibold).foregroundColor(Theme.onAccent)
                             .padding(.horizontal, 16).padding(.vertical, 8)
                             .background(Theme.accent).clipShape(Capsule())
                     }

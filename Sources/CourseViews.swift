@@ -48,10 +48,10 @@ struct CourseDetailView: View {
                             HStack(spacing: 6) {
                                 Text(t.rawValue)
                                     .fontWeight(tab == t ? .semibold : .regular)
-                                    .foregroundColor(tab == t ? Theme.accent : Color(white: 0.66))
+                                    .foregroundColor(tab == t ? Theme.accent : Theme.muted)
                                 if t == .todo {
                                     Text("\(todoCount)")
-                                        .font(.caption2.weight(.bold)).foregroundColor(.black)
+                                        .font(.caption2.weight(.bold)).foregroundColor(Theme.onAccent)
                                         .padding(.horizontal, 6).padding(.vertical, 2)
                                         .background(Theme.accent).clipShape(Capsule())
                                 }

@@ -443,7 +443,7 @@ struct TodoEditSheet: View {
                 }
             }
         }
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(ThemeStore.shared.theme.scheme)
         .task { await catalog.loadIfNeeded() }
     }
 
@@ -458,7 +458,7 @@ struct TodoEditSheet: View {
                 .font(.subheadline.weight(.semibold))
                 .frame(maxWidth: .infinity).padding(.vertical, 10)
                 .background(on ? Theme.accent : Theme.surface2)
-                .foregroundColor(on ? .black : Theme.txt)
+                .foregroundColor(on ? Theme.onAccent : Theme.txt)
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .stroke(on ? Theme.accent : Theme.line, lineWidth: 1))

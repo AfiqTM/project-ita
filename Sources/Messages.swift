@@ -131,7 +131,7 @@ struct MessagesButton: View {
                     if store.unread > 0 {
                         Text(store.unread > 99 ? "99+" : "\(store.unread)")
                             .font(.system(size: 10, weight: .bold))
-                            .foregroundColor(.black)
+                            .foregroundColor(Theme.onAccent)
                             .padding(.horizontal, 5)
                             .frame(minWidth: 17, minHeight: 17)
                             .background(Theme.accent)
@@ -367,7 +367,7 @@ struct ChatListView: View {
                     Spacer()
                     if c.unread > 0 {
                         Text("\(c.unread)")
-                            .font(.caption.bold()).foregroundColor(.black)
+                            .font(.caption.bold()).foregroundColor(Theme.onAccent)
                             .padding(.horizontal, 7).padding(.vertical, 2)
                             .background(Theme.accent).clipShape(Capsule())
                     }
@@ -446,7 +446,7 @@ struct ChatThreadView: View {
     private var theirBubble: some View {
         ZStack {
             Theme.surface2
-            Color.white.opacity(0.10)
+            Theme.txt.opacity(0.10)
         }
     }
 
@@ -601,7 +601,7 @@ struct ChatThreadView: View {
                     .padding(.horizontal, 4)
             }
             Text(text)
-                .foregroundColor(mine ? .black : Theme.txt)
+                .foregroundColor(mine ? Theme.onAccent : Theme.txt)
                 .padding(.horizontal, 13).padding(.vertical, 9)
                 .background {
                     if mine { Theme.accent } else { theirBubble }
@@ -609,7 +609,7 @@ struct ChatThreadView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .stroke(mine ? Color.clear : Color.white.opacity(0.08), lineWidth: 1)
+                        .stroke(mine ? Color.clear : Theme.txt.opacity(0.08), lineWidth: 1)
                 )
             if lastInGroup {
                 Text(ChatTime.timeOnly(m.timecreated))
@@ -651,7 +651,7 @@ struct ChatThreadView: View {
             Button { Task { await send() } } label: {
                 Image(systemName: "arrow.up")
                     .font(.system(size: 16, weight: .bold))
-                    .foregroundColor(.black)
+                    .foregroundColor(Theme.onAccent)
                     .frame(width: 38, height: 38)
                     .background(canSend ? Theme.accent : Theme.muted.opacity(0.4))
                     .clipShape(Circle())

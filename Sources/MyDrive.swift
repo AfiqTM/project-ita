@@ -470,10 +470,10 @@ struct DriveConnectCard: View {
 
                 Button { auth.signIn() } label: {
                     HStack(spacing: 8) {
-                        if auth.busy { ProgressView().tint(.black) } else { Image(systemName: "person.badge.key") }
+                        if auth.busy { ProgressView().tint(Theme.onAccent) } else { Image(systemName: "person.badge.key") }
                         Text("Sign in with Google")
                     }
-                    .fontWeight(.semibold).foregroundColor(.black)
+                    .fontWeight(.semibold).foregroundColor(Theme.onAccent)
                     .frame(maxWidth: .infinity).padding(.vertical, 12)
                     .background(Theme.accent)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
@@ -617,7 +617,7 @@ struct SaveToSubjectSheet: View {
                 }
             }
         }
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(ThemeStore.shared.theme.scheme)
         .task { await catalog.loadIfNeeded() }
     }
 }

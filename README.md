@@ -32,6 +32,10 @@ Native client for iTa'leem (IIUM Moodle) using Moodle's mobile web-service API, 
 - My Drive: browse Google Drive inside the app (native preview), pin items and save files to a subject
 - Sync with the iTa'leem userscript through one file in your Google Drive (`iTaleem-sync.json`): to-dos, CAMS marks, pins and saved files merge both ways, newest change wins
 
+### Themes
+- Others > Themes: pick the look of the app (AMOLED Dark, Light); the whole app cross-fades to the new theme straight away and the choice is remembered
+- Each theme is a `Palette` in `Theme.swift` plus an entry in `Themes.swift`
+
 ### Website
 - Website tab: the full iTa'leem site in a normal browser view that stays logged in and keeps its page when you switch tabs
 

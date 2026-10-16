@@ -2,11 +2,12 @@ import SwiftUI
 
 // MARK: - Shared colours / pill
 
+// Status colours: the bright ones suit the dark theme; the light theme gets deeper shades that stay readable on white
 enum Tone {
-    static let green = Color(hex: 0x5fbf7f)
-    static let red = Color(hex: 0xe0605a)
-    static let amber = Color(hex: 0xe0b050)
-    static let blue = Color(hex: 0x5a9be0)
+    static let green = Color(uiColor: Theme.dyn(0x5fbf7f, 0x2C8A4B))
+    static let red = Color(uiColor: Theme.dyn(0xe0605a, 0xC23B35))
+    static let amber = Color(uiColor: Theme.dyn(0xe0b050, 0x9A6A00))
+    static let blue = Color(uiColor: Theme.dyn(0x5a9be0, 0x2B6CB0))
 }
 
 struct StatusPill: View {
@@ -271,7 +272,7 @@ struct AssignmentsTabView: View {
                             if (f == .todo || f == .overdue) && n > 0 {
                                 Text("\(n)")
                                     .font(.caption2.bold())
-                                    .foregroundColor(.black)
+                                    .foregroundColor(Theme.onAccent)
                                     .padding(.horizontal, 6).padding(.vertical, 2)
                                     .background(f == .overdue ? Tone.red : Theme.accent)
                                     .clipShape(Capsule())
@@ -293,7 +294,7 @@ struct AssignmentsTabView: View {
                         Button { model.range = r } label: {
                             Text(r.title)
                                 .font(.footnote.weight(.semibold))
-                                .foregroundColor(model.range == r ? .black : Theme.txt)
+                                .foregroundColor(model.range == r ? Theme.onAccent : Theme.txt)
                                 .padding(.horizontal, 12).padding(.vertical, 6)
                                 .background(model.range == r ? Theme.accent : Theme.surface2)
                                 .clipShape(Capsule())

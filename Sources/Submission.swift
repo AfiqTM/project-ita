@@ -1017,7 +1017,7 @@ struct AssignmentView: View {
         HStack(spacing: 12) {
             Button { Task { await save(a, submit: limited) } } label: {
                 Text(saveLabel)
-                    .fontWeight(.semibold).foregroundColor(.black)
+                    .fontWeight(.semibold).foregroundColor(Theme.onAccent)
                     .frame(maxWidth: .infinity).padding(.vertical, 12)
                     .background(Theme.accent)
                     .clipShape(RoundedRectangle(cornerRadius: 10))
@@ -1322,11 +1322,11 @@ struct SharePickerSheet: View {
 
             Button { Task { await send() } } label: {
                 HStack {
-                    if busy { ProgressView().tint(.black) }
+                    if busy { ProgressView().tint(Theme.onAccent) }
                     Text(busy ? "Preparing..." : (selected.count == 1 ? "Share file" : "Share files"))
                         .fontWeight(.semibold)
                 }
-                .foregroundColor(.black)
+                .foregroundColor(Theme.onAccent)
                 .frame(maxWidth: .infinity).padding(.vertical, 14)
                 .background(Theme.accent.opacity(selected.isEmpty ? 0.35 : 1))
                 .clipShape(RoundedRectangle(cornerRadius: 12))
@@ -1335,7 +1335,7 @@ struct SharePickerSheet: View {
         }
         .padding(16)
         .background(Theme.bg.ignoresSafeArea())
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(ThemeStore.shared.theme.scheme)
         .presentationDetents([.medium, .large])
     }
 

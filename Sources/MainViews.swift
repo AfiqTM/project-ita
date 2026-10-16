@@ -15,8 +15,8 @@ struct RootView: View {
         // Starts from the tab bar appearance already set elsewhere (if any) so its look is kept.
         let std = (UITabBar.appearance().standardAppearance.copy() as? UITabBarAppearance) ?? UITabBarAppearance()
         let edge = (UITabBar.appearance().scrollEdgeAppearance?.copy() as? UITabBarAppearance) ?? std
-        let color = UIColor(Theme.accent)
-        let attrs: [NSAttributedString.Key: Any] = [.foregroundColor: UIColor.black]
+        let color = Theme.uiAccent
+        let attrs: [NSAttributedString.Key: Any] = [.foregroundColor: Theme.uiOnAccent]
         for ap in [std, edge] {
             for item in [ap.stackedLayoutAppearance, ap.inlineLayoutAppearance, ap.compactInlineLayoutAppearance] {
                 item.normal.badgeBackgroundColor = color
@@ -213,7 +213,7 @@ struct CoursesView: View {
                                 Button { Task { await toggleHide(c) } } label: {
                                     Label("Show again", systemImage: "eye")
                                         .font(.footnote.weight(.semibold))
-                                        .foregroundColor(.black)
+                                        .foregroundColor(Theme.onAccent)
                                         .padding(.horizontal, 12).padding(.vertical, 7)
                                         .background(Theme.accent)
                                         .clipShape(Capsule())
@@ -222,7 +222,7 @@ struct CoursesView: View {
                             } else {
                                 Button { Task { await toggleStar(c) } } label: {
                                     Image(systemName: starred ? "star.fill" : "star")
-                                        .foregroundColor(starred ? Theme.accent : Color.white.opacity(0.85))
+                                        .foregroundColor(starred ? Color(hex: Palette.amoledDark.accent) : Color.white.opacity(0.85))
                                         .padding(10)
                                         .background(Color.black.opacity(0.45))
                                         .clipShape(Circle())
@@ -435,6 +435,8 @@ struct CourseCard: View {
 // Used when a course has no (usable) image: a dark tonal gradient picked per course
 struct DefaultCover: View {
     let course: Course
+    // The cover is dark in every theme, so it keeps the original tan (the light theme's accent is too deep for it)
+    private static let tan = Color(hex: Palette.amoledDark.accent)
     private static let palettes: [(UInt32, UInt32)] = [
         (0x1b1712, 0x3a2f22), (0x14181c, 0x2c3a46), (0x1a1417, 0x3d2a33),
         (0x121a16, 0x263b2f), (0x181510, 0x4a3a22), (0x15151c, 0x302f4a)]
@@ -446,12 +448,12 @@ struct DefaultCover: View {
                            startPoint: .topLeading, endPoint: .bottomTrailing)
             Image(systemName: "book.closed.fill")
                 .font(.system(size: 64))
-                .foregroundColor(Theme.accent.opacity(0.14))
+                .foregroundColor(Self.tan.opacity(0.14))
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                 .padding(14)
             Text(course.prettyShort ?? "")
                 .font(.system(size: 22, weight: .bold))
-                .foregroundColor(Theme.accent.opacity(0.9))
+                .foregroundColor(Self.tan.opacity(0.9))
                 .lineLimit(1).minimumScaleFactor(0.5)
                 .padding(14)
         }
@@ -614,6 +616,7 @@ struct ProfileView: View {
     @EnvironmentObject var app: AppState
     @EnvironmentObject var todos: TodoStore
     @EnvironmentObject var driveAuth: DriveAuth
+    @ObservedObject private var themes = ThemeStore.shared
 
     var body: some View {
         ScrollView {
@@ -639,6 +642,10 @@ struct ProfileView: View {
                     NavigationLink { MyDriveView() } label: {
                         ProfileRow(icon: "externaldrive", title: "My Drive",
                                    subtitle: driveAuth.email ?? "Browse your Google Drive", showLine: true)
+                    }
+                    NavigationLink { ThemesView() } label: {
+                        ProfileRow(icon: "paintpalette", title: "Themes",
+                                   subtitle: themes.theme.name, showLine: true)
                     }
                     OfflineSupportRow()
                     SyncStatusRow()
@@ -670,7 +677,7 @@ struct ProfileRow: View {
             }
             Spacer()
             if badge > 0 {
-                Text("\(badge)").font(.caption.weight(.bold)).foregroundColor(.black)
+                Text("\(badge)").font(.caption.weight(.bold)).foregroundColor(Theme.onAccent)
                     .padding(.horizontal, 8).padding(.vertical, 3)
                     .background(Theme.accent).clipShape(Capsule())
             }
@@ -834,7 +841,7 @@ struct FinalExamCalculator: View {
                 .font(.subheadline.weight(.semibold))
                 .frame(maxWidth: .infinity).padding(.vertical, 10)
                 .background(on ? Theme.accent : Theme.surface2)
-                .foregroundColor(on ? .black : Theme.txt)
+                .foregroundColor(on ? Theme.onAccent : Theme.txt)
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .stroke(on ? Theme.accent : Theme.line, lineWidth: 1))

@@ -22,7 +22,7 @@ struct LoginView: View {
                 Button { Task { await browserLogin() } } label: {
                     Text("Sign in with iTa'leem (supports 2FA)")
                         .fontWeight(.semibold)
-                        .foregroundColor(.black)
+                        .foregroundColor(Theme.onAccent)
                         .frame(maxWidth: .infinity).padding(.vertical, 14)
                         .background(Theme.accent)
                         .clipShape(RoundedRectangle(cornerRadius: 12))
