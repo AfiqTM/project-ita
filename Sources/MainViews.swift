@@ -276,8 +276,8 @@ struct CoursesView: View {
                         HStack(spacing: 12) {
                             Image(systemName: "book.closed").font(.footnote).foregroundColor(Theme.accent)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(c.fullname).foregroundColor(Theme.txt).multilineTextAlignment(.leading)
-                                if let sn = c.shortname, !sn.isEmpty {
+                                Text(c.prettyFull).foregroundColor(Theme.txt).multilineTextAlignment(.leading)
+                                if let sn = c.prettyShort, !sn.isEmpty {
                                     Text(sn).font(.caption).foregroundColor(Theme.muted)
                                 }
                             }
@@ -380,7 +380,7 @@ struct CourseCard: View {
         VStack(alignment: .leading, spacing: 0) {
             cover.frame(height: 110).frame(maxWidth: .infinity).clipped()
             VStack(alignment: .leading, spacing: 8) {
-                Text(course.fullname)
+                Text(course.prettyFull)
                     .font(.subheadline.weight(.semibold))
                     .foregroundColor(Theme.txt)
                     .multilineTextAlignment(.leading)
@@ -427,7 +427,7 @@ struct DefaultCover: View {
                 .foregroundColor(Theme.accent.opacity(0.14))
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                 .padding(14)
-            Text(course.shortname ?? "")
+            Text(course.prettyShort ?? "")
                 .font(.system(size: 22, weight: .bold))
                 .foregroundColor(Theme.accent.opacity(0.9))
                 .lineLimit(1).minimumScaleFactor(0.5)
@@ -456,6 +456,16 @@ final class NotifBadgeModel: ObservableObject {
                 count = r.notifications.filter { $0.read != true }.count
             }
         }
+    }
+}
+
+extension Notif {
+    /// Forum discussion id taken from the link (".../mod/forum/discuss.php?d=123#p456"), if it is one
+    var discussionId: Int? {
+        guard let s = contexturl, s.contains("forum/discuss.php"),
+              let items = URLComponents(string: s)?.queryItems,
+              let d = items.first(where: { $0.name == "d" })?.value else { return nil }
+        return Int(d)
     }
 }
 
@@ -488,7 +498,12 @@ struct AlertsView: View {
                     .background(isRead(n) ? Theme.bg : Theme.surface2)
                     .glowCard()
 
-                    if let s = n.contexturl, let u = URL(string: s) {
+                    if let d = n.discussionId {
+                        // Announcements / forum posts open inside the app, not the website
+                        NavigationLink { PostsView(discussionId: d, title: n.subject ?? "Announcement") } label: { card }
+                            .buttonStyle(.plain)
+                            .simultaneousGesture(TapGesture().onEnded { Task { await markRead(n) } })
+                    } else if let s = n.contexturl, let u = URL(string: s) {
                         NavigationLink { WebActivityView(url: u, title: n.subject ?? "Notification") } label: { card }
                             .buttonStyle(.plain)
                             .simultaneousGesture(TapGesture().onEnded { Task { await markRead(n) } })
