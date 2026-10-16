@@ -74,6 +74,8 @@ enum AttendanceSync {
         // Subjects being taken now PLUS past ones (a lecturer may have put a subject under "past" by mistake).
         // Falls back to every enrolled course if the site has no course dates.
         func fetchCourses(_ cls: String) async throws -> [Course] {
+            // Offline support on: reuse the saved list while it is recent instead of downloading it again
+            if OfflineSettings.enabled, let r = await OfflinePrefetch.courses(cls) { return r.courses }
             let r: CourseList = try await api.call("core_course_get_enrolled_courses_by_timeline_classification",
                                                    ["classification": cls, "limit": 0, "offset": 0, "sort": "fullname"])
             return r.courses
@@ -97,7 +99,10 @@ enum AttendanceSync {
         let found: [(Course, Module)] = await withTaskGroup(of: [(Course, Module)].self) { group in
             for c in courses {
                 group.addTask {
-                    let secs: [CourseSection]? = try? await api.call("core_course_get_contents", ["courseid": c.id])
+                    // Offline support on: only downloads the contents again when the course changed
+                    var secs: [CourseSection]?
+                    if OfflineSettings.enabled { secs = await OfflinePrefetch.contents(c.id) }
+                    else { secs = try? await api.call("core_course_get_contents", ["courseid": c.id]) }
                     return (secs ?? []).flatMap { $0.modules }
                         .filter { $0.modname == "attendance" && $0.uservisible != false }
                         .map { (c, $0) }
@@ -139,6 +144,16 @@ enum AttendanceSync {
             return $0.item.name.localizedCaseInsensitiveCompare($1.item.name) == .orderedAscending
         }
         let items = entries.map { $0.item }
+
+        // Offline support: also keep each subject's full attendance page for use with no internet
+        // (on the same ~12-hour schedule as the other offline downloads)
+        if OfflineSettings.enabled && OfflineNet.shared.canDownload && OfflinePrefetch.attendanceCopiesDue() {
+            var all = true
+            for (c, m) in found where currentIDs.contains(c.id) {
+                if await api.saveAttendanceCopy(m, courseId: c.id, uid: userid) == false { all = false; break }   // no web session: stop, try again next time
+            }
+            if all { OfflinePrefetch.attendanceCopiesDone() }
+        }
 
         AttendanceStore.save(AttendanceSnapshot(items: items, updated: Date()))
         lastRun = Date()
