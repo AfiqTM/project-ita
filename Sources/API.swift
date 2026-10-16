@@ -61,7 +61,7 @@ final class MoodleAPI {
 
     // Fields that hold HTML are left alone (they go through plainText later); everything else is entity-decoded
     private static let htmlKeys: Set<String> = ["message", "intro", "summary", "description", "smallmessage",
-                                                "fullmessage", "fullmessagehtml", "text"]
+                                                "fullmessage", "fullmessagehtml", "text", "content"]
     private func decodeEntities(_ v: Any, key: String? = nil) -> Any {
         if let s = v as? String { return (key.map { MoodleAPI.htmlKeys.contains($0) } ?? false) ? s : s.decodedEntities }
         if let a = v as? [Any] { return a.map { decodeEntities($0, key: key) } }
