@@ -44,12 +44,28 @@ struct RootView: View {
             NavigationStack { ProfileView() }
                 .tabItem { Label("Others", systemImage: "ellipsis.circle") }
         }
+        .safeAreaInset(edge: .top, spacing: 0) { OfflineBanner() }   // small "Offline" pill, only while saved data is shown
         .overlay { MessagesOverlay() }   // Messages: full-screen, above the tab bar (Messages.swift)
         // Load at launch so the badges are right before either tab is opened
         .task(id: app.site?.userid) {
             if let uid = app.site?.userid { await assignments.load(uid: uid) }
         }
         .task { await NotificationManager.shared.requestPermission() }
+        // Offline support: download the lists in the background so they open with no internet
+        .task(id: app.site?.userid) {
+            if let uid = app.site?.userid { await OfflinePrefetch.run(uid: uid) }
+        }
+        // The website answered again after saved data was shown: refresh
+        .onReceive(NotificationCenter.default.publisher(for: .offlineBackOnline)) { _ in
+            guard let uid = app.site?.userid else { return }
+            Task { await assignments.load(uid: uid); await notifs.refresh(uid: uid) }
+        }
+        // Changes made with no internet are sent when the app opens, and when the connection returns
+        .task { await OfflineQueue.shared.flush() }
+        .onReceive(NotificationCenter.default.publisher(for: .offlineQueueSent)) { _ in
+            guard let uid = app.site?.userid else { return }
+            Task { await assignments.load(uid: uid) }
+        }
         // Home-screen widget data (maximum possible attendance per subject)
         .task(id: app.site?.userid) {
             if let uid = app.site?.userid { await AttendanceSync.refresh(userid: uid) }
@@ -71,10 +87,12 @@ struct RootView: View {
             if phase == .background { NotificationManager.shared.scheduleRefresh() }
             guard phase == .active, let uid = app.site?.userid else { return }
             Task {
+                await OfflineQueue.shared.flush()
                 await notifs.refresh(uid: uid)
                 await assignments.load(uid: uid)
                 await AttendanceSync.refresh(userid: uid)
                 await NotificationManager.shared.checkIncoming(uid: uid)
+                await OfflinePrefetch.run(uid: uid)
             }
         }
     }
@@ -239,8 +257,12 @@ struct CoursesView: View {
             if let c = openCourse { CourseDetailView(course: c) }
         }
         .refreshable { await load(); await loadAll() }
-        .task(id: filter) { await load() }
+        .task(id: filter) {
+            await OfflineCache.paintFromCache { await load() }   // last download first, instantly
+            await load()                                          // then the online version
+        }
         .task { await loadAll() }
+        .onReceive(NotificationCenter.default.publisher(for: .offlineBackOnline)) { _ in Task { await load(); await loadAll() } }
     }
 
     private var searchBar: some View {
@@ -551,7 +573,11 @@ struct AlertsView: View {
         }
         .animation(.easeInOut(duration: 0.2), value: unread > 0)
         .refreshable { await load() }
-        .task { await load() }
+        .task {
+            await OfflineCache.paintFromCache { await load() }
+            await load()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .offlineBackOnline)) { _ in Task { await load() } }
     }
 
     private func load() async {
@@ -614,6 +640,7 @@ struct ProfileView: View {
                         ProfileRow(icon: "externaldrive", title: "My Drive",
                                    subtitle: driveAuth.email ?? "Browse your Google Drive", showLine: true)
                     }
+                    OfflineSupportRow()
                     SyncStatusRow()
                 }
                 .buttonStyle(.plain)
