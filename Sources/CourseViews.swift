@@ -163,8 +163,10 @@ struct ModuleRow: View {
         WebActivityView(url: URL(string: module.url ?? "") ?? Site.url, title: module.name)
     }
 
-    @ViewBuilder private var destination: some View {
+    @ViewBuilder var destination: some View {
         switch module.modname {
+        case "page":
+            PageModuleView(courseId: courseId, module: module)
         case "forum":
             ForumView(forumId: module.instance ?? 0, title: module.name)
         case "assign":
@@ -491,4 +493,132 @@ struct WebActivityView: View {
             resolved = await MoodleAPI.shared.autologin(url, userid: app.site?.userid ?? 0)
         }
     }
+}
+
+
+// MARK: - Open any activity by its id (used by Alerts: announcements, assignments, ...)
+
+private struct CMResp: Decodable { let cm: CMInfo }
+private struct CMInfo: Decodable { let id: Int; let course: Int }
+
+struct ModuleLoaderView: View {
+    let cmid: Int
+    let url: URL?
+    let title: String
+    @State private var found: (course: Int, module: Module)?
+    @State private var failed = false
+
+    var body: some View {
+        Group {
+            if let f = found {
+                ModuleRow(courseId: f.course, module: f.module).destination
+            } else if failed {
+                WebActivityView(url: url ?? Site.url, title: title)   // last resort
+            } else {
+                ProgressView().tint(Theme.accent).frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Theme.bg.ignoresSafeArea())
+                    .navigationTitle(title).navigationBarTitleDisplayMode(.inline)
+            }
+        }
+        .task {
+            do {
+                let r: CMResp = try await MoodleAPI.shared.call("core_course_get_course_module", ["cmid": cmid])
+                let sections: [CourseSection] = try await MoodleAPI.shared.call(
+                    "core_course_get_contents",
+                    ["courseid": r.cm.course, "options": [["name": "cmid", "value": cmid]]])
+                if let m = sections.flatMap({ $0.modules }).first(where: { $0.id == cmid }) {
+                    found = (r.cm.course, m)
+                } else { failed = true }
+            } catch {
+                if !(error is CancellationError) { failed = true }
+            }
+        }
+    }
+}
+
+// MARK: - Page activity (announcements are usually Pages) shown inside the app
+
+private struct PagesResp: Decodable { let pages: [PageInfo] }
+private struct PageInfo: Decodable { let coursemodule: Int?; let content: String? }
+
+struct PageModuleView: View {
+    let courseId: Int
+    let module: Module
+    @State private var html: String?
+    @State private var loading = true
+
+    var body: some View {
+        Group {
+            if let html { HTMLContentView(html: html) }
+            else if loading { ProgressView().tint(Theme.accent).frame(maxWidth: .infinity, maxHeight: .infinity) }
+            else { Text("Couldn't load this page.").foregroundColor(Theme.muted)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity) }
+        }
+        .background(Theme.bg.ignoresSafeArea())
+        .navigationTitle(module.name)
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            if let r: PagesResp = try? await MoodleAPI.shared.call(
+                "mod_page_get_pages_by_courses", ["courseids": [courseId]]) {
+                html = r.pages.first(where: { $0.coursemodule == module.id })?.content
+            }
+            loading = false
+        }
+    }
+}
+
+/// HTML shown with the app's dark look; links open in Safari.
+struct HTMLContentView: UIViewRepresentable {
+    let html: String
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    final class Coordinator: NSObject, WKNavigationDelegate {
+        func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
+                     decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+            if action.navigationType == .linkActivated, let u = action.request.url {
+                UIApplication.shared.open(u)
+                decisionHandler(.cancel)
+            } else { decisionHandler(.allow) }
+        }
+    }
+
+    // pluginfile links (images, attachments) need the user's token to load
+    private func withTokens(_ s: String) -> String {
+        guard let re = try? NSRegularExpression(pattern: "(src|href)=\"([^\"]*pluginfile\\.php[^\"]*)\"") else { return s }
+        var out = s
+        let ns = s as NSString
+        for m in re.matches(in: s, range: NSRange(location: 0, length: ns.length)).reversed() {
+            let attr = ns.substring(with: m.range(at: 1))
+            let link = ns.substring(with: m.range(at: 2)).replacingOccurrences(of: "&amp;", with: "&")
+            if let u = MoodleAPI.shared.fileURL(link) {
+                out = (out as NSString).replacingCharacters(in: m.range, with: "\(attr)=\"\(u.absoluteString)\"")
+            }
+        }
+        return out
+    }
+
+    private var page: String {
+        """
+        <html><head><meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+        body{background:#000;color:#e6e6e6;font:16px -apple-system,Helvetica,sans-serif;line-height:1.5;
+             margin:0;padding:16px;word-wrap:break-word}
+        a{color:#D2B48C} img,video,iframe{max-width:100%;height:auto}
+        table{border-collapse:collapse;max-width:100%} td,th{border:1px solid #333;padding:6px}
+        h1,h2,h3,h4,strong,b{color:#fff}
+        </style></head><body>\(withTokens(html))</body></html>
+        """
+    }
+
+    func makeUIView(context: Context) -> WKWebView {
+        let w = WKWebView(frame: .zero)
+        w.navigationDelegate = context.coordinator
+        w.isOpaque = false
+        w.backgroundColor = .clear
+        w.scrollView.backgroundColor = .clear
+        w.loadHTMLString(page, baseURL: Site.url)
+        return w
+    }
+    func updateUIView(_ uiView: WKWebView, context: Context) {}
 }
