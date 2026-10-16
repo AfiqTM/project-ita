@@ -146,8 +146,21 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
             } else {
                 title = "New alert"
             }
-            var body = n.subject ?? ""
-            if let m = n.smallmessage?.plainText, !m.isEmpty { body += body.isEmpty ? m : "\n" + m }
+            // Moodle often sends the same sentence as both "subject" and "smallmessage":
+            // only show the second line when it adds something new.
+            func norm(_ s: String) -> String {
+                s.lowercased().split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+            }
+            let subject = (n.subject ?? "").plainText
+            let detail = (n.smallmessage ?? "").plainText
+            var body = subject
+            if !detail.isEmpty {
+                let a = norm(subject), b = norm(detail)
+                if a.isEmpty { body = detail }
+                else if b == a || a.contains(b) { /* same text: keep one copy */ }
+                else if b.contains(a) { body = detail }   // detail already includes the subject
+                else { body += "\n" + detail }
+            }
             await post(id: "alert.\(n.id)", title: title, body: body)
         }
     }
