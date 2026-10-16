@@ -415,63 +415,105 @@ struct OfflineBanner: View {
     }
 }
 
-/// Others tab: switch offline support on or off, and choose whether downloads may use mobile data
+/// Others tab: one row. Tick / untick turns Offline support on or off; tapping the row (or the >) opens the
+/// Offline support screen with every other option (mobile data, course files, delete files).
 struct OfflineSupportRow: View {
     @AppStorage(OfflineSettings.key) private var on = true
-    @AppStorage(OfflineSettings.mobileKey) private var mobile = true
     @EnvironmentObject var app: AppState
     @State private var size = ""
+    @State private var open = false
 
     private func download() {
         guard let uid = app.site?.userid else { return }
         Task { await OfflinePrefetch.run(uid: uid, force: true); size = OfflineCache.sizeText() }
     }
 
+    private var subtitle: String {
+        guard on else { return "Off · nothing is saved" }
+        return "Opens saved data with no internet" + (size.isEmpty ? "" : " · \(size)")
+    }
+
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 14) {
-                Image(systemName: "icloud.and.arrow.down").foregroundColor(Theme.accent).frame(width: 26)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Offline support").foregroundColor(Theme.txt).fontWeight(.semibold)
-                    Text(on ? "Opens saved data with no internet" + (size.isEmpty ? "" : " · \(size)")
-                            : "Off · nothing is saved")
-                        .font(.caption).foregroundColor(Theme.muted).lineLimit(2)
-                }
-                Spacer()
-                Toggle("", isOn: $on).labelsHidden().tint(Theme.accent)
-            }
-            .padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            if on {
+        HStack(spacing: 14) {
+            Button { open = true } label: {
                 HStack(spacing: 14) {
-                    Image(systemName: "antenna.radiowaves.left.and.right").foregroundColor(Theme.accent).frame(width: 26)
+                    Image(systemName: "icloud.and.arrow.down").foregroundColor(Theme.accent).frame(width: 26)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Download on mobile data").foregroundColor(Theme.txt).fontWeight(.semibold)
-                        Text(mobile ? "Saved data also updates on mobile data"
-                                    : "Off · background downloads wait for Wi-Fi")
-                            .font(.caption).foregroundColor(Theme.muted).lineLimit(2)
+                        Text("Offline support").foregroundColor(Theme.txt).fontWeight(.semibold)
+                        Text(subtitle).font(.caption).foregroundColor(Theme.muted).lineLimit(2)
                     }
-                    Spacer()
-                    Toggle("", isOn: $mobile).labelsHidden().tint(Theme.accent)
+                    Spacer(minLength: 0)
                 }
-                .padding(.horizontal, 14).padding(.bottom, 14)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
 
-            // Course files (PDFs, attachments): their own switch, Wi-Fi rule and storage, see OfflineFiles.swift
-            OfflineFilesSection(offlineOn: on)
+            Toggle("", isOn: $on).labelsHidden().tint(Theme.accent)
+
+            Button { open = true } label: {
+                Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundColor(Theme.muted)
+                    .padding(.vertical, 6).padding(.leading, 2)
+            }
+            .buttonStyle(.plain)
         }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .overlay(Rectangle().fill(Theme.line).frame(height: 1), alignment: .bottom)
+        .navigationDestination(isPresented: $open) { OfflineSupportScreen() }
         .onAppear { size = OfflineCache.sizeText() }
+        .onChange(of: open) { v in if !v { size = OfflineCache.sizeText() } }
         .onChange(of: on) { v in
             if v { download() }
             else {
-                OfflineCache.clearAll()
+                OfflineCache.clearAll()   // downloaded course files are separate and stay
                 OfflineMonitor.shared.usingCache = false
                 size = ""
             }
         }
-        .onChange(of: mobile) { v in if v { download() } }   // allowed again: catch up now
+    }
+}
+
+/// Offline support > everything else: mobile data for saved data, then Download course files and its options
+struct OfflineSupportScreen: View {
+    @AppStorage(OfflineSettings.key) private var on = true
+    @AppStorage(OfflineSettings.mobileKey) private var mobile = true
+    @EnvironmentObject var app: AppState
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 0) {
+                if on {
+                    HStack(spacing: 14) {
+                        Image(systemName: "antenna.radiowaves.left.and.right").foregroundColor(Theme.accent).frame(width: 26)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Download on mobile data").foregroundColor(Theme.txt).fontWeight(.semibold)
+                            Text(mobile ? "Saved data also updates on mobile data"
+                                        : "Off · background downloads wait for Wi-Fi")
+                                .font(.caption).foregroundColor(Theme.muted).lineLimit(2)
+                        }
+                        Spacer()
+                        Toggle("", isOn: $mobile).labelsHidden().tint(Theme.accent)
+                    }
+                    .padding(.horizontal, 14).padding(.top, 14).padding(.bottom, 14)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    Text("Offline support is off. Switch it on in Others to save data for use with no internet.")
+                        .font(.caption).foregroundColor(Theme.muted)
+                        .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                // Course files (PDFs, attachments): their own switch, Wi-Fi rule and storage, see OfflineFiles.swift
+                OfflineFilesSection(offlineOn: on)
+            }
+            .glowCard()
+            .padding(16)
+        }
+        .background(Theme.bg.ignoresSafeArea())
+        .navigationTitle("Offline support")
+        .navigationBarTitleDisplayMode(.inline)
+        .onChange(of: mobile) { v in   // allowed again: catch up now
+            guard v, on, let uid = app.site?.userid else { return }
+            Task { await OfflinePrefetch.run(uid: uid, force: true) }
+        }
     }
 }
