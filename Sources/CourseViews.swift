@@ -28,12 +28,23 @@ struct CourseDetailView: View {
         }
     }
 
+    @ViewBuilder private func page(_ t: CourseTab) -> some View {
+        switch t {
+        case .course: CourseContentView(courseId: course.id)
+        case .participants: ParticipantsView(courseId: course.id)
+        case .drive: CourseDriveTab(courseId: course.id)
+        case .todo: CourseTodoTab(courseId: course.id)
+        case .grades: GradesView(courseId: course.id)
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
+            ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 26) {
                     ForEach(tabs) { t in
-                        Button { tab = t } label: {
+                        Button { withAnimation(.easeInOut(duration: 0.25)) { tab = t } } label: {
                             HStack(spacing: 6) {
                                 Text(t.rawValue)
                                     .fontWeight(tab == t ? .semibold : .regular)
@@ -46,21 +57,26 @@ struct CourseDetailView: View {
                                 }
                             }
                         }
+                        .id(t)
                     }
                 }
                 .padding(.horizontal, 16).padding(.vertical, 12)
             }
-
-            switch tab {
-            case .course: CourseContentView(courseId: course.id)
-            case .participants: ParticipantsView(courseId: course.id)
-            case .drive: CourseDriveTab(courseId: course.id)
-            case .todo: CourseTodoTab(courseId: course.id)
-            case .grades: GradesView(courseId: course.id)
+            // keep the selected tab visible when swiping between pages
+            .onChange(of: tab) { t in withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(t, anchor: .center) } }
             }
+
+            // Swipe right-to-left for the next tab, left-to-right for the previous one.
+            // On the first tab (Course) a left-to-right swipe from the screen edge still goes back.
+            TabView(selection: $tab) {
+                ForEach(tabs) { t in
+                    page(t).tag(t)
+                }
+            }
+            .tabViewStyle(.page(indexDisplayMode: .never))
         }
         .background(Theme.bg.ignoresSafeArea())
-        .navigationTitle(course.shortname ?? course.fullname)
+        .navigationTitle(course.prettyShort ?? course.prettyFull)
         .navigationBarTitleDisplayMode(.inline)
         // the open tab goes away when its last item is removed
         .onChange(of: tabs) { new in if !new.contains(tab) { tab = .course } }
