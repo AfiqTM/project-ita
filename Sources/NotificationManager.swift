@@ -183,6 +183,9 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
         defaults.set(seen, forKey: "msg.seen")
     }
 
+    /// A plain notification shown right away (used when offline changes have been sent)
+    func notify(id: String, title: String, body: String) async { await post(id: id, title: title, body: body) }
+
     private func post(id: String, title: String, body: String) async {
         let c = UNMutableNotificationContent()
         c.title = title
@@ -208,6 +211,7 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
                 MoodleAPI.shared.token = s.token
                 MoodleAPI.shared.privateToken = s.privateToken
             }
+            await OfflineQueue.shared.flush()   // changes made offline, if the phone is online now
             await checkIncoming(uid: defaults.integer(forKey: "notif.uid"))
             task.setTaskCompleted(success: true)
         }
