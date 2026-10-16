@@ -165,6 +165,8 @@ enum OfflinePrefetch {
     // remembered across launches. Opening the app earlier does nothing; switching Offline support on, or
     // allowing mobile data, downloads straight away.
     private static let nextKey = "offline.nextDownload"
+    /// When the last download finished (seconds since 1970; 0 = never). Shown in Offline support.
+    static let lastKey = "offline.lastDownload"
     private static let nextAttendanceKey = "offline.nextAttendanceCopy"
 
     private static func randomGap() -> TimeInterval { .random(in: 10 * 3600 ... 14 * 3600) }
@@ -299,6 +301,7 @@ enum OfflinePrefetch {
                 for id in chunk { g.addTask { await course(id, uid: uid, extras: extras) } }
             }
         }
+        UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: lastKey)
     }
 
     /// The submission status of every assignment (4 at a time), saved under the same request the screens make
@@ -506,11 +509,56 @@ struct OfflineSupportRow: View {
 struct OfflineSupportScreen: View {
     @AppStorage(OfflineSettings.key) private var on = true
     @AppStorage(OfflineSettings.mobileKey) private var mobile = true
+    @AppStorage(OfflinePrefetch.lastKey) private var lastDownload = 0.0
     @EnvironmentObject var app: AppState
+    @ObservedObject private var monitor = OfflineMonitor.shared
+    @State private var downloading = false
+    @State private var blocked = false
+
+    private func downloadNow() {
+        guard let uid = app.site?.userid, !downloading else { return }
+        downloading = true
+        blocked = !OfflineNet.shared.canDownload
+        Task {
+            await OfflinePrefetch.run(uid: uid, force: true)
+            downloading = false
+        }
+    }
+
+    private var lastText: String {
+        guard lastDownload > 0 else { return "Last download: never" }
+        return "Last download: " + Date(timeIntervalSince1970: lastDownload).formatted(date: .abbreviated, time: .shortened)
+    }
+
+    private var downloadNowRow: some View {
+        Button { downloadNow() } label: {
+            HStack(spacing: 14) {
+                Image(systemName: "arrow.down.circle").foregroundColor(Theme.accent).frame(width: 26)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Download now").foregroundColor(Theme.txt).fontWeight(.semibold)
+                    Text(downloading ? "Downloading…"
+                         : !on ? "Switch Offline support on first"
+                         : !monitor.isOnline ? "No internet · " + lastText
+                         : blocked ? "Waiting for Wi-Fi · " + lastText
+                         : lastText)
+                        .font(.caption).foregroundColor(Theme.muted).lineLimit(2)
+                }
+                Spacer()
+                if downloading { ProgressView().tint(Theme.accent) }
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!on || downloading || !monitor.isOnline)
+    }
 
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
+                downloadNowRow          // first option on the screen, with the last download date and time
+                OfflineQueueSection()   // submissions waiting to upload: file names, cancel
                 if on {
                     HStack(spacing: 14) {
                         Image(systemName: "antenna.radiowaves.left.and.right").foregroundColor(Theme.accent).frame(width: 26)
@@ -543,6 +591,77 @@ struct OfflineSupportScreen: View {
         .onChange(of: mobile) { v in   // allowed again: catch up now
             guard v, on, let uid = app.site?.userid else { return }
             Task { await OfflinePrefetch.run(uid: uid, force: true) }
+        }
+    }
+}
+/// Submissions waiting to be sent: shows the file names, and lets the user cancel one before it goes out
+struct OfflineQueueSection: View {
+    @ObservedObject private var queue = OfflineQueue.shared
+    @ObservedObject private var monitor = OfflineMonitor.shared
+    @State private var cancelling: SubmissionJob?
+
+    private func title(_ j: SubmissionJob) -> String {
+        switch (j.kind, j.submit) {
+        case (.remove, _): return "Removal"
+        case (.save, true): return "Submission"
+        case (.save, false): return "Saved changes"
+        }
+    }
+
+    var body: some View {
+        if !queue.jobs.isEmpty {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 14) {
+                    Image(systemName: "tray.and.arrow.up").foregroundColor(Theme.accent).frame(width: 26)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Waiting to upload").foregroundColor(Theme.txt).fontWeight(.semibold)
+                        Text(monitor.isOnline ? "Sending now…" : "Will be sent when you're back online")
+                            .font(.caption).foregroundColor(Theme.muted)
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal, 14).padding(.top, 4).padding(.bottom, 10)
+
+                ForEach(queue.jobs) { j in
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(j.name).font(.subheadline.weight(.semibold)).foregroundColor(Theme.txt)
+                        Text(title(j) + (j.error == nil ? "" : " · couldn't send"))
+                            .font(.caption).foregroundColor(j.error == nil ? Theme.muted : .red)
+                        if let e = j.error {
+                            Text(e).font(.caption).foregroundColor(Theme.muted)
+                        }
+                        ForEach(j.newFiles, id: \.self) { f in
+                            Label(f, systemImage: "doc").font(.caption).foregroundColor(Theme.txt).lineLimit(1)
+                        }
+                        if j.newFiles.isEmpty && j.kind == .save {
+                            Text(j.text == nil ? "No new files" : "Text only").font(.caption).foregroundColor(Theme.muted)
+                        }
+                        HStack(spacing: 18) {
+                            if j.error != nil { Button("Retry") { queue.retryNow(j.id) } }
+                            Button(j.error == nil ? "Cancel upload" : "Discard", role: .destructive) { cancelling = j }
+                        }
+                        .font(.caption.weight(.semibold)).foregroundColor(Theme.accent)
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Theme.surface2)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Theme.line))
+                    .padding(.horizontal, 14).padding(.bottom, 10)
+                }
+            }
+            .padding(.bottom, 4)
+            .confirmationDialog("Cancel this upload?", isPresented: Binding(get: { cancelling != nil },
+                                                                           set: { if !$0 { cancelling = nil } }),
+                                titleVisibility: .visible) {
+                Button("Cancel upload", role: .destructive) {
+                    if let j = cancelling { queue.discard(j.id) }
+                    cancelling = nil
+                }
+                Button("Keep", role: .cancel) { cancelling = nil }
+            } message: {
+                Text("It won't be sent to the site. Your files stay on your phone.")
+            }
         }
     }
 }
