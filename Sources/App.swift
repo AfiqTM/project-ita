@@ -13,6 +13,8 @@ struct iTaleemApp: App {
     @StateObject private var driveLib = DriveLibrary()
     @StateObject private var driveAuth = DriveAuth()
     @StateObject private var catalog = CourseCatalog()
+    @StateObject private var sync = SyncManager()
+    @Environment(\.scenePhase) private var scenePhase
     init() { Theme.applyAppearance(); NotificationManager.shared.setup() }
 
     var body: some Scene {
@@ -25,6 +27,9 @@ struct iTaleemApp: App {
             .environmentObject(driveLib)
             .environmentObject(driveAuth)
             .environmentObject(catalog)
+            .environmentObject(sync)
+            .onAppear { sync.configure(todos: todos, lib: driveLib, auth: driveAuth) }
+            .onChange(of: scenePhase) { phase in if phase == .active { sync.syncNow() } }
             .preferredColorScheme(.dark)
             .tint(Theme.accent)
             .background(Theme.bg.ignoresSafeArea())
