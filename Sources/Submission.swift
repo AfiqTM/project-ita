@@ -787,8 +787,22 @@ struct AssignmentView: View {
     @State private var busy = false
     @State private var introFiles: [IntroFile] = []      // files the lecturer attached to the assignment
     @State private var showShare = false
+    /// Offline and nothing saved about this assignment yet: a basic form (text + files) is shown so it can still be queued
+    @State private var limited = false
 
     private var uid: Int { app.site?.userid ?? 0 }
+
+    /// Stand-in for an assignment whose details aren't on the phone: its id is the activity's instance number
+    private func fallbackAssign() -> Assign? {
+        guard let inst = module.instance else { return nil }
+        func plugin(_ p: String) -> [String: String] {
+            ["subtype": "assignsubmission", "plugin": p, "name": "enabled", "value": "1"]
+        }
+        let json: [String: Any] = ["id": inst, "cmid": module.id, "name": module.name,
+                                   "submissiondrafts": 0, "configs": [plugin("onlinetext"), plugin("file")]]
+        guard let d = try? JSONSerialization.data(withJSONObject: json) else { return nil }
+        return try? JSONDecoder().decode(Assign.self, from: d)
+    }
 
     private var existingFiles: [FileRef] {
         var out: [FileRef] = []
@@ -826,6 +840,7 @@ struct AssignmentView: View {
                     }
                     if !introFiles.isEmpty { attachmentsCard }
                     QueuedNote(assignId: a.id)
+                    if limited { limitedNote }
                     submissionCard(a)
                 }
                 NavigationLink {
@@ -842,11 +857,29 @@ struct AssignmentView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
         .onReceive(NotificationCenter.default.publisher(for: .offlineQueueSent)) { _ in Task { await load() } }
+        // the connection came back while this screen showed the basic form: load the real details
+        .onReceive(NotificationCenter.default.publisher(for: .offlineNetworkReturned)) { _ in
+            if limited || assign == nil { Task { await load() } }
+        }
         .fileImporter(isPresented: $showPicker, allowedContentTypes: [.item],
                       allowsMultipleSelection: true) { result in
             if case .success(let urls) = result { addFiles(urls) }
         }
         .sheet(isPresented: $showShare) { SharePickerSheet(files: introFiles) }
+    }
+
+    private var limitedNote: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "wifi.slash")
+            Text("This assignment's details aren't saved on your phone yet, so you can still add text or files and submit. It is sent automatically when you're back online (the site refuses it if this assignment doesn't take that kind of submission).")
+                .font(.caption).fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .foregroundColor(Theme.muted)
+        .padding(12)
+        .background(Theme.surface2)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Theme.line))
     }
 
     // ---- lecturer's attached files (same as the "attachments" shown on the Moodle website) ----
@@ -976,12 +1009,13 @@ struct AssignmentView: View {
     }
 
     @ViewBuilder private func actionButtons(_ a: Assign) -> some View {
-        let usesDrafts = a.submissiondrafts == 1
+        let usesDrafts = a.submissiondrafts == 1 && !limited
         let canSubmitDraft = subStatus == "draft" || status?.lastattempt?.cansubmit?.value == true
-        let saveLabel = hasSubmission ? (usesDrafts ? "Save changes" : "Update submission")
+        let saveLabel = limited ? "Submit"
+                      : hasSubmission ? (usesDrafts ? "Save changes" : "Update submission")
                                       : (usesDrafts ? "Save draft" : "Submit")
         HStack(spacing: 12) {
-            Button { Task { await save(a, submit: false) } } label: {
+            Button { Task { await save(a, submit: limited) } } label: {
                 Text(saveLabel)
                     .fontWeight(.semibold).foregroundColor(.black)
                     .frame(maxWidth: .infinity).padding(.vertical, 12)
@@ -1078,7 +1112,7 @@ struct AssignmentView: View {
         let keep = existingFiles.filter { !removedFiles.contains($0.id) }
         let job = SubmissionJob(
             kind: .save, assignId: a.id, name: a.name,
-            text: a.enabled("onlinetext") ? text : nil,
+            text: a.enabled("onlinetext") && !(limited && text.isEmpty) ? text : nil,
             submit: submit,
             rebuildFiles: a.enabled("file") && (!picked.isEmpty || !removedFiles.isEmpty),
             keep: keep.map { KeptFile(name: $0.filename ?? "file", url: $0.fileurl ?? "") })
@@ -1149,10 +1183,25 @@ struct AssignmentView: View {
             let r: AssignResp = try await MoodleAPI.shared.call(
                 "mod_assign_get_assignments", ["courseids": [courseId]])
             assign = r.courses.first?.assignments.first { $0.cmid == module.id }
+            limited = false
+            error = nil
             if let a = assign { await loadStatus(a) }
             await loadIntroFiles()
         } catch {
-            if !(error is CancellationError) { self.error = error.localizedDescription }
+            if !(error is CancellationError) {
+                if assign == nil, isOfflineError(error), OfflineSettings.enabled, let f = fallbackAssign() {
+                    // no internet and nothing saved: basic form, so the submission can still be queued
+                    assign = f
+                    limited = true
+                    self.error = nil
+                    if !textLoaded {
+                        if let q = queue.job(for: f.id), q.kind == .save, let qt = q.text { text = qt }
+                        textLoaded = true
+                    }
+                } else {
+                    self.error = error.localizedDescription
+                }
+            }
         }
         loading = false
     }
