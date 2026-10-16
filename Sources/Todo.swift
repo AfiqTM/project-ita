@@ -121,6 +121,8 @@ struct TodoItem: Codable, Identifiable, Hashable {
     var notes: String?           // optional description
     var created = Date()
     var completedAt: Date?
+    var updated: Date?           // last change (used to sync with the website)
+    var deleted: Bool?           // hidden tombstone so a deletion also reaches the other device
 }
 
 // MARK: - Store (saved on the phone, survives restarts)
@@ -135,30 +137,47 @@ final class TodoStore: ObservableObject {
            let list = try? JSONDecoder().decode([TodoItem].self, from: d) { items = list }
     }
 
-    private func save() {
+    private func persist() {
         if let d = try? JSONEncoder().encode(items) { UserDefaults.standard.set(d, forKey: key) }
-        NotificationManager.shared.scheduleTodos(items)
+        NotificationManager.shared.scheduleTodos(live)
+    }
+    private func save() {
+        persist()
+        NotificationCenter.default.post(name: .syncLocalChanged, object: nil)
     }
 
-    var pending: [TodoItem] { items.filter { $0.completedAt == nil }.sorted { $0.due < $1.due } }
+    private var live: [TodoItem] { items.filter { $0.deleted != true } }
+    /// Everything including hidden deleted entries (what gets synced)
+    var allItems: [TodoItem] { items }
+    /// Newer data from Drive (does not trigger another upload)
+    func applySync(_ list: [TodoItem]) { items = list; persist() }
+
+    var pending: [TodoItem] { live.filter { $0.completedAt == nil }.sorted { $0.due < $1.due } }
     var history: [TodoItem] {
-        items.filter { $0.completedAt != nil }.sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
+        live.filter { $0.completedAt != nil }.sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
     }
     func pending(for courseId: Int) -> [TodoItem] { pending.filter { $0.courseId == courseId } }
-    func count(for courseId: Int) -> Int { items.filter { $0.completedAt == nil && $0.courseId == courseId }.count }
+    func count(for courseId: Int) -> Int { live.filter { $0.completedAt == nil && $0.courseId == courseId }.count }
 
-    func add(_ i: TodoItem) { items.append(i); save() }
+    func add(_ i: TodoItem) { var n = i; n.updated = Date(); items.append(n); save() }
     func update(_ i: TodoItem) {
-        if let n = items.firstIndex(where: { $0.id == i.id }) { items[n] = i; save() }
+        if let n = items.firstIndex(where: { $0.id == i.id }) { items[n] = i; items[n].updated = Date(); save() }
     }
     func complete(_ id: UUID) {
-        if let n = items.firstIndex(where: { $0.id == id }) { items[n].completedAt = Date(); save() }
+        if let n = items.firstIndex(where: { $0.id == id }) { items[n].completedAt = Date(); items[n].updated = Date(); save() }
     }
     func restore(_ id: UUID) {
-        if let n = items.firstIndex(where: { $0.id == id }) { items[n].completedAt = nil; save() }
+        if let n = items.firstIndex(where: { $0.id == id }) { items[n].completedAt = nil; items[n].updated = Date(); save() }
     }
-    func delete(_ id: UUID) { items.removeAll { $0.id == id }; save() }
-    func clearHistory() { items.removeAll { $0.completedAt != nil }; save() }
+    func delete(_ id: UUID) {
+        if let n = items.firstIndex(where: { $0.id == id }) { items[n].deleted = true; items[n].updated = Date(); save() }
+    }
+    func clearHistory() {
+        for n in items.indices where items[n].completedAt != nil && items[n].deleted != true {
+            items[n].deleted = true; items[n].updated = Date()
+        }
+        save()
+    }
 }
 
 // MARK: - Small helpers
