@@ -72,6 +72,7 @@ final class AppState: ObservableObject {
         site = nil
         loggedIn = false
         OfflineCache.clearAll()
+        OfflineFileStore.shared.clearAll()
         OfflineQueue.shared.clear()
         OfflineMonitor.shared.usingCache = false
         WKWebsiteDataStore.default().removeData(
