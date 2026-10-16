@@ -181,7 +181,7 @@ struct ModuleRow: View {
             FolderView(module: module)
         case "resource":
             if let f = module.contents?.first?.fileurl, let u = MoodleAPI.shared.fileURL(f) {
-                FileViewer(url: u, title: module.name)
+                FileViewer(url: u, title: module.name, modified: module.contents?.first?.timemodified)
             } else { web }
         default:
             web
@@ -200,11 +200,13 @@ struct ModuleRow: View {
                     Image(systemName: icon).foregroundColor(Theme.accent).frame(width: 24)
                     Text(module.name).foregroundColor(Theme.txt).multilineTextAlignment(.leading)
                     Spacer()
+                    if module.modname == "resource" { FileStateIcon(file: module.contents?.first) }
                 }
                 .padding(14)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .fileDownloadMenu(module.modname == "resource" ? module.contents?.first : nil)   // press and hold: Download
         }
     }
 }
@@ -218,7 +220,7 @@ struct FolderView: View {
             VStack(spacing: 0) {
                 ForEach(module.contents ?? []) { c in
                     if let f = c.fileurl, let u = MoodleAPI.shared.fileURL(f) {
-                        NavigationLink { FileViewer(url: u, title: c.filename ?? "File") } label: {
+                        NavigationLink { FileViewer(url: u, title: c.filename ?? "File", modified: c.timemodified) } label: {
                             HStack {
                                 Image(systemName: "doc").foregroundColor(Theme.accent)
                                 VStack(alignment: .leading, spacing: 2) {
@@ -226,10 +228,12 @@ struct FolderView: View {
                                     Text(fmt(c.timemodified, time: false)).font(.caption).foregroundColor(Theme.muted)
                                 }
                                 Spacer()
+                                FileStateIcon(file: c)
                             }
                             .padding(14)
                         }
                         .buttonStyle(.plain)
+                        .fileDownloadMenu(c)
                     }
                 }
             }
@@ -244,8 +248,19 @@ struct FolderView: View {
 struct FileViewer: View {
     let url: URL
     let title: String
+    /// The site's last-modified time of this file (when known), so a saved copy is only used online if it is current
+    var modified: Int? = nil
+    @ObservedObject private var files = OfflineFileStore.shared
+
     var body: some View {
-        WebView(url: url, theme: false)
+        Group {
+            // downloaded copy: used with no internet (and online when it is the current version)
+            if let local = files.localURL(for: url, modified: modified) {
+                QuickLookView(url: local).ignoresSafeArea(edges: .bottom)
+            } else {
+                WebView(url: url, theme: false)
+            }
+        }
             .background(Theme.bg.ignoresSafeArea())
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
@@ -625,7 +640,7 @@ struct PageModuleView: View {
                             .padding(14)
                         ForEach(attachments) { c in
                             if let f = c.fileurl, let u = MoodleAPI.shared.fileURL(f) {
-                                NavigationLink { FileViewer(url: u, title: c.filename ?? "File") } label: {
+                                NavigationLink { FileViewer(url: u, title: c.filename ?? "File", modified: c.timemodified) } label: {
                                     HStack(spacing: 12) {
                                         Image(systemName: "paperclip").foregroundColor(Theme.accent)
                                         VStack(alignment: .leading, spacing: 2) {
@@ -637,6 +652,7 @@ struct PageModuleView: View {
                                             }
                                         }
                                         Spacer()
+                                        FileStateIcon(file: c)
                                         Image(systemName: "chevron.right").font(.caption).foregroundColor(Theme.muted)
                                     }
                                     .padding(14)
@@ -644,6 +660,7 @@ struct PageModuleView: View {
                                     .overlay(Rectangle().fill(Theme.line).frame(height: 1), alignment: .top)
                                 }
                                 .buttonStyle(.plain)
+                                .fileDownloadMenu(c)
                             }
                         }
                     }
