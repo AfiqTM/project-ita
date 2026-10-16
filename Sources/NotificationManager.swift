@@ -104,10 +104,10 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
 
     // MARK: 1b. Queued offline submission still waiting before its deadline
 
-    /// Local reminders (they fire even if the app is closed): 3 h and 30 min before the due time,
-    /// telling the user to open the app so the waiting change gets sent. Cancelled when the job is
-    /// sent, discarded or refused by the site (see OfflineQueue).
-    private static let queueReminderOffsets: [TimeInterval] = [3 * 3600, 30 * 60]
+    /// Local reminder (fires even if the app is closed): 1 h before the due time, telling the user to
+    /// open the app so the waiting change gets sent. Cancelled when the job is sent, discarded or
+    /// refused by the site (see OfflineQueue).
+    private static let queueReminderOffsets: [TimeInterval] = [3600]
 
     func scheduleQueueReminders(_ job: SubmissionJob) {
         cancelQueueReminders(job.id)

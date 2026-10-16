@@ -45,6 +45,11 @@ struct SubmissionJob: Codable, Identifiable {
     var hasFiles = false
     // set when the site refused it
     var error: String?
+    // background upload progress (see BackgroundUpload.swift); optional so older queue files still load
+    var bgActive: Bool?              // a file of this job is being sent by iOS right now
+    var bgStarted: Double?           // when it was handed to iOS (seconds since 1970)
+    var bgNext: Int?                 // index of the next file to upload; == newFiles.count when all are up
+    var bgItem: Int?                 // draft item id returned by the site for the files uploaded so far
 }
 
 extension MoodleAPI {
@@ -132,6 +137,8 @@ final class OfflineQueue: ObservableObject {
         persist()
         scheduleRetry()
         NotificationManager.shared.scheduleQueueReminders(j)
+        // New files: let iOS upload them even if the app gets closed (and wait for a connection if there is none)
+        if BackgroundUploader.handles(j) { Task { _ = await startBackground(j.id) } }
     }
 
     func discard(_ id: UUID) {
@@ -139,10 +146,12 @@ final class OfflineQueue: ObservableObject {
         jobs.removeAll { $0.id == id }
         persist()
         NotificationManager.shared.cancelQueueReminders(id)
+        BackgroundUploader.shared.cancel(id)
     }
 
     func clear() {
         for j in jobs { NotificationManager.shared.cancelQueueReminders(j.id) }
+        BackgroundUploader.shared.cancelAll()
         jobs = []
         try? FileManager.default.removeItem(at: dir)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -164,6 +173,8 @@ final class OfflineQueue: ObservableObject {
         defer { flushing = false }
         var sentAny = false
         for j in jobs where j.error == nil {
+            // new files only: iOS uploads them in the background, save + submit follow when it is done
+            if BackgroundUploader.handles(j), await startBackground(j.id) { continue }
             do {
                 try await MoodleAPI.shared.run(j, newFiles: files(j))
                 try? FileManager.default.removeItem(at: folder(j))
@@ -193,6 +204,106 @@ final class OfflineQueue: ObservableObject {
             }
         }
         if sentAny { NotificationCenter.default.post(name: .offlineQueueSent, object: nil) }
+    }
+
+    // MARK: background upload (the file transfer itself is done by iOS, see BackgroundUpload.swift)
+
+    private var finishing = Set<UUID>()
+
+    /// The app may have been started by iOS with no screen: load the saved session ourselves
+    private func restoreSession() {
+        if MoodleAPI.shared.token.isEmpty, let s = Keychain.load() {
+            MoodleAPI.shared.token = s.token
+            MoodleAPI.shared.privateToken = s.privateToken
+        }
+    }
+
+    /// Hands the next file of a job to iOS, or runs save + submit when every file is up.
+    /// Returns false when the job can't go this way, so the normal path in flush() takes over.
+    func startBackground(_ id: UUID) async -> Bool {
+        restoreSession()
+        guard let i = jobs.firstIndex(where: { $0.id == id }) else { return true }
+        if jobs[i].bgActive == true {
+            // already with iOS: only take it back if iOS has lost track of it
+            if Date().timeIntervalSince1970 - (jobs[i].bgStarted ?? 0) < 120 { return true }
+            if await BackgroundUploader.shared.isRunning(id) { return true }
+            guard let k = jobs.firstIndex(where: { $0.id == id }) else { return true }
+            jobs[k].bgActive = false
+        }
+        guard let k = jobs.firstIndex(where: { $0.id == id }) else { return true }
+        let next = jobs[k].bgNext ?? 0
+        if next >= jobs[k].newFiles.count { await finishBackground(id); return true }
+        do {
+            try BackgroundUploader.shared.start(file: files(jobs[k])[next], itemid: jobs[k].bgItem ?? 0,
+                                                token: MoodleAPI.shared.token, jobId: id, index: next,
+                                                dir: folder(jobs[k]))
+        } catch {
+            return false
+        }
+        jobs[k].bgActive = true
+        jobs[k].bgStarted = Date().timeIntervalSince1970
+        persist()
+        return true
+    }
+
+    /// iOS finished (or gave up on) one file of a job. May run in a relaunched app with no screen.
+    func backgroundUploadFinished(desc: String, body: Data?, error: Error?) async {
+        restoreSession()
+        let parts = desc.split(separator: "|")
+        guard parts.count == 2, let id = UUID(uuidString: String(parts[0])), let idx = Int(parts[1]),
+              let i = jobs.firstIndex(where: { $0.id == id }) else { return }
+        jobs[i].bgActive = false
+        try? FileManager.default.removeItem(at: folder(jobs[i]).appendingPathComponent("upload-\(idx).body"))
+        if let error {
+            persist()
+            if (error as? URLError)?.code == .cancelled { return }          // discarded
+            if isOfflineError(error) { scheduleRetry(); return }            // restarted when the connection is back
+            await fail(id, error.localizedDescription)
+            return
+        }
+        let obj = body.flatMap { try? JSONSerialization.jsonObject(with: $0) }
+        if let arr = obj as? [[String: Any]], let item = arr.first?["itemid"] as? Int {
+            jobs[i].bgItem = item
+            jobs[i].bgNext = idx + 1
+            persist()
+            _ = await startBackground(id)   // the next file, or save + submit after the last one
+        } else {
+            await fail(id, ((obj as? [String: Any])?["error"] as? String) ?? "Upload failed")
+        }
+    }
+
+    /// All files are up: save the submission, submit it if that was asked, then tell the user
+    private func finishBackground(_ id: UUID) async {
+        guard !finishing.contains(id), let i = jobs.firstIndex(where: { $0.id == id }) else { return }
+        finishing.insert(id)
+        defer { finishing.remove(id) }
+        let j = jobs[i]
+        do {
+            try await MoodleAPI.shared.saveSubmission(assignId: j.assignId, text: j.text, draftItemId: j.bgItem)
+            if j.submit { try await MoodleAPI.shared.submitForGrading(assignId: j.assignId) }
+            try? FileManager.default.removeItem(at: folder(j))
+            jobs.removeAll { $0.id == j.id }
+            persist()
+            NotificationManager.shared.cancelQueueReminders(j.id)
+            let title = j.submit ? "Submitted: \(j.name)" : "Saved: \(j.name)"
+            await NotificationManager.shared.notify(id: "queue.\(j.id.uuidString)", title: title,
+                                                    body: "Sent in the background, you didn't need to open the app.")
+            NotificationCenter.default.post(name: .offlineQueueSent, object: nil)
+        } catch {
+            if isOfflineError(error) || error is CancellationError { scheduleRetry(); return }   // retried later
+            await fail(id, error.localizedDescription)
+        }
+    }
+
+    /// The site refused it (or the upload failed for good): keep the job with the reason, tell the user
+    private func fail(_ id: UUID, _ message: String) async {
+        guard let i = jobs.firstIndex(where: { $0.id == id }) else { return }
+        jobs[i].error = message
+        persist()
+        NotificationManager.shared.cancelQueueReminders(id)
+        await NotificationManager.shared.notify(
+            id: "queue.\(id.uuidString)", title: "Couldn't send: \(jobs[i].name)",
+            body: message + " Open the assignment to retry or discard it.")
     }
 
     /// If the connection looks fine but the send failed, try again in a while

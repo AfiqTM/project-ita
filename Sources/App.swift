@@ -8,6 +8,7 @@ enum Site {
 
 @main
 struct iTaleemApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate   // background uploads (BackgroundUpload.swift)
     @StateObject private var app = AppState()
     @StateObject private var todos = TodoStore()
     @StateObject private var driveLib = DriveLibrary()
