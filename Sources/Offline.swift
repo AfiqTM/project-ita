@@ -297,6 +297,7 @@ enum OfflinePrefetch {
     private static func course(_ id: Int, uid: Int, extras: Bool) async {
         let api = MoodleAPI.shared
         let secs = await contents(id)
+        await OfflineFileStore.syncCourse(secs ?? [])   // "Download course files" (off by default; own Wi-Fi/mobile rule)
         guard extras else { return }
 
         _ = try? await api.raw("gradereport_user_get_grade_items", ["courseid": id, "userid": uid])
@@ -457,6 +458,9 @@ struct OfflineSupportRow: View {
                 .padding(.horizontal, 14).padding(.bottom, 14)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+
+            // Course files (PDFs, attachments): their own switch, Wi-Fi rule and storage, see OfflineFiles.swift
+            OfflineFilesSection(offlineOn: on)
         }
         .overlay(Rectangle().fill(Theme.line).frame(height: 1), alignment: .bottom)
         .onAppear { size = OfflineCache.sizeText() }
