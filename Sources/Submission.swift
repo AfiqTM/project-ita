@@ -1111,7 +1111,7 @@ struct AssignmentView: View {
         busy = true; message = nil
         let keep = existingFiles.filter { !removedFiles.contains($0.id) }
         let job = SubmissionJob(
-            kind: .save, assignId: a.id, name: a.name,
+            kind: .save, assignId: a.id, name: a.name, due: a.duedate,
             text: a.enabled("onlinetext") && !(limited && text.isEmpty) ? text : nil,
             submit: submit,
             rebuildFiles: a.enabled("file") && (!picked.isEmpty || !removedFiles.isEmpty),
@@ -1144,7 +1144,7 @@ struct AssignmentView: View {
 
     private func removeSubmission(_ a: Assign) async {
         busy = true; message = nil
-        let job = SubmissionJob(kind: .remove, assignId: a.id, name: a.name, userid: uid,
+        let job = SubmissionJob(kind: .remove, assignId: a.id, name: a.name, due: a.duedate, userid: uid,
                                 hasText: a.enabled("onlinetext"), hasFiles: a.enabled("file"))
         do {
             try await MoodleAPI.shared.run(job, newFiles: [])

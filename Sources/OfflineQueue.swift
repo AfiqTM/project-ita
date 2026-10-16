@@ -31,6 +31,7 @@ struct SubmissionJob: Codable, Identifiable {
     var kind: Kind
     var assignId: Int
     var name: String                 // assignment name, for the notification
+    var due: Int?                    // assignment due time (seconds since 1970), for the "still waiting" reminders
     var created = Date()
     // save
     var text: String?
@@ -115,7 +116,10 @@ final class OfflineQueue: ObservableObject {
     /// Keeps the job (and copies of its files) on the phone. A newer change to the same assignment replaces the older one.
     func enqueue(_ job: SubmissionJob, files picked: [URL]) {
         var j = job
-        for old in jobs where old.assignId == j.assignId { try? FileManager.default.removeItem(at: folder(old)) }
+        for old in jobs where old.assignId == j.assignId {
+            try? FileManager.default.removeItem(at: folder(old))
+            NotificationManager.shared.cancelQueueReminders(old.id)   // its reminders go with it
+        }
         jobs.removeAll { $0.assignId == j.assignId }
         try? FileManager.default.createDirectory(at: folder(j), withIntermediateDirectories: true)
         j.newFiles = []
@@ -127,15 +131,18 @@ final class OfflineQueue: ObservableObject {
         jobs.append(j)
         persist()
         scheduleRetry()
+        NotificationManager.shared.scheduleQueueReminders(j)
     }
 
     func discard(_ id: UUID) {
         if let j = jobs.first(where: { $0.id == id }) { try? FileManager.default.removeItem(at: folder(j)) }
         jobs.removeAll { $0.id == id }
         persist()
+        NotificationManager.shared.cancelQueueReminders(id)
     }
 
     func clear() {
+        for j in jobs { NotificationManager.shared.cancelQueueReminders(j.id) }
         jobs = []
         try? FileManager.default.removeItem(at: dir)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -143,7 +150,10 @@ final class OfflineQueue: ObservableObject {
 
     /// Retry a job the site refused earlier
     func retryNow(_ id: UUID) {
-        if let i = jobs.firstIndex(where: { $0.id == id }) { jobs[i].error = nil; persist() }
+        if let i = jobs.firstIndex(where: { $0.id == id }) {
+            jobs[i].error = nil; persist()
+            NotificationManager.shared.scheduleQueueReminders(jobs[i])   // waiting again
+        }
         Task { await flush() }
     }
 
@@ -159,6 +169,7 @@ final class OfflineQueue: ObservableObject {
                 try? FileManager.default.removeItem(at: folder(j))
                 jobs.removeAll { $0.id == j.id }
                 persist()
+                NotificationManager.shared.cancelQueueReminders(j.id)
                 sentAny = true
                 let title: String
                 switch (j.kind, j.submit) {
@@ -175,6 +186,7 @@ final class OfflineQueue: ObservableObject {
                     jobs[i].error = error.localizedDescription
                     persist()
                 }
+                NotificationManager.shared.cancelQueueReminders(j.id)   // the site refused it: no point nagging
                 await NotificationManager.shared.notify(
                     id: "queue.\(j.id.uuidString)", title: "Couldn't send: \(j.name)",
                     body: error.localizedDescription + " Open the assignment to retry or discard it.")

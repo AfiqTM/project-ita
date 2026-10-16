@@ -102,6 +102,41 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
         defaults.set(Array(done.suffix(500)), forKey: "due.done")
     }
 
+    // MARK: 1b. Queued offline submission still waiting before its deadline
+
+    /// Local reminders (they fire even if the app is closed): 3 h and 30 min before the due time,
+    /// telling the user to open the app so the waiting change gets sent. Cancelled when the job is
+    /// sent, discarded or refused by the site (see OfflineQueue).
+    private static let queueReminderOffsets: [TimeInterval] = [3 * 3600, 30 * 60]
+
+    func scheduleQueueReminders(_ job: SubmissionJob) {
+        cancelQueueReminders(job.id)
+        guard let due = job.due, due > 0 else { return }   // no deadline known: nothing to count down to
+        let dueDate = Date(timeIntervalSince1970: TimeInterval(due))
+        let now = Date()
+        let what = (job.kind == .save && job.submit) ? "Your submission is" : "Your changes are"
+        for (i, offset) in Self.queueReminderOffsets.enumerated() {
+            let fireAt = dueDate.addingTimeInterval(-offset)
+            guard fireAt > now else { continue }
+            let c = UNMutableNotificationContent()
+            c.title = "Still waiting to be sent: \(job.name)"
+            c.body = what + " saved on your phone but not sent yet. Open the app while online to send it. Due "
+                + dueDate.formatted(date: .abbreviated, time: .shortened) + "."
+            c.sound = .default
+            let req = UNNotificationRequest(
+                identifier: "queue.remind.\(job.id.uuidString).\(i)", content: c,
+                trigger: UNTimeIntervalNotificationTrigger(timeInterval: fireAt.timeIntervalSince(now), repeats: false))
+            UNUserNotificationCenter.current().add(req) { _ in }
+        }
+    }
+
+    func cancelQueueReminders(_ jobId: UUID) {
+        let ids = Self.queueReminderOffsets.indices.map { "queue.remind.\(jobId.uuidString).\($0)" }
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: ids)
+        center.removeDeliveredNotifications(withIdentifiers: ids)
+    }
+
     // MARK: 3. New messages / alerts / announcements
 
     func checkIncoming(uid: Int) async {
