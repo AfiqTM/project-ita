@@ -612,8 +612,9 @@ struct ProfileView: View {
                     }
                     NavigationLink { MyDriveView() } label: {
                         ProfileRow(icon: "externaldrive", title: "My Drive",
-                                   subtitle: driveAuth.email ?? "Browse your Google Drive", showLine: false)
+                                   subtitle: driveAuth.email ?? "Browse your Google Drive", showLine: true)
                     }
+                    SyncStatusRow()
                 }
                 .buttonStyle(.plain)
                 .glowCard()
