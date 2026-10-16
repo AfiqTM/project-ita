@@ -61,6 +61,7 @@ final class SyncManager: ObservableObject {
     private var running = false, again = false
     private var lastRun = Date.distantPast
     private var observer: NSObjectProtocol?
+    private var netObserver: NSObjectProtocol?
 
     func configure(todos: TodoStore, lib: DriveLibrary, auth: DriveAuth) {
         self.todos = todos; self.lib = lib; self.auth = auth
@@ -68,11 +69,19 @@ final class SyncManager: ObservableObject {
         observer = NotificationCenter.default.addObserver(forName: .syncLocalChanged, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.schedule() }
         }
+        // Connection came back: send whatever was changed while offline
+        netObserver = NotificationCenter.default.addObserver(forName: .offlineNetworkReturned, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                self?.syncNow(force: true)
+            }
+        }
         syncNow()
     }
 
     /// Called after every local change: waits a moment so a burst of edits becomes one upload
     func schedule() {
+        UserDefaults.standard.set(true, forKey: "sync.dirty")   // a change on this device not yet in Drive
         debounce?.cancel()
         debounce = Task {
             try? await Task.sleep(nanoseconds: 2_500_000_000)
@@ -116,10 +125,22 @@ final class SyncManager: ObservableObject {
                 try await Self.upload(body, fileId: fileId, token)
             }
             state = .ok(Date())
+            // changes made while offline have now gone through
+            let d = UserDefaults.standard
+            if d.bool(forKey: "sync.dirty") && d.bool(forKey: "sync.offlineFail") {
+                await NotificationManager.shared.notify(id: "sync.sent", title: "Changes synced",
+                                                        body: "Your changes made offline were sent to Google Drive and the website.")
+            }
+            d.set(false, forKey: "sync.dirty"); d.set(false, forKey: "sync.offlineFail")
         } catch let e as DriveError {
             if case .notSignedIn = e { state = .needsSignIn } else { state = .failed(e.localizedDescription) }
         } catch {
-            state = .failed(error.localizedDescription)
+            if isOfflineError(error) {
+                if UserDefaults.standard.bool(forKey: "sync.dirty") { UserDefaults.standard.set(true, forKey: "sync.offlineFail") }
+                state = .failed("Offline · will sync when you're back online")
+            } else {
+                state = .failed(error.localizedDescription)
+            }
         }
         if again { again = false; schedule() }
     }
