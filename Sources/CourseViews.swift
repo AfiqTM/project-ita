@@ -101,7 +101,11 @@ struct CourseContentView: View {
             .padding(16)
         }
         .refreshable { await load() }
-        .task { await load() }
+        .task {
+            await OfflineCache.paintFromCache { await load() }
+            await load()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .offlineBackOnline)) { _ in Task { await load() } }
     }
 
     private func load() async {
@@ -290,7 +294,11 @@ struct ForumView: View {
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .refreshable { await load() }
-        .task { await load() }
+        .task {
+            await OfflineCache.paintFromCache { await load() }
+            await load()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .offlineBackOnline)) { _ in Task { await load() } }
     }
 
     private func load() async {
@@ -334,15 +342,21 @@ struct PostsView: View {
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .task {
-            do {
-                let r: PostsResp = try await MoodleAPI.shared.call(
-                    "mod_forum_get_discussion_posts", ["discussionid": discussionId])
-                posts = r.posts
-            } catch {
-                if !(error is CancellationError) { self.error = error.localizedDescription }
-            }
-            loading = false
+            await OfflineCache.paintFromCache { await load() }
+            await load()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .offlineBackOnline)) { _ in Task { await load() } }
+    }
+
+    private func load() async {
+        do {
+            let r: PostsResp = try await MoodleAPI.shared.call(
+                "mod_forum_get_discussion_posts", ["discussionid": discussionId])
+            posts = r.posts
+        } catch {
+            if !(error is CancellationError) { self.error = error.localizedDescription }
+        }
+        loading = false
     }
 }
 
@@ -382,16 +396,22 @@ struct GradesView: View {
         .scrollDismissesKeyboard(.interactively)
         .keyboardDoneButton()
         .task {
-            do {
-                let r: GradesResp = try await MoodleAPI.shared.call(
-                    "gradereport_user_get_grade_items",
-                    ["courseid": courseId, "userid": app.site?.userid ?? 0])
-                items = r.usergrades.first?.gradeitems ?? []
-            } catch {
-                if !(error is CancellationError) { self.error = error.localizedDescription }
-            }
-            loading = false
+            await OfflineCache.paintFromCache { await load() }
+            await load()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .offlineBackOnline)) { _ in Task { await load() } }
+    }
+
+    private func load() async {
+        do {
+            let r: GradesResp = try await MoodleAPI.shared.call(
+                "gradereport_user_get_grade_items",
+                ["courseid": courseId, "userid": app.site?.userid ?? 0])
+            items = r.usergrades.first?.gradeitems ?? []
+        } catch {
+            if !(error is CancellationError) { self.error = error.localizedDescription }
+        }
+        loading = false
     }
 }
 
