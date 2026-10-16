@@ -541,41 +541,116 @@ struct ModuleLoaderView: View {
 private struct PagesResp: Decodable { let pages: [PageInfo] }
 private struct PageInfo: Decodable { let coursemodule: Int?; let content: String? }
 
+enum PageBlock { case text(AttributedString), image(URL) }
+
 struct PageModuleView: View {
     let courseId: Int
     let module: Module
-    @State private var text: AttributedString?
+    @State private var blocks: [PageBlock]?
+    @State private var html = ""
     @State private var loading = true
+    @State private var openFile: URL?
+
+    /// Files attached to the page that aren't already shown or linked inside the text
+    private var attachments: [ModContent] {
+        (module.contents ?? []).filter { c in
+            guard let n = c.filename, c.fileurl != nil, n.lowercased() != "index.html" else { return false }
+            return !html.contains(n) && !html.contains(n.replacingOccurrences(of: " ", with: "%20"))
+        }
+    }
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                Text(module.name)
-                    .fontWeight(.semibold).foregroundColor(Theme.txt)
-                    .multilineTextAlignment(.leading)
-                Rectangle().fill(Theme.line).frame(height: 1)
-                if let text {
-                    Text(text).font(.subheadline).lineSpacing(3)
+            VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(module.name)
+                        .fontWeight(.semibold).foregroundColor(Theme.txt)
                         .multilineTextAlignment(.leading)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                } else if loading {
-                    ProgressView().tint(Theme.accent).frame(maxWidth: .infinity)
-                } else {
-                    Text("Couldn't load this page.").font(.footnote).foregroundColor(Theme.muted)
+                    Rectangle().fill(Theme.line).frame(height: 1)
+                    if let blocks {
+                        ForEach(Array(blocks.enumerated()), id: \.offset) { _, b in
+                            switch b {
+                            case .text(let t):
+                                Text(t).font(.subheadline).lineSpacing(3)
+                                    .multilineTextAlignment(.leading)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            case .image(let u):
+                                NavigationLink { FileViewer(url: u, title: "Image") } label: {
+                                    AsyncImage(url: u) { phase in
+                                        switch phase {
+                                        case .success(let img): img.resizable().scaledToFit()
+                                        case .failure: Label("Image couldn't load", systemImage: "photo")
+                                                .font(.footnote).foregroundColor(Theme.muted)
+                                        default: ProgressView().tint(Theme.accent).frame(height: 120)
+                                        }
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    } else if loading {
+                        ProgressView().tint(Theme.accent).frame(maxWidth: .infinity)
+                    } else {
+                        Text("Couldn't load this page.").font(.footnote).foregroundColor(Theme.muted)
+                    }
+                }
+                .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+                .glowCard(radius: 12)
+
+                if !attachments.isEmpty {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("Attachments").font(.caption.weight(.medium)).foregroundColor(Theme.muted)
+                            .padding(14)
+                        ForEach(attachments) { c in
+                            if let f = c.fileurl, let u = MoodleAPI.shared.fileURL(f) {
+                                NavigationLink { FileViewer(url: u, title: c.filename ?? "File") } label: {
+                                    HStack(spacing: 12) {
+                                        Image(systemName: "paperclip").foregroundColor(Theme.accent)
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(c.filename ?? "File").foregroundColor(Theme.txt)
+                                                .multilineTextAlignment(.leading)
+                                            if let sz = c.filesize, sz > 0 {
+                                                Text(ByteCountFormatter.string(fromByteCount: Int64(sz), countStyle: .file))
+                                                    .font(.caption).foregroundColor(Theme.muted)
+                                            }
+                                        }
+                                        Spacer()
+                                        Image(systemName: "chevron.right").font(.caption).foregroundColor(Theme.muted)
+                                    }
+                                    .padding(14)
+                                    .contentShape(Rectangle())
+                                    .overlay(Rectangle().fill(Theme.line).frame(height: 1), alignment: .top)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .glowCard(radius: 12)
                 }
             }
-            .padding(16).frame(maxWidth: .infinity, alignment: .leading)
-            .glowCard(radius: 12)
             .padding(16)
         }
         .background(Theme.bg.ignoresSafeArea())
         .navigationTitle(module.name)
         .navigationBarTitleDisplayMode(.inline)
+        // links to files on the site open in the app's viewer; other links go to Safari
+        .environment(\.openURL, OpenURLAction { url in
+            if url.absoluteString.contains("pluginfile.php") { openFile = url; return .handled }
+            return .systemAction
+        })
+        .navigationDestination(isPresented: Binding(get: { openFile != nil },
+                                                    set: { if !$0 { openFile = nil } })) {
+            if let u = openFile { FileViewer(url: u, title: u.lastPathComponent.removingPercentEncoding ?? "File") }
+        }
         .task {
             if let r: PagesResp = try? await MoodleAPI.shared.call(
                 "mod_page_get_pages_by_courses", ["courseids": [courseId]]),
-               let html = r.pages.first(where: { $0.coursemodule == module.id })?.content {
-                text = HTMLText.attributed(html)
+               let h = r.pages.first(where: { $0.coursemodule == module.id })?.content {
+                html = h
+                blocks = HTMLText.blocks(h)
             }
             loading = false
         }
@@ -584,13 +659,26 @@ struct PageModuleView: View {
 
 /// Turns Moodle HTML into styled text that matches the app (bold, italics, bullets, tappable links).
 enum HTMLText {
-    static func attributed(_ html: String) -> AttributedString {
+    static func blocks(_ html: String) -> [PageBlock] {
         var out = AttributedString()
+        var blocks: [PageBlock] = []
         var bold = 0, italic = 0
         var link: URL?
         var newlines = 2            // pretend we start after a blank line so nothing leads with spaces
         var pendingSpace = false
 
+        func flush() {
+            while let last = out.characters.last, last == "\n" || last == " " { out.characters.removeLast() }
+            if !out.characters.isEmpty { blocks.append(.text(out)) }
+            out = AttributedString()
+            newlines = 2
+            pendingSpace = false
+        }
+        // site files need the user's token; other addresses are used as they are (the token must not leave the site)
+        func resolve(_ raw: String) -> URL? {
+            let r = raw.decodedEntities
+            return r.contains("pluginfile.php") ? MoodleAPI.shared.fileURL(r) : URL(string: r)
+        }
         func newline(_ n: Int) {
             guard newlines < n else { return }
             out += AttributedString(String(repeating: "\n", count: n - newlines))
@@ -609,7 +697,7 @@ enum HTMLText {
             newlines = 0
         }
 
-        guard let re = try? NSRegularExpression(pattern: "<[^>]+>|[^<]+") else { return AttributedString(html.plainText) }
+        guard let re = try? NSRegularExpression(pattern: "<[^>]+>|[^<]+") else { return [.text(AttributedString(html.plainText))] }
         let ns = html as NSString
         for m in re.matches(in: html, range: NSRange(location: 0, length: ns.length)) {
             let tok = ns.substring(with: m.range)
@@ -628,8 +716,19 @@ enum HTMLText {
                 case "a":
                     if closing { link = nil }
                     else if let r = tok.range(of: "href=\"([^\"]*)\"", options: .regularExpression) {
-                        let raw = String(tok[r]).dropFirst(6).dropLast()
-                        link = URL(string: String(raw).decodedEntities)
+                        link = resolve(String(String(tok[r]).dropFirst(6).dropLast()))
+                    }
+                case "img":
+                    if let r = tok.range(of: "src=\"([^\"]*)\"", options: .regularExpression),
+                       let u = resolve(String(String(tok[r]).dropFirst(5).dropLast())) {
+                        flush()
+                        blocks.append(.image(u))
+                    }
+                case "iframe":
+                    if !closing, let r = tok.range(of: "src=\"([^\"]*)\"", options: .regularExpression),
+                       let u = resolve(String(String(tok[r]).dropFirst(5).dropLast())) {
+                        let saved = link
+                        newline(1); link = u; add("\u{25B6}  Open embedded content"); link = saved; newline(1)
                     }
                 case "tr": if closing { newline(1) }
                 case "td", "th": if closing { pendingSpace = true }
@@ -645,10 +744,7 @@ enum HTMLText {
                 add(s)
             }
         }
-        // trim trailing blank lines
-        while let last = out.characters.last, last == "\n" || last == " " {
-            out.characters.removeLast()
-        }
-        return out
+        flush()
+        return blocks
     }
 }
