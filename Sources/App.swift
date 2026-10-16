@@ -15,7 +15,7 @@ struct iTaleemApp: App {
     @StateObject private var catalog = CourseCatalog()
     @StateObject private var sync = SyncManager()
     @Environment(\.scenePhase) private var scenePhase
-    init() { Theme.applyAppearance(); NotificationManager.shared.setup() }
+    init() { Theme.applyAppearance(); NotificationManager.shared.setup(); OfflineNet.shared.start() }
 
     var body: some Scene {
         WindowGroup {
@@ -71,6 +71,9 @@ final class AppState: ObservableObject {
         MoodleAPI.shared.privateToken = nil
         site = nil
         loggedIn = false
+        OfflineCache.clearAll()
+        OfflineQueue.shared.clear()
+        OfflineMonitor.shared.usingCache = false
         WKWebsiteDataStore.default().removeData(
             ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(),
             modifiedSince: .distantPast) {}
