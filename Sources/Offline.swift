@@ -1,0 +1,473 @@
+import SwiftUI
+import Network
+import CryptoKit
+
+// MARK: - Offline support
+//
+// Every read-only call to iTa'leem (courses, course contents, assignments, alerts, ...) is saved to disk
+// after it succeeds. A screen then opens in two steps:
+//   1. it is filled straight from the saved copy (no waiting, works with no internet),
+//   2. the normal online request runs and replaces it as soon as the answer arrives.
+// If the request fails (no internet, server error) or takes longer than `slowLimit`, the saved copy is
+// used instead and a small "Offline" pill appears at the top of the app.
+// Turn it on/off in Others > Offline support. Turning it off deletes the saved data.
+
+extension Notification.Name {
+    /// The app was showing saved data and the website answered again: screens should reload
+    static let offlineBackOnline = Notification.Name("italeem.offline.backOnline")
+}
+
+enum OfflineSettings {
+    static let key = "offline.enabled"
+    static var enabled: Bool { UserDefaults.standard.object(forKey: key) as? Bool ?? true }
+    /// May background downloads use mobile data? (off = they wait for Wi-Fi)
+    static let mobileKey = "offline.mobileData"
+    static var mobileData: Bool { UserDefaults.standard.object(forKey: mobileKey) as? Bool ?? true }
+}
+
+// MARK: connectivity (readable from any thread)
+
+final class OfflineNet {
+    static let shared = OfflineNet()
+    private let lock = NSLock()
+    private var _online = true
+    private var _expensive = false
+    private let monitor = NWPathMonitor()
+
+    var online: Bool { lock.lock(); defer { lock.unlock() }; return _online }
+    var expensive: Bool { lock.lock(); defer { lock.unlock() }; return _expensive }
+
+    /// Background downloads (prefetch, attendance copies) may run now: online, and on Wi-Fi unless
+    /// the user allowed mobile data. Low Data Mode and personal hotspots count as mobile data.
+    var canDownload: Bool {
+        guard online else { return false }
+        return OfflineSettings.mobileData || !(expensive || constrained)
+    }
+    private var _constrained = false
+    var constrained: Bool { lock.lock(); defer { lock.unlock() }; return _constrained }
+
+    func start() {
+        monitor.pathUpdateHandler = { [weak self] path in
+            guard let self else { return }
+            let ok = path.status == .satisfied
+            self.lock.lock()
+            let was = self._online
+            self._online = ok; self._expensive = path.isExpensive; self._constrained = path.isConstrained
+            self.lock.unlock()
+            Task { @MainActor in
+                OfflineMonitor.shared.isOnline = ok
+                // connection came back: waiting changes (submissions, to-dos) are sent
+                if ok && !was { NotificationCenter.default.post(name: .offlineNetworkReturned, object: nil) }
+            }
+        }
+        monitor.start(queue: DispatchQueue(label: "italeem.offline.net"))
+    }
+}
+
+@MainActor
+final class OfflineMonitor: ObservableObject {
+    static let shared = OfflineMonitor()
+    @Published var isOnline = true
+    /// true while the app is showing saved data because the website couldn't be reached
+    @Published var usingCache = false
+
+    func markCache() { if !usingCache { usingCache = true } }
+    func markOnline() {
+        guard usingCache else { return }
+        usingCache = false
+        NotificationCenter.default.post(name: .offlineBackOnline, object: nil)
+    }
+}
+
+// MARK: disk store
+
+enum OfflineCache {
+    /// While true (inside `paintFromCache`), API calls answer from disk only and never touch the network
+    @TaskLocal static var cacheOnly = false
+    static let slowLimit: TimeInterval = 6
+
+    private static let dir: URL = {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        var d = base.appendingPathComponent("OfflineCache", isDirectory: true)
+        try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
+        var v = URLResourceValues(); v.isExcludedFromBackup = true
+        try? d.setResourceValues(v)
+        return d
+    }()
+
+    /// Only reads are saved. Writes (submit, mark read, star...) and the one-time auto-login key never are.
+    static func isCacheable(_ fn: String) -> Bool {
+        fn.contains("_get_") && !fn.contains("autologin") && !fn.contains("updates_since")   // the change check must always be live
+    }
+
+    private static func file(_ name: String) -> URL {
+        let h = SHA256.hash(data: Data(name.utf8)).map { String(format: "%02x", $0) }.joined()
+        return dir.appendingPathComponent(h + ".bin")
+    }
+    static func apiName(_ fn: String, _ paramKey: String) -> String { "api|" + fn + "|" + paramKey }
+
+    static func save(_ name: String, _ data: Data) {
+        let u = file(name)
+        if let old = try? Data(contentsOf: u), old == data {   // unchanged: skip the write, but note it was checked now
+            try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: u.path)
+            return
+        }
+        try? data.write(to: u, options: .atomic)
+    }
+    static func load(_ name: String) -> Data? { try? Data(contentsOf: file(name)) }
+    static func age(_ name: String) -> TimeInterval? { savedDate(name).map { Date().timeIntervalSince($0) } }
+    static func savedDate(_ name: String) -> Date? {
+        (try? FileManager.default.attributesOfItem(atPath: file(name).path))?[.modificationDate] as? Date
+    }
+
+    // Small typed helpers (used for the attendance page)
+    static func saveObject<T: Encodable>(_ name: String, _ v: T) {
+        if let d = try? JSONEncoder().encode(v) { save("obj|" + name, d) }
+    }
+    static func loadObject<T: Decodable>(_ name: String, as: T.Type = T.self) -> T? {
+        load("obj|" + name).flatMap { try? JSONDecoder().decode(T.self, from: $0) }
+    }
+
+    static func clearAll() {
+        try? FileManager.default.removeItem(at: dir)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    }
+
+    static func sizeText() -> String {
+        let files = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.fileSizeKey])) ?? []
+        let bytes = files.reduce(0) { $0 + ((try? $1.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) }
+        return ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
+    }
+
+    /// Runs `body` once against the saved copy only (instant, silent when nothing is saved), so a screen
+    /// can show last time's data first. Call the real load right after it.
+    static func paintFromCache(_ body: () async -> Void) async {
+        guard OfflineSettings.enabled else { return }
+        await $cacheOnly.withValue(true) { await body() }
+    }
+}
+
+// MARK: background download
+//
+// What is downloaded again, and when (nothing is fetched twice for the same reason):
+//   One download about every 12 hours (random, 10-14 h). In it:
+//   course lists, notifications, grades, announcements ... downloaded
+//   course contents ..... a cheap "did anything change?" check first (core_course_get_updates_since);
+//                         the full contents are only downloaded when it says yes. If the site doesn't
+//                         support that check they are downloaded. A copy older than 3 days is replaced
+//                         either way, as a safety net.
+
+enum OfflinePrefetch {
+    private static var running = false
+
+    // Background downloads happen about every 12 hours, at a random time between 10 and 14 hours after
+    // the last one (so the app doesn't hit the site at the same moment as everyone else). The next time is
+    // remembered across launches. Opening the app earlier does nothing; switching Offline support on, or
+    // allowing mobile data, downloads straight away.
+    private static let nextKey = "offline.nextDownload"
+    private static let nextAttendanceKey = "offline.nextAttendanceCopy"
+
+    private static func randomGap() -> TimeInterval { .random(in: 10 * 3600 ... 14 * 3600) }
+    private static func due(_ key: String) -> Bool {
+        Date().timeIntervalSince1970 >= UserDefaults.standard.double(forKey: key)   // unset = due now
+    }
+    private static func scheduleNext(_ key: String) {
+        UserDefaults.standard.set(Date().addingTimeInterval(randomGap()).timeIntervalSince1970, forKey: key)
+    }
+    static func attendanceCopiesDue() -> Bool { due(nextAttendanceKey) }
+    static func attendanceCopiesDone() { scheduleNext(nextAttendanceKey) }
+
+    static let listMaxAge: TimeInterval = 11 * 3600          // a list saved by the last download is reused until the next one
+    static let freshAge: TimeInterval = 10 * 60
+    static let noCheckAge: TimeInterval = 6 * 3600           // only used when the site has no change check
+    static let safetyAge: TimeInterval = 3 * 86400           // a copy this old is replaced even if nothing seems to have changed
+
+    // Whether the site answers the change check (learned once per launch)
+    private static let flagLock = NSLock()
+    private static var _updatesSupported = true
+    private static var updatesSupported: Bool {
+        get { flagLock.lock(); defer { flagLock.unlock() }; return _updatesSupported }
+        set { flagLock.lock(); _updatesSupported = newValue; flagLock.unlock() }
+    }
+
+    /// The saved answer to a call, without touching the network
+    private static func saved<T: Decodable>(_ fn: String, _ p: [String: Any]) async -> T? {
+        await OfflineCache.$cacheOnly.withValue(true) { () async -> T? in
+            let r: T? = try? await MoodleAPI.shared.call(fn, p)
+            return r
+        }
+    }
+
+    /// Course list: the saved copy while it is younger than 30 minutes, otherwise downloaded again
+    static func courses(_ cls: String) async -> CourseList? {
+        let fn = "core_course_get_enrolled_courses_by_timeline_classification"
+        let p: [String: Any] = ["classification": cls, "limit": 0, "offset": 0, "sort": "fullname"]
+        let api = MoodleAPI.shared
+        if let a = OfflineCache.age(api.offlineName(fn, p)), a < listMaxAge {
+            let r: CourseList? = await saved(fn, p)
+            if let r { return r }
+        }
+        let r: CourseList? = try? await api.call(fn, p)
+        if let r { return r }
+        let old: CourseList? = await saved(fn, p)
+        return old
+    }
+
+    /// true = something changed in the course, false = nothing, nil = couldn't tell
+    private static func changed(_ id: Int, since: Date) async -> Bool? {
+        guard updatesSupported else { return nil }
+        do {
+            // 2 minutes of margin for differences between the phone's and the server's clock
+            let data = try await MoodleAPI.shared.raw("core_course_get_updates_since",
+                ["courseid": id, "since": Int(since.timeIntervalSince1970) - 120])
+            guard let o = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let inst = o["instances"] as? [Any] else { return nil }
+            return !inst.isEmpty
+        } catch is APIError {
+            updatesSupported = false   // the site doesn't offer it: fall back to the age rule
+            return nil
+        } catch { return nil }         // network trouble: just fall back this time
+    }
+
+    /// Course contents, downloaded only when needed (see the table above)
+    static func contents(_ id: Int) async -> [CourseSection]? {
+        let fn = "core_course_get_contents"
+        let p: [String: Any] = ["courseid": id]
+        let api = MoodleAPI.shared
+        func download() async -> [CourseSection]? {
+            let r: [CourseSection]? = try? await api.call(fn, p)
+            if let r { return r }
+            let old: [CourseSection]? = await saved(fn, p)
+            return old
+        }
+        func keep() async -> [CourseSection]? {
+            let r: [CourseSection]? = await saved(fn, p)
+            if let r { return r }
+            return await download()
+        }
+        guard let copy = OfflineCache.savedDate(api.offlineName(fn, p)) else { return await download() }
+        let age = Date().timeIntervalSince(copy)
+        if age < freshAge { return await keep() }
+        if age >= safetyAge { return await download() }
+        switch await changed(id, since: copy) {
+        case .some(true): return await download()
+        case .some(false): return await keep()
+        case .none:
+            if age >= noCheckAge { return await download() }
+            return await keep()
+        }
+    }
+
+    /// Quietly downloads what the app needs so it is there next time with no internet.
+    /// Everything goes through MoodleAPI, which saves each answer.
+    @MainActor
+    static func run(uid: Int, force: Bool = false) async {
+        guard OfflineSettings.enabled, OfflineNet.shared.canDownload, uid > 0, !running else { return }
+        if !force && !due(nextKey) { return }
+        running = true
+        scheduleNext(nextKey)
+        if force { UserDefaults.standard.set(0.0, forKey: nextAttendanceKey) }   // attendance pages too, at the next chance
+        defer { running = false }
+        let api = MoodleAPI.shared
+
+        var ids = Set<Int>()
+        for cls in ["inprogress", "past", "future", "all", "favourites", "hidden"] {
+            if let r = await courses(cls), cls == "inprogress" || cls == "past" {
+                ids.formUnion(r.courses.map { $0.id })
+            }
+        }
+        _ = try? await api.raw("message_popup_get_popup_notifications", ["useridto": uid])
+
+        let extras = true   // grades and announcements come with every download (it only happens twice a day)
+
+        // 4 courses at a time
+        let list = Array(ids)
+        var i = 0
+        while i < list.count {
+            let chunk = list[i..<min(i + 4, list.count)]
+            i += 4
+            await withTaskGroup(of: Void.self) { g in
+                for id in chunk { g.addTask { await course(id, uid: uid, extras: extras) } }
+            }
+        }
+    }
+
+    /// One course: its contents, and (hourly) its grades, its announcements forum and the latest posts in it.
+    /// The requests are identical to the ones the screens make, so the screens find them saved.
+    private static func course(_ id: Int, uid: Int, extras: Bool) async {
+        let api = MoodleAPI.shared
+        let secs = await contents(id)
+        guard extras else { return }
+
+        _ = try? await api.raw("gradereport_user_get_grade_items", ["courseid": id, "userid": uid])
+
+        // Announcements: the forum named announcements/news, otherwise the course's first forum
+        let forums = (secs ?? []).flatMap { $0.modules }.filter { $0.modname == "forum" && $0.instance != nil }
+        let pick = forums.first { m in
+            let n = m.name.lowercased()
+            return n.contains("announce") || n.contains("news")
+        } ?? forums.first
+        guard let fid = pick?.instance else { return }
+        guard let d: DiscResp = try? await api.call("mod_forum_get_forum_discussions",
+                                                    ["forumid": fid, "perpage": 50]) else { return }
+        for disc in d.discussions.prefix(5) {   // newest five: the ones people actually open
+            _ = try? await api.raw("mod_forum_get_discussion_posts", ["discussionid": disc.discussion])
+        }
+    }
+}
+
+// MARK: attendance copy
+
+struct AttSaved: Codable {
+    struct Rec: Codable {
+        var date, time, desc, status, points, remarks, kind: String
+    }
+    var rows: [[String]]
+    var points: String?
+    var records: [Rec]
+    var maxPercent: String?
+    var maxPoints: String?
+    var total: Int?
+    var taken: Int?
+    var earned: Double?
+    var possible: Double?
+    var sample: String
+    var saved: Date
+
+    init(_ s: AttSummary) {
+        rows = s.rows.map { [$0.0, $0.1] }
+        points = s.points
+        records = s.records.map { Rec(date: $0.date, time: $0.time, desc: $0.desc, status: $0.status,
+                                     points: $0.points, remarks: $0.remarks, kind: $0.kind.rawValue) }
+        maxPercent = s.maxPercent; maxPoints = s.maxPoints
+        total = s.total; taken = s.taken; earned = s.earned; possible = s.possible
+        sample = s.sample
+        saved = Date()
+    }
+
+    var summary: AttSummary {
+        var s = AttSummary()
+        s.rows = rows.compactMap { $0.count == 2 ? ($0[0], $0[1]) : nil }
+        s.points = points
+        s.records = records.map {
+            AttRecord(date: $0.date, time: $0.time, desc: $0.desc, status: $0.status, points: $0.points,
+                      remarks: $0.remarks, kind: AttKind(rawValue: $0.kind) ?? .other)
+        }
+        s.maxPercent = maxPercent; s.maxPoints = maxPoints
+        s.total = total; s.taken = taken; s.earned = earned; s.possible = possible
+        s.sample = sample
+        return s
+    }
+
+    static func key(_ cmid: Int) -> String { "attendance-\(cmid)" }
+}
+
+extension MoodleAPI {
+    /// Used by the background sync: saves the attendance page of one activity for offline use.
+    /// Uses the existing web session only (never asks for an auto-login key).
+    @discardableResult
+    func saveAttendanceCopy(_ m: Module, courseId: Int, uid: Int) async -> Bool {
+        guard OfflineSettings.enabled, OfflineNet.shared.canDownload,
+              let base = m.url, var c = URLComponents(string: base) else { return true }
+        var q = c.queryItems ?? []
+        q.removeAll { $0.name == "view" }
+        q.append(URLQueryItem(name: "view", value: "4"))
+        c.queryItems = q
+        guard let u = c.url, let html = await fetchHTML(u, userid: uid, allowAutologin: false) else { return false }
+        var s = parseAttendance(html)
+        guard !(s.rows.isEmpty && s.records.isEmpty) else { return true }
+        if s.maxPercent == nil || s.total == nil,
+           let h = await attendanceMobileContent(cmid: m.id, courseId: courseId, userid: uid) {
+            s.mergeMax(from: parseAttendance(h))
+        }
+        s.fillMax()
+        OfflineCache.saveObject(AttSaved.key(m.id), AttSaved(s))
+        return true
+    }
+}
+
+// MARK: UI
+
+/// Small pill at the top of the app while saved data is being shown
+struct OfflineBanner: View {
+    @ObservedObject private var m = OfflineMonitor.shared
+
+    var body: some View {
+        Group {
+            if m.usingCache {
+                HStack(spacing: 6) {
+                    Image(systemName: "wifi.slash")
+                    Text("Offline · showing saved data")
+                }
+                .font(.caption2.weight(.semibold))
+                .foregroundColor(Theme.muted)
+                .padding(.horizontal, 10).padding(.vertical, 4)
+                .background(Theme.surface2)
+                .clipShape(Capsule())
+                .overlay(Capsule().stroke(Theme.line))
+                .padding(.vertical, 4)
+                .frame(maxWidth: .infinity)
+                .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: m.usingCache)
+    }
+}
+
+/// Others tab: switch offline support on or off, and choose whether downloads may use mobile data
+struct OfflineSupportRow: View {
+    @AppStorage(OfflineSettings.key) private var on = true
+    @AppStorage(OfflineSettings.mobileKey) private var mobile = true
+    @EnvironmentObject var app: AppState
+    @State private var size = ""
+
+    private func download() {
+        guard let uid = app.site?.userid else { return }
+        Task { await OfflinePrefetch.run(uid: uid, force: true); size = OfflineCache.sizeText() }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 14) {
+                Image(systemName: "icloud.and.arrow.down").foregroundColor(Theme.accent).frame(width: 26)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Offline support").foregroundColor(Theme.txt).fontWeight(.semibold)
+                    Text(on ? "Opens saved data with no internet" + (size.isEmpty ? "" : " · \(size)")
+                            : "Off · nothing is saved")
+                        .font(.caption).foregroundColor(Theme.muted).lineLimit(2)
+                }
+                Spacer()
+                Toggle("", isOn: $on).labelsHidden().tint(Theme.accent)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            if on {
+                HStack(spacing: 14) {
+                    Image(systemName: "antenna.radiowaves.left.and.right").foregroundColor(Theme.accent).frame(width: 26)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Download on mobile data").foregroundColor(Theme.txt).fontWeight(.semibold)
+                        Text(mobile ? "Saved data also updates on mobile data"
+                                    : "Off · background downloads wait for Wi-Fi")
+                            .font(.caption).foregroundColor(Theme.muted).lineLimit(2)
+                    }
+                    Spacer()
+                    Toggle("", isOn: $mobile).labelsHidden().tint(Theme.accent)
+                }
+                .padding(.horizontal, 14).padding(.bottom, 14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .overlay(Rectangle().fill(Theme.line).frame(height: 1), alignment: .bottom)
+        .onAppear { size = OfflineCache.sizeText() }
+        .onChange(of: on) { v in
+            if v { download() }
+            else {
+                OfflineCache.clearAll()
+                OfflineMonitor.shared.usingCache = false
+                size = ""
+            }
+        }
+        .onChange(of: mobile) { v in if v { download() } }   // allowed again: catch up now
+    }
+}
