@@ -19,7 +19,10 @@ enum GoogleConfig {
         "com.googleusercontent.apps." + (clientID.components(separatedBy: ".apps.googleusercontent.com").first ?? "")
     }
     static var redirect: String { scheme + ":/oauth2redirect" }
-    static let scope = "openid email https://www.googleapis.com/auth/drive.readonly"
+    // Full Drive access: the app and the website share one sync file (iTaleem-sync.json) that either
+    // side may have created, which the narrower drive.file / appdata scopes cannot reach.
+    static let driveScope = "https://www.googleapis.com/auth/drive"
+    static let scope = "openid email " + driveScope
 }
 
 enum DriveError: LocalizedError {
@@ -39,6 +42,7 @@ struct GoogleTokens: Codable {
     var refreshToken: String
     var expiry: Date
     var email: String?
+    var scope: String?            // what Google granted (older logins only had drive.readonly)
 }
 
 /// Tokens live in the keychain, so the login survives restarts.
@@ -101,6 +105,8 @@ final class DriveAuth: ObservableObject {
 
     var isSignedIn: Bool { tokens != nil }
     var email: String? { tokens?.email }
+    /// true when the saved login may write to Drive (needed for sync)
+    var canWrite: Bool { (tokens?.scope ?? "").split(separator: " ").contains(Substring(GoogleConfig.driveScope)) }
 
     init() { tokens = GoogleKeychain.load() }
 
@@ -159,12 +165,12 @@ final class DriveAuth: ObservableObject {
         guard let at = r.access_token, let rt = r.refresh_token else {
             throw DriveError.message(r.error_description ?? r.error ?? "Google didn't return a login.")
         }
-        guard (r.scope ?? "").contains("drive.readonly") else {
+        guard (r.scope ?? "").split(separator: " ").contains(Substring(GoogleConfig.driveScope)) else {
             throw DriveError.message("Drive access wasn't granted. Tick the Drive permission and try again.")
         }
         let t = GoogleTokens(accessToken: at, refreshToken: rt,
                              expiry: Date().addingTimeInterval(TimeInterval(r.expires_in ?? 3600)),
-                             email: Self.email(fromIDToken: r.id_token))
+                             email: Self.email(fromIDToken: r.id_token), scope: r.scope)
         GoogleKeychain.save(t)
         tokens = t
     }
@@ -350,23 +356,46 @@ enum DriveAPI {
 final class DriveLibrary: ObservableObject {
     @Published private(set) var pins: [DriveRef] = []
     @Published private(set) var bySubject: [String: [DriveRef]] = [:]     // courseId -> saved files/folders
-    private let pinKey = "drive.pins.v1", subjectKey = "drive.subjects.v1"
+    private(set) var pinsUpdated = Date(timeIntervalSince1970: 1)           // last change, for syncing
+    private(set) var subjectUpdated: [String: Date] = [:]
+    private let pinKey = "drive.pins.v1", subjectKey = "drive.subjects.v1", stampKey = "drive.stamps.v1"
 
     init() {
         let ud = UserDefaults.standard
         if let d = ud.data(forKey: pinKey), let v = try? JSONDecoder().decode([DriveRef].self, from: d) { pins = v }
         if let d = ud.data(forKey: subjectKey),
            let v = try? JSONDecoder().decode([String: [DriveRef]].self, from: d) { bySubject = v }
+        if let s = ud.dictionary(forKey: stampKey) as? [String: Double] {
+            if let p = s["pins"] { pinsUpdated = Date(timeIntervalSince1970: p) }
+            for (k, v) in s where k != "pins" { subjectUpdated[k] = Date(timeIntervalSince1970: v) }
+        }
     }
-    private func save() {
+    private func persist() {
         let ud = UserDefaults.standard
         if let d = try? JSONEncoder().encode(pins) { ud.set(d, forKey: pinKey) }
         if let d = try? JSONEncoder().encode(bySubject) { ud.set(d, forKey: subjectKey) }
+        var s: [String: Double] = ["pins": pinsUpdated.timeIntervalSince1970]
+        for (k, v) in subjectUpdated { s[k] = v.timeIntervalSince1970 }
+        ud.set(s, forKey: stampKey)
+    }
+    private func save() {
+        persist()
+        NotificationCenter.default.post(name: .syncLocalChanged, object: nil)
+    }
+    /// Newer data from Drive (does not trigger another upload)
+    func applySync(pins newPins: ([DriveRef], Date)?, subjects: [String: ([DriveRef], Date)]) {
+        if let (list, at) = newPins { pins = list; pinsUpdated = at }
+        for (k, v) in subjects {
+            bySubject[k] = v.0.isEmpty ? nil : v.0
+            subjectUpdated[k] = v.1
+        }
+        persist()
     }
 
     func isPinned(_ r: DriveRef) -> Bool { pins.contains { $0.id == r.id } }
     func togglePin(_ r: DriveRef) {
         if let i = pins.firstIndex(where: { $0.id == r.id }) { pins.remove(at: i) } else { pins.insert(r, at: 0) }
+        pinsUpdated = Date()
         save()
     }
 
@@ -376,6 +405,7 @@ final class DriveLibrary: ObservableObject {
         var list = files(for: courseId)
         if let i = list.firstIndex(where: { $0.id == r.id }) { list.remove(at: i) } else { list.append(r) }
         bySubject[String(courseId)] = list.isEmpty ? nil : list
+        subjectUpdated[String(courseId)] = Date()
         save()
     }
 }
@@ -435,7 +465,7 @@ struct DriveConnectCard: View {
             VStack(spacing: 16) {
                 Image(systemName: "externaldrive").font(.system(size: 44)).foregroundColor(Theme.accent)
                 Text("Connect Google Drive").font(.title3.weight(.semibold)).foregroundColor(Theme.txt)
-                Text("Sign in once to browse your files here. Access is read-only and you stay signed in.")
+                Text("Sign in once to browse your files here and keep your to-dos, CAMS marks and pins in sync with the website. You stay signed in.")
                     .font(.footnote).foregroundColor(Theme.muted).multilineTextAlignment(.center)
 
                 Button { auth.signIn() } label: {
