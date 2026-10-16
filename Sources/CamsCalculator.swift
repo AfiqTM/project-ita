@@ -69,8 +69,31 @@ enum CamsStore {
               let g = try? JSONDecoder().decode([CamsGroup].self, from: d) else { return [] }
         return g
     }
+    private static func stampKey(_ id: Int) -> String { "cams.upd.\(id)" }
+
+    /// Saves a change made on this device (stamps it so it syncs). Does nothing when nothing changed.
     static func save(_ groups: [CamsGroup], _ id: Int) {
+        guard groups != load(id) else { return }
+        write(groups, id, at: Date())
+        NotificationCenter.default.post(name: .syncLocalChanged, object: nil)
+    }
+    /// Newer data from Drive
+    static func applySync(_ id: Int, _ groups: [CamsGroup], at: Date) { write(groups, id, at: at) }
+
+    private static func write(_ groups: [CamsGroup], _ id: Int, at: Date) {
         if let d = try? JSONEncoder().encode(groups) { UserDefaults.standard.set(d, forKey: key(id)) }
+        UserDefaults.standard.set(at.timeIntervalSince1970, forKey: stampKey(id))
+    }
+
+    /// Every subject that has marks saved: (course id, groups, last change)
+    static func all() -> [(Int, [CamsGroup], Date)] {
+        let ud = UserDefaults.standard
+        let prefix = "cams.course."
+        return ud.dictionaryRepresentation().keys.compactMap { k in
+            guard k.hasPrefix(prefix), let id = Int(k.dropFirst(prefix.count)) else { return nil }
+            let at = ud.double(forKey: stampKey(id))
+            return (id, load(id), Date(timeIntervalSince1970: at > 0 ? at : 1))   // marks saved before sync existed count as oldest
+        }
     }
 }
 
@@ -136,6 +159,10 @@ struct CamsCalculatorCard: View {
         }
         .glowCard()
         .onChange(of: groups) { _ in CamsStore.save(groups, courseId) }
+        .onReceive(NotificationCenter.default.publisher(for: .syncApplied)) { _ in
+            let fresh = CamsStore.load(courseId)
+            if fresh != groups { groups = fresh }
+        }
     }
 }
 
