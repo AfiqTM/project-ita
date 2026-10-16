@@ -10,6 +10,10 @@ extension Course {
     /// Set to false if you'd rather keep the semester / course code in the displayed name.
     static let stripCodes = true
 
+    /// "BICS 1303_05" -> "BICS 1303 05"
+    var prettyShort: String? { shortname.map { $0.replacingOccurrences(of: "_", with: " ") } }
+    var prettyFull: String { fullname.replacingOccurrences(of: "_", with: " ") }
+
     var isSectionCourse: Bool { fullname.range(of: "section", options: .caseInsensitive) != nil }
 
     /// "SEM1 BICS 2306 Section 05 Software Engineering" -> "Software Engineering"
@@ -114,6 +118,7 @@ struct TodoItem: Codable, Identifiable, Hashable {
     var courseId: Int?
     var courseName: String?      // clean subject name, saved so history still reads well later
     var due: Date
+    var notes: String?           // optional description
     var created = Date()
     var completedAt: Date?
 }
@@ -189,6 +194,10 @@ struct TodoRow: View {
             VStack(alignment: .leading, spacing: 5) {
                 Text(item.title).fontWeight(.semibold).foregroundColor(Theme.txt)
                     .multilineTextAlignment(.leading)
+                if let d = item.notes, !d.isEmpty {
+                    Text(d).font(.subheadline).foregroundColor(Theme.muted)
+                        .lineLimit(3).multilineTextAlignment(.leading)
+                }
                 if showSubject, let n = item.courseName {
                     Label(n, systemImage: item.kind.icon)
                         .font(.caption).foregroundColor(Theme.accent)
@@ -280,6 +289,9 @@ struct TodoHistoryView: View {
                                 Image(systemName: "checkmark.circle.fill").font(.title2).foregroundColor(Theme.accent)
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(item.title).strikethrough().foregroundColor(Theme.muted)
+                                    if let d = item.notes, !d.isEmpty {
+                                        Text(d).font(.caption).foregroundColor(Theme.muted).lineLimit(2)
+                                    }
                                     if let n = item.courseName {
                                         Text(n).font(.caption).foregroundColor(Theme.muted)
                                     }
@@ -331,8 +343,10 @@ struct TodoEditSheet: View {
     @EnvironmentObject var catalog: CourseCatalog
     @Environment(\.dismiss) private var dismiss
     @FocusState private var titleFocused: Bool
+    @FocusState private var notesFocused: Bool
 
     @State private var title: String
+    @State private var notes: String
     @State private var kind: TodoKind
     @State private var courseId: Int?
     @State private var due: Date
@@ -340,6 +354,7 @@ struct TodoEditSheet: View {
     init(existing: TodoItem? = nil) {
         self.existing = existing
         _title = State(initialValue: existing?.title ?? "")
+        _notes = State(initialValue: existing?.notes ?? "")
         _kind = State(initialValue: existing?.kind ?? .work)
         _courseId = State(initialValue: existing?.courseId)
         _due = State(initialValue: existing?.due
@@ -375,6 +390,15 @@ struct TodoEditSheet: View {
                         .foregroundColor(Theme.txt)
                         .focused($titleFocused)
                         .fieldBox(focused: titleFocused)
+
+                    label("Description (optional)")
+                    TextField("", text: $notes,
+                              prompt: Text("Add details, links, page numbers…").foregroundColor(Theme.muted.opacity(0.6)),
+                              axis: .vertical)
+                        .lineLimit(3...8)
+                        .foregroundColor(Theme.txt)
+                        .focused($notesFocused)
+                        .fieldBox(focused: notesFocused)
 
                     label(kind.dueLabel)
                     HStack {
@@ -448,11 +472,14 @@ struct TodoEditSheet: View {
 
     private func save() {
         let t = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let n = notes.trimmingCharacters(in: .whitespacesAndNewlines)
         if var e = existing {
             e.title = t; e.kind = kind; e.courseId = courseId; e.courseName = subjectName; e.due = due
+            e.notes = n.isEmpty ? nil : n
             todos.update(e)
         } else {
-            todos.add(TodoItem(title: t, kind: kind, courseId: courseId, courseName: subjectName, due: due))
+            todos.add(TodoItem(title: t, kind: kind, courseId: courseId, courseName: subjectName, due: due,
+                               notes: n.isEmpty ? nil : n))
         }
         dismiss()
     }
