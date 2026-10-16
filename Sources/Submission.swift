@@ -475,6 +475,9 @@ struct AttendanceView: View {
     @State private var debugText = ""
     @State private var kindFilter: AttKind? = nil
     @State private var reversed = false
+    @State private var savedAt: Date?       // set while the saved copy is shown (website not reachable / signed out)
+    @State private var appeared = false
+    @ObservedObject private var net = OfflineMonitor.shared
 
     private var uid: Int { app.site?.userid ?? 0 }
 
@@ -486,6 +489,7 @@ struct AttendanceView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
+                offlineNote
                 maxCard
                 summaryCard
                 if let s = summary, !s.records.isEmpty {
@@ -516,7 +520,42 @@ struct AttendanceView: View {
         .navigationTitle(module.name)
         .navigationBarTitleDisplayMode(.inline)
         .refreshable { await loadSummary() }
-        .task { await loadSummary() }
+        .task {
+            // last download first, then the online page replaces it
+            if summary == nil, OfflineSettings.enabled,
+               let c: AttSaved = OfflineCache.loadObject(AttSaved.key(module.id)) { summary = c.summary }
+            await loadSummary()
+        }
+        .onAppear {
+            // back from the sign-in page: try the real page again
+            if appeared, savedAt != nil { Task { await loadSummary() } }
+            appeared = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .offlineBackOnline)) { _ in Task { await loadSummary() } }
+    }
+
+    // Small strip above everything: running on the saved copy, with a way to sign in again
+    @ViewBuilder private var offlineNote: some View {
+        if let d = savedAt {
+            HStack(spacing: 8) {
+                Image(systemName: "wifi.slash").font(.caption2)
+                Text("Offline copy · saved " + d.formatted(date: .abbreviated, time: .shortened))
+                    .font(.caption).lineLimit(1).minimumScaleFactor(0.8)
+                Spacer(minLength: 8)
+                if net.isOnline {
+                    NavigationLink {
+                        WebActivityView(url: URL(string: module.url ?? "") ?? Site.url, title: module.name)
+                    } label: {
+                        Text("Sign in again").font(.caption.weight(.semibold)).foregroundColor(Theme.accent)
+                    }
+                }
+            }
+            .foregroundColor(Theme.muted)
+            .padding(.horizontal, 12).padding(.vertical, 8)
+            .background(Theme.surface2)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Theme.line))
+        }
     }
 
     // ---- maximum possible (top of the screen) ----
@@ -680,6 +719,11 @@ struct AttendanceView: View {
         q.append(URLQueryItem(name: "view", value: "4"))   // 4 = all sessions
         c.queryItems = q
         guard let u = c.url, let html = await MoodleAPI.shared.fetchHTML(u, userid: uid) else {
+            // No internet, or the web login expired: keep working from the last download
+            if OfflineSettings.enabled, let c: AttSaved = OfflineCache.loadObject(AttSaved.key(module.id)) {
+                summary = c.summary; savedAt = c.saved; note = nil; debugText = ""
+                return
+            }
             let wait = MoodleAPI.shared.autologinWait
             note = "Couldn't load your attendance." + (wait > 0
                 ? " Auto sign-in is on cooldown (about \(Int(wait / 60) + 1) min). Pull down to refresh after that."
@@ -713,6 +757,8 @@ struct AttendanceView: View {
             }
             s.fillMax()
             summary = s
+            savedAt = nil
+            if OfflineSettings.enabled { OfflineCache.saveObject(AttSaved.key(module.id), AttSaved(s)) }
             debugText = s.maxPercent == nil
                 ? "Max possible not found. total=\(s.total.map(String.init) ?? "nil") taken=\(s.taken.map(String.init) ?? "nil") earned=\(s.earned.map { String($0) } ?? "nil") possible=\(s.possible.map { String($0) } ?? "nil")\n" + (await DebugLog.shared.text()) + "\nPage text: " + s.sample
                 : ""
@@ -737,6 +783,7 @@ struct AssignmentView: View {
     @State private var removedFiles: Set<String> = []
     @State private var showPicker = false
     @State private var confirmRemove = false
+    @ObservedObject private var queue = OfflineQueue.shared
     @State private var busy = false
     @State private var introFiles: [IntroFile] = []      // files the lecturer attached to the assignment
     @State private var showShare = false
@@ -778,6 +825,7 @@ struct AssignmentView: View {
                             .glowCard()
                     }
                     if !introFiles.isEmpty { attachmentsCard }
+                    QueuedNote(assignId: a.id)
                     submissionCard(a)
                 }
                 NavigationLink {
@@ -793,6 +841,7 @@ struct AssignmentView: View {
         .navigationTitle(module.name)
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
+        .onReceive(NotificationCenter.default.publisher(for: .offlineQueueSent)) { _ in Task { await load() } }
         .fileImporter(isPresented: $showPicker, allowedContentTypes: [.item],
                       allowsMultipleSelection: true) { result in
             if case .success(let urls) = result { addFiles(urls) }
@@ -1026,22 +1075,15 @@ struct AssignmentView: View {
 
     private func save(_ a: Assign, submit: Bool) async {
         busy = true; message = nil
+        let keep = existingFiles.filter { !removedFiles.contains($0.id) }
+        let job = SubmissionJob(
+            kind: .save, assignId: a.id, name: a.name,
+            text: a.enabled("onlinetext") ? text : nil,
+            submit: submit,
+            rebuildFiles: a.enabled("file") && (!picked.isEmpty || !removedFiles.isEmpty),
+            keep: keep.map { KeptFile(name: $0.filename ?? "file", url: $0.fileurl ?? "") })
         do {
-            var item: Int? = nil
-            let keep = existingFiles.filter { !removedFiles.contains($0.id) }
-            if a.enabled("file") && (!picked.isEmpty || !removedFiles.isEmpty) {
-                // Saving files replaces the whole file area, so rebuild it: files being kept + new files.
-                var toUpload: [URL] = []
-                for f in keep { toUpload.append(try await MoodleAPI.shared.downloadToTemp(f)) }
-                toUpload.append(contentsOf: picked)
-                for f in toUpload {
-                    item = try await MoodleAPI.shared.uploadDraft(f, itemid: item ?? 0)
-                }
-                if toUpload.isEmpty { item = MoodleAPI.shared.emptyDraftId() }   // everything removed
-            }
-            let body: String? = a.enabled("onlinetext") ? text : nil
-            try await MoodleAPI.shared.saveSubmission(assignId: a.id, text: body, draftItemId: item)
-            if submit { try await MoodleAPI.shared.submitForGrading(assignId: a.id) }
+            try await MoodleAPI.shared.run(job, newFiles: picked)
             picked = []
             removedFiles = []
             if submit {
@@ -1053,17 +1095,25 @@ struct AssignmentView: View {
             }
             await loadStatus(a)
         } catch {
-            message = error.localizedDescription
+            if queue.shouldQueue(error) {
+                // No internet: kept on the phone, sent automatically when it's back
+                queue.enqueue(job, files: picked)
+                picked = []
+                removedFiles = []
+                message = "No internet. Saved on your phone, it will be sent automatically when you're back online."
+            } else {
+                message = error.localizedDescription
+            }
         }
         busy = false
     }
 
     private func removeSubmission(_ a: Assign) async {
         busy = true; message = nil
+        let job = SubmissionJob(kind: .remove, assignId: a.id, name: a.name, userid: uid,
+                                hasText: a.enabled("onlinetext"), hasFiles: a.enabled("file"))
         do {
-            try await MoodleAPI.shared.removeSubmission(assignId: a.id, userid: uid,
-                                                        hasText: a.enabled("onlinetext"),
-                                                        hasFiles: a.enabled("file"))
+            try await MoodleAPI.shared.run(job, newFiles: [])
             picked = []
             removedFiles = []
             text = ""
@@ -1071,7 +1121,12 @@ struct AssignmentView: View {
             message = "Submission removed."
             await loadStatus(a)
         } catch {
-            message = error.localizedDescription
+            if queue.shouldQueue(error) {
+                queue.enqueue(job, files: [])
+                message = "No internet. The removal will be sent automatically when you're back online."
+            } else {
+                message = error.localizedDescription
+            }
         }
         busy = false
     }
@@ -1082,7 +1137,9 @@ struct AssignmentView: View {
             ["assignid": a.id, "userid": uid])
         status = s
         if !textLoaded {
-            if let t = savedText(s) { text = t.plainText }
+            // text typed while offline and still waiting to be sent takes priority over the site's copy
+            if let q = queue.job(for: a.id), q.kind == .save, let qt = q.text { text = qt }
+            else if let t = savedText(s) { text = t.plainText }
             textLoaded = true
         }
     }
