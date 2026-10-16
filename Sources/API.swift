@@ -73,21 +73,79 @@ final class MoodleAPI {
         return v
     }
 
+    /// Network request that gives up after `limit` seconds (used when a saved copy can stand in)
+    private func fetch(_ req: URLRequest, limit: TimeInterval?) async throws -> (Data, URLResponse) {
+        guard let limit else { return try await MoodleAPI.session.data(for: req) }
+        return try await withThrowingTaskGroup(of: (Data, URLResponse).self) { g in
+            g.addTask { try await MoodleAPI.session.data(for: req) }
+            g.addTask {
+                try await Task.sleep(nanoseconds: UInt64(limit * 1_000_000_000))
+                throw URLError(.timedOut)
+            }
+            defer { g.cancelAll() }
+            guard let first = try await g.next() else { throw URLError(.unknown) }
+            return first
+        }
+    }
+
+    static let offlineCodes: Set<URLError.Code> = [
+        .notConnectedToInternet, .timedOut, .networkConnectionLost, .cannotConnectToHost,
+        .cannotFindHost, .dnsLookupFailed, .dataNotAllowed, .internationalRoamingOff, .secureConnectionFailed]
+
+    /// Name under which the answer to this exact call is saved on disk
+    func offlineName(_ fn: String, _ params: [String: Any] = [:]) -> String {
+        var keyItems: [(String, String)] = []
+        flatten(params, prefix: nil, into: &keyItems)
+        return OfflineCache.apiName(fn, keyItems.map { "\($0.0)=\($0.1)" }.sorted().joined(separator: "&"))
+    }
+
     func raw(_ fn: String, _ params: [String: Any] = [:]) async throws -> Data {
+        let useCache = OfflineSettings.enabled && OfflineCache.isCacheable(fn)
+        let cacheName = useCache ? offlineName(fn, params) : ""
+        let saved: Data? = useCache ? OfflineCache.load(cacheName) : nil
+
+        // 1) first paint: saved copy only, no network
+        if OfflineCache.cacheOnly && useCache {
+            if let saved { return saved }
+            throw CancellationError()   // nothing saved yet: screens already ignore cancellation
+        }
+        // 2) no connection at all: don't wait for a timeout
+        if let saved, !OfflineNet.shared.online {
+            await OfflineMonitor.shared.markCache()
+            return saved
+        }
+
         var items: [(String, String)] = [("wstoken", token), ("wsfunction", fn), ("moodlewsrestformat", "json")]
         flatten(params, prefix: nil, into: &items)
         var req = URLRequest(url: Site.url.appendingPathComponent("webservice/rest/server.php"))
         req.httpMethod = "POST"
         req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         req.httpBody = items.map { "\(enc($0.0))=\(enc($0.1))" }.joined(separator: "&").data(using: .utf8)
-        let (data, _) = try await MoodleAPI.session.data(for: req)
+
+        let data: Data
+        do {
+            let (d, resp) = try await fetch(req, limit: saved == nil ? nil : OfflineCache.slowLimit)
+            if let saved, let h = resp as? HTTPURLResponse, h.statusCode >= 500 {
+                await OfflineMonitor.shared.markCache()
+                return saved
+            }
+            data = d
+        } catch let e as URLError where saved != nil && MoodleAPI.offlineCodes.contains(e.code) {
+            await OfflineMonitor.shared.markCache()
+            return saved!
+        }
+        await OfflineMonitor.shared.markOnline()
+
         guard let obj = try? JSONSerialization.jsonObject(with: data) else { return data }
         if let o = obj as? [String: Any], o["exception"] != nil || o["errorcode"] != nil {
             throw APIError(message: (o["message"] as? String) ?? "Request failed",
                            code: o["errorcode"] as? String)
         }
         if obj is [String: Any] || obj is [Any],
-           let out = try? JSONSerialization.data(withJSONObject: decodeEntities(obj)) { return out }
+           let out = try? JSONSerialization.data(withJSONObject: decodeEntities(obj)) {
+            if useCache { OfflineCache.save(cacheName, out) }
+            return out
+        }
         return data
     }
 
