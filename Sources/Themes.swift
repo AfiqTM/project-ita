@@ -30,7 +30,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
         case .dark: return "True black with the tan accent. Easy on the eyes at night."
         case .light: return "Warm off-white with a deeper tan accent. Easier to read in bright light."
         case .terminal: return "Terminal look: near-black, neon green, a monospaced font and a green glow."
-        case .retro: return "Old-school arcade: midnight purple, bright yellow, chunky pixel borders, wide type and faint scanlines."
+        case .retro: return "Pixel-art look: pure black, bright yellow, flat dark tiles, a pixel font and yellow-toned covers."
         }
     }
 
@@ -64,7 +64,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
     }
 
     /// CRT scanlines and a vignette over the whole app
-    var scanlines: Bool { self == .terminal || self == .retro }
+    var scanlines: Bool { self == .terminal }
 
     /// Soft glow around prominent text (see `textGlow()`)
     var glowsText: Bool { self == .terminal }
@@ -84,8 +84,8 @@ enum AppTheme: String, CaseIterable, Identifiable {
             return [(0x03120A, 0x0B3A1C), (0x021512, 0x0A3A35), (0x0A1204, 0x2A3F0A),
                     (0x041208, 0x0F4A24), (0x02130F, 0x0C4040), (0x0A1005, 0x1E3A12)]
         case .retro:
-            return [(0x14102E, 0x2E2468), (0x0F1A2E, 0x1E3A6B), (0x241022, 0x5A1F4A),
-                    (0x0E2420, 0x1B5A4A), (0x2A1E08, 0x6B5000), (0x1A0F2E, 0x4A2A8A)]
+            return [(0x0D0C00, 0x3D3800), (0x0A0A06, 0x2B2A12), (0x120F00, 0x4A4200),
+                    (0x080800, 0x2E2C00), (0x0F0E02, 0x524A08), (0x0B0B0B, 0x34331C)]
         }
     }
 
@@ -95,18 +95,24 @@ enum AppTheme: String, CaseIterable, Identifiable {
         case .dark: return -0.2
         case .light: return 0
         case .terminal: return -0.25
-        case .retro: return -0.15
+        case .retro: return -0.1
         }
     }
     var coverSaturation: Double {
         switch self {
         case .terminal: return 0.6
-        case .retro: return 1.15
+        case .retro: return 0.5
         default: return 1
         }
     }
-    /// Terminal: photos get a green monitor tint
-    var coverTint: UInt32? { self == .terminal ? 0x1FBF55 : nil }
+    /// Terminal: photos get a green monitor tint, Retro: a yellow one
+    var coverTint: UInt32? {
+        switch self {
+        case .terminal: return 0x1FBF55
+        case .retro: return 0xF4E52C   // yellow-toned artwork, like the album art in the reference
+        default: return nil
+        }
+    }
     /// The star on a cover sits on a dark circle, so it needs a bright accent in every theme
     var onCoverAccent: UInt32 {
         switch self {
@@ -219,19 +225,19 @@ struct ScanlineOverlay: View {
     }
 }
 
-/// Font look for a whole screen tree (iOS 16.1 and later; older versions keep the normal font).
-/// `mono`: monospaced (Terminal). `arcade`: wide, chunky letters (Retro).
+/// Font look for a whole screen tree.
+/// `mono`: monospaced (Terminal, iOS 16.1+). `arcade`: the bundled pixel font (Retro, see RetroFonts.swift) for
+/// every text that doesn't set its own font; texts that do (.font(.caption) and so on) are covered by
+/// RetroFontStyles.swift.
 struct ThemeFont: ViewModifier {
     let mono: Bool
     var arcade = false
 
     func body(content: Content) -> some View {
-        if #available(iOS 16.1, *) {
-            if arcade {
-                content.fontWidth(.expanded).fontWeight(.semibold)
-            } else {
-                content.fontDesign(mono ? Font.Design.monospaced : nil)
-            }
+        if arcade {
+            content.environment(\.font, RetroFonts.body)
+        } else if #available(iOS 16.1, *) {
+            content.fontDesign(mono ? Font.Design.monospaced : nil)
         } else {
             content
         }
@@ -291,7 +297,7 @@ private struct ThemeCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .glowCard()
         .overlay(
-            RoundedRectangle(cornerRadius: Theme.cardRadius(14), style: .continuous)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .stroke(Theme.accent, lineWidth: selected ? 2 : 0)
         )
         .contentShape(Rectangle())
@@ -303,21 +309,14 @@ private struct ThemeCard: View {
 private struct ThemePreview: View {
     let theme: AppTheme
     private var p: Palette { theme.palette }
-    private var lineWidth: CGFloat { theme.arcade ? 2 : 1 }
 
     private func mono(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
-        let f = Font.system(size: size, weight: theme.arcade ? .heavy : weight,
-                            design: theme.mono ? .monospaced : .default)
-        if theme.arcade, #available(iOS 16.0, *) { return f.width(.expanded) }
-        return f
+        if theme.arcade { return RetroFonts.font(size, display: weight == .bold) }
+        return .system(size: size, weight: weight, design: theme.mono ? .monospaced : .default)
     }
 
     private var cardShadow: Color {
-        switch p.card {
-        case .terminal: return Color(hex: p.glow).opacity(0.9)
-        case .pixel: return Color(hex: p.glow)
-        default: return .clear
-        }
+        p.card == .terminal ? Color(hex: p.glow).opacity(0.9) : .clear
     }
 
     var body: some View {
@@ -327,16 +326,12 @@ private struct ThemePreview: View {
                 if theme.mono {
                     Text("> italeem_").font(mono(9, .bold)).foregroundColor(Color(hex: p.accent))
                 } else if theme.arcade {
-                    Text("1UP 004200").font(mono(9, .bold)).foregroundColor(Color(hex: p.accent))
+                    Text("00:00:32").font(mono(10)).foregroundColor(Color(hex: p.accent))
                 } else {
                     SwiftUI.Capsule().fill(Color(hex: p.txt)).frame(width: 46, height: 6)
                 }
                 Spacer()
-                if theme.arcade {
-                    Rectangle().fill(Color(hex: p.accent)).frame(width: 8, height: 8)
-                } else {
-                    SwiftUI.Circle().fill(Color(hex: p.accent)).frame(width: 8, height: 8)
-                }
+                SwiftUI.Circle().fill(Color(hex: p.accent)).frame(width: 8, height: 8)
             }
             .padding(.horizontal, 10)
             .frame(height: 20)
@@ -344,8 +339,8 @@ private struct ThemePreview: View {
 
             // two cards
             HStack(spacing: 8) {
-                card
-                card
+                card(active: false)
+                card(active: theme.arcade)
             }
             .padding(.horizontal, 10)
 
@@ -354,39 +349,43 @@ private struct ThemePreview: View {
         .padding(.bottom, 10)
         .frame(maxWidth: .infinity)
         .background(Color(hex: p.bg))
-        .clipShape(SwiftUI.RoundedRectangle(cornerRadius: theme.arcade ? 4 : 10, style: .continuous))
-        .overlay(SwiftUI.RoundedRectangle(cornerRadius: theme.arcade ? 4 : 10, style: .continuous)
-            .stroke(Color(hex: p.line), lineWidth: lineWidth))
+        .clipShape(SwiftUI.RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(SwiftUI.RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .stroke(Color(hex: p.line), lineWidth: 1))
     }
 
-    private var card: some View {
+    /// `active`: the Retro "pressed" tile, solid yellow with dark text (like the play button in the reference)
+    private func card(active: Bool) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             if theme.mono {
                 Text("$ cs101").font(mono(9, .bold)).foregroundColor(Color(hex: p.txt))
                 Text("> 85% ok").font(mono(8)).foregroundColor(Color(hex: p.muted))
             } else if theme.arcade {
-                Text("LVL 01").font(mono(8, .bold)).foregroundColor(Color(hex: p.txt))
-                Text("HP \u{25AE}\u{25AE}\u{25AE}\u{25AF}").font(mono(7)).foregroundColor(Color(hex: p.muted))
+                Text("CS 101").font(mono(10, .bold))
+                    .foregroundColor(Color(hex: active ? p.onAccent : p.accent))
+                Text("85% done").font(mono(9))
+                    .foregroundColor(Color(hex: active ? p.onAccent : p.muted))
             } else {
                 SwiftUI.Capsule().fill(Color(hex: p.txt)).frame(width: 52, height: 6)
                 SwiftUI.Capsule().fill(Color(hex: p.muted)).frame(width: 36, height: 5)
             }
             Spacer(minLength: 0)
-            Text(theme.arcade ? "START" : "Open")
-                .font(mono(9, .bold))
-                .foregroundColor(Color(hex: p.onAccent))
-                .padding(.horizontal, 8).padding(.vertical, 3)
-                .background(Color(hex: p.accent))
-                .clipShape(SwiftUI.RoundedRectangle(cornerRadius: theme.arcade ? 2 : 20, style: .continuous))
+            if !theme.arcade {
+                Text("Open")
+                    .font(mono(9, .bold))
+                    .foregroundColor(Color(hex: p.onAccent))
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(Color(hex: p.accent))
+                    .clipShape(SwiftUI.Capsule())
+            }
         }
         .padding(8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: 70)
-        .background(Color(hex: p.surface))
-        .clipShape(SwiftUI.RoundedRectangle(cornerRadius: theme.arcade ? 3 : 8, style: .continuous))
-        .overlay(SwiftUI.RoundedRectangle(cornerRadius: theme.arcade ? 3 : 8, style: .continuous)
-            .stroke(Color(hex: p.line), lineWidth: lineWidth))
-        .shadow(color: cardShadow, radius: p.card == .pixel ? 0 : 6,
-                x: p.card == .pixel ? 3 : 0, y: p.card == .pixel ? 3 : 0)
+        .background(Color(hex: active ? p.accent : p.surface))
+        .clipShape(SwiftUI.RoundedRectangle(cornerRadius: theme.arcade ? 12 : 8, style: .continuous))
+        .overlay(SwiftUI.RoundedRectangle(cornerRadius: theme.arcade ? 12 : 8, style: .continuous)
+            .stroke(Color(hex: p.line), lineWidth: 1))
+        .shadow(color: cardShadow, radius: 6)
     }
 }
