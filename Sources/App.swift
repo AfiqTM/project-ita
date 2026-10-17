@@ -17,7 +17,7 @@ struct iTaleemApp: App {
     @StateObject private var sync = SyncManager()
     @ObservedObject private var themes = ThemeStore.shared   // chosen look (Others > Themes)
     @Environment(\.scenePhase) private var scenePhase
-    init() { Theme.applyAppearance(); NotificationManager.shared.setup(); OfflineNet.shared.start() }
+    init() { RetroFonts.register(); Theme.applyAppearance(); NotificationManager.shared.setup(); OfflineNet.shared.start() }
 
     var body: some Scene {
         WindowGroup {
@@ -32,11 +32,11 @@ struct iTaleemApp: App {
             .environmentObject(sync)
             .onAppear { sync.configure(todos: todos, lib: driveLib, auth: driveAuth) }
             .onChange(of: scenePhase) { phase in if phase == .active { sync.syncNow() } }
-            .modifier(ThemeFont(mono: themes.theme.mono, arcade: themes.theme.arcade))   // Terminal: monospaced font, Retro: wide chunky font
+            .modifier(ThemeFont(mono: themes.theme.mono, arcade: themes.theme.arcade))   // Terminal: monospaced font, Retro: pixel fonts (RetroFonts.swift)
             .preferredColorScheme(themes.theme.scheme)
             .tint(Theme.accent)
             .background(Theme.bg.ignoresSafeArea())
-            .overlay { if themes.theme.scanlines { ScanlineOverlay() } }   // Terminal / Retro: CRT scanlines
+            .overlay { if themes.theme.scanlines { ScanlineOverlay() } }   // Terminal: CRT scanlines
         }
     }
 }
