@@ -206,21 +206,25 @@ final class ThemeStore: ObservableObject {
     }
 }
 
-/// The pixel font of the Retro theme: Press Start 2P (free, SIL Open Font License) from Google Fonts.
-/// Put `PressStart2P-Regular.ttf` into the Sources folder and rebuild; it is registered at launch. Without
-/// the file nothing breaks: Retro headings then use a heavy monospaced font instead.
+/// The pixel font of the Retro theme: "iTaleem Pixel" (Fonts/ITaleemPixel-Regular.ttf and -Bold.ttf, made by
+/// Tools/make_pixel_font.py from classic 5x7 dot-matrix letters). Registered at launch. Eight pixel rows make
+/// one em, so a size of 8 x N points draws N-point pixels (16 = 2 pt pixels, the crispest sizes).
 enum PixelFont {
-    static let name = "PressStart2P-Regular"
+    static let regular = "ITaleemPixel-Regular"
+    static let bold = "ITaleemPixel-Bold"
 
     static func register() {
-        guard let url = Bundle.main.url(forResource: name, withExtension: "ttf") else { return }
-        CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+        for name in [regular, bold] {
+            guard let url = Bundle.main.url(forResource: name, withExtension: "ttf") else { continue }
+            CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+        }
     }
 
-    static var available: Bool { UIFont(name: name, size: 10) != nil }
+    /// False if the font files didn't make it into the app: headings then fall back to a heavy monospaced font
+    static var available: Bool { UIFont(name: bold, size: 8) != nil }
 }
 
-/// Arcade heading: the pixel font (or a heavy monospaced one) plus a hard block shadow. Retro only; in the
+/// Arcade heading: the bold pixel font (or a heavy monospaced one) plus a hard block shadow. Retro only; in the
 /// other themes this changes nothing, so the text keeps whatever font it already had.
 struct PixelHeading: ViewModifier {
     var size: CGFloat
@@ -229,7 +233,7 @@ struct PixelHeading: ViewModifier {
         if themes.theme.pixelHeadings {
             content
                 .font(PixelFont.available
-                      ? Font.custom(PixelFont.name, size: size)
+                      ? Font.custom(PixelFont.bold, size: size)
                       : Font.system(size: size + 3, weight: .heavy, design: .monospaced))
                 .shadow(color: Color(hex: themes.palette.glow), radius: 0, x: 2, y: 2)
         } else {
@@ -333,7 +337,7 @@ private struct ThemeCard: View {
 
             HStack(spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(theme.name).foregroundColor(Theme.txt).fontWeight(.semibold).textGlow(radius: 3).pixelHeading(10)
+                    Text(theme.name).foregroundColor(Theme.txt).fontWeight(.semibold).textGlow(radius: 3).pixelHeading(12)
                     Text(theme.detail).font(.caption).foregroundColor(Theme.muted)
                         .fixedSize(horizontal: false, vertical: true)
                 }

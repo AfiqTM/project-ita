@@ -12,7 +12,7 @@ targets:
   iTaleem:
     type: application
     platform: iOS
-    sources: [Sources, Shared]
+    sources: [Sources, Shared, Fonts]   # Fonts: the Retro theme's pixel font (.ttf files become app resources)
     dependencies:
       - target: AttendanceWidget
     entitlements:

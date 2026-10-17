@@ -91,15 +91,15 @@ enum Theme {
                 title[.shadow] = glow
                 large[.shadow] = glow
             } else if theme.pixelHeadings {
-                // arcade title: hard block shadow, and the pixel font when it is bundled
+                // arcade title: hard block shadow and the pixel font
                 let hard = NSShadow()
                 hard.shadowColor = UIColor(hex: p.glow)
                 hard.shadowBlurRadius = 0
                 hard.shadowOffset = CGSize(width: 2, height: 2)
                 title[.shadow] = hard
                 large[.shadow] = hard
-                if let f = UIFont(name: PixelFont.name, size: 10) { title[.font] = f }
-                if let f = UIFont(name: PixelFont.name, size: 18) { large[.font] = f }
+                if let f = UIFont(name: PixelFont.bold, size: 12) { title[.font] = f }
+                if let f = UIFont(name: PixelFont.bold, size: 24) { large[.font] = f }
             }
         }
         nav.titleTextAttributes = title

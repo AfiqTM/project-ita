@@ -201,7 +201,7 @@ struct CoursesView: View {
                     }
                     .font(.title3)
                     .textGlow()
-                    .pixelHeading(12)
+                    .pixelHeading(16)
                     Spacer()
                     MessagesButton()   // chat icon + unread badge (Messages.swift)
                 }
@@ -419,7 +419,7 @@ struct CourseCard: View {
                     .foregroundColor(Theme.txt)
                     .multilineTextAlignment(.leading)
                     .textGlow(radius: 3)
-                    .pixelHeading(9)
+                    .pixelHeading(12)
                 if let p = course.progress {
                     ProgressView(value: min(max(p, 0), 100), total: 100).tint(Theme.accent)
                     Text("\(Int(p))% complete").font(.caption).foregroundColor(Theme.muted)
@@ -695,7 +695,7 @@ struct ProfileRow: View {
         HStack(spacing: 14) {
             Image(systemName: icon).foregroundColor(Theme.accent).frame(width: 26).textGlow()
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).foregroundColor(Theme.txt).fontWeight(.semibold).textGlow(radius: 3).pixelHeading(10)
+                Text(title).foregroundColor(Theme.txt).fontWeight(.semibold).textGlow(radius: 3).pixelHeading(12)
                 Text(subtitle).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
             }
             Spacer()
