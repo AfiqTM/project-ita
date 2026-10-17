@@ -137,7 +137,14 @@ enum AppTheme: String, CaseIterable, Identifiable {
 /// (Assets.xcassets/AppIcon-Dark, AppIcon-Light, AppIcon-Terminal, AppIcon-Retro) and listed in project.yml under
 /// ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES.
 /// iOS shows its own "You have changed the icon" notice every time the icon changes; apps can't hide it.
+/// The icon only follows the theme while the switch on the Themes screen is on.
 enum AppIcon {
+    /// "Change app icon based on theme" switch at the top of the Themes screen (on by default)
+    static let followsThemeKey = "app.iconFollowsTheme"
+    static var followsTheme: Bool {
+        UserDefaults.standard.object(forKey: followsThemeKey) as? Bool ?? true
+    }
+
     static func name(for theme: AppTheme) -> String {
         switch theme {
         case .dark: return "AppIcon-Dark"
@@ -193,7 +200,7 @@ final class ThemeStore: ObservableObject {
         theme = new
         UserDefaults.standard.set(new.rawValue, forKey: Self.key)
         Theme.applyAppearance()   // new navigation / tab bars (created when the screens are rebuilt) get the new look
-        AppIcon.apply(for: new)   // home-screen icon follows the theme
+        if AppIcon.followsTheme { AppIcon.apply(for: new) }   // home-screen icon follows the theme (if switched on)
 
         guard let cover else { return }
         // a moment for the rebuilt screens to render underneath, then fade the old picture out
@@ -251,69 +258,20 @@ extension View {
 struct TextGlow: ViewModifier {
     var radius: CGFloat
     @ObservedObject private var themes = ThemeStore.shared
-    @ObservedObject private var glitch = GlitchClock.shared
     func body(content: Content) -> some View {
         let on = themes.theme.glowsText
-        let dx = on ? glitch.shift : 0
-        // Terminal glitch: during a burst the text jumps sideways and splits into a red and a cyan ghost
         return content
             .shadow(color: on ? Color(hex: themes.palette.accent).opacity(0.55) : Color.clear, radius: on ? radius : 0)
-            .shadow(color: dx == 0 ? .clear : Color(red: 1, green: 0.1, blue: 0.25).opacity(0.85), radius: 0, x: dx * 1.6, y: 0)
-            .shadow(color: dx == 0 ? .clear : Color(red: 0, green: 0.9, blue: 1).opacity(0.85), radius: 0, x: -dx * 1.6, y: 0)
-            .offset(x: dx * 0.5)
     }
 }
 extension View {
     func textGlow(radius: CGFloat = 5) -> some View { modifier(TextGlow(radius: radius)) }
 }
 
-/// Drives the Terminal theme's glitch: every 3-7 seconds a burst of about 0.3 s. It only publishes while a burst
-/// is running (idle = no redraws). Off when the Terminal theme isn't active or Reduce Motion is on.
-@MainActor
-final class GlitchClock: ObservableObject {
-    static let shared = GlitchClock()
-    @Published private(set) var shift: CGFloat = 0        // sideways jump / colour split, 0 when idle
-    @Published private(set) var band: CGFloat? = nil      // 0...1 vertical position of a tearing bar, nil when idle
-    private var running = false
-    private var themeSub: AnyCancellable?
-
-    private init() {
-        // $theme publishes before the value is stored, so look again on the next run-loop turn
-        themeSub = ThemeStore.shared.$theme.sink { [weak self] _ in
-            DispatchQueue.main.async { self?.update() }
-        }
-        update()
-    }
-
-    private func update() {
-        let wanted = ThemeStore.shared.theme.glowsText && !UIAccessibility.isReduceMotionEnabled
-        if wanted, !running { running = true; schedule() }
-        if !wanted { running = false; shift = 0; band = nil }
-    }
-
-    private func schedule() {
-        let wait = Double.random(in: 3...7)
-        DispatchQueue.main.asyncAfter(deadline: .now() + wait) { [weak self] in self?.burst(ticks: Int.random(in: 4...7)) }
-    }
-
-    private func burst(ticks: Int) {
-        guard running else { return }
-        if ticks == 0 {
-            shift = 0; band = nil
-            schedule()
-            return
-        }
-        shift = CGFloat([-2, -1, 1, 2, 3].randomElement()!)
-        band = CGFloat.random(in: 0.05...0.95)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in self?.burst(ticks: ticks - 1) }
-    }
-}
-
 /// Faint CRT scanlines (a dark line every 3 points) and darker screen corners over the whole app.
 /// Touches pass through it; it is hidden when Reduce Transparency is on.
 struct ScanlineOverlay: View {
     @Environment(\.accessibilityReduceTransparency) private var reduce
-    @ObservedObject private var glitch = GlitchClock.shared
 
     var body: some View {
         if !reduce {
@@ -328,13 +286,6 @@ struct ScanlineOverlay: View {
                 }
                 RadialGradient(colors: [Color.clear, Color.black.opacity(0.35)],
                                center: .center, startRadius: 160, endRadius: 560)
-                if let band = glitch.band {   // glitch burst: a bright tearing bar crosses the screen
-                    GeometryReader { geo in
-                        Rectangle().fill(Color(hex: ThemeStore.shared.palette.accent).opacity(0.10))
-                            .frame(height: 10)
-                            .offset(x: glitch.shift * 4, y: geo.size.height * band)
-                    }
-                }
             }
             .ignoresSafeArea()
             .allowsHitTesting(false)
@@ -359,10 +310,32 @@ struct ThemeFont: ViewModifier {
 
 struct ThemesView: View {
     @ObservedObject private var store = ThemeStore.shared
+    @AppStorage(AppIcon.followsThemeKey) private var iconFollowsTheme = true
 
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
+                // Change app icon based on theme (above the theme list)
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Change app icon based on theme")
+                            .foregroundColor(Theme.txt).fontWeight(.semibold).textGlow(radius: 3)
+                        Text("The home-screen icon switches to match the theme you pick. iOS shows a short notice each time it changes.")
+                            .font(.caption).foregroundColor(Theme.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 8)
+                    Toggle("", isOn: $iconFollowsTheme)
+                        .labelsHidden()
+                        .tint(Theme.accent)
+                }
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .glowCard()
+                .onChange(of: iconFollowsTheme) { on in
+                    if on { AppIcon.apply(for: store.theme) }   // switched on: match the current theme right away
+                }
+
                 Text("Choose how the app looks. The change applies everywhere straight away.")
                     .font(.footnote)
                     .foregroundColor(Theme.muted)
