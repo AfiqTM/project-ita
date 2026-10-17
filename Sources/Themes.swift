@@ -47,7 +47,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
     /// Arcade headings: the pixel font (when bundled, see PixelFont) with a hard block shadow
     var pixelHeadings: Bool { self == .retro }
 
-    /// Red Dead headings: stencil caps (Black Ops One) and condensed caps (Bebas Neue)
+    /// Red Dead headings: Chinese Rocks, the game's lettering
     var westernHeadings: Bool { self == .redDead }
 
     /// Aged-photograph vignette and film grain over the whole app
@@ -251,22 +251,18 @@ enum PixelFont {
     static var available: Bool { UIFont(name: bold, size: 8) != nil }
 }
 
-/// Fonts of the Red Dead theme (Fonts/, both SIL Open Font License, licences next to them): Black Ops One for big
-/// headings (blocky stencil caps, close to the game's title lettering) and Bebas Neue for smaller titles and the
-/// tab bar (condensed caps like the website's menu). Rockstar's own typefaces are proprietary and can't be bundled.
-/// To use other fonts, drop the .ttf files into Fonts/ and change the PostScript names here.
+/// The Red Dead theme's font: Chinese Rocks (Fonts/ChineseRocksRg-Regular.ttf, by Typodermic Fonts, the lettering
+/// of the game's logo and website). It is a single all-caps face, so the "smaller font" is the same face at the
+/// smaller size of the text it replaces. Check Typodermic's licence before publishing the app.
 enum WesternFont {
-    static let display = "BlackOpsOne-Regular"
-    static let condensed = "BebasNeue-Regular"
+    static let name = "ChineseRocksRg-Regular"
 
     static func register() {
-        for name in [display, condensed] {
-            guard let url = Bundle.main.url(forResource: name, withExtension: "ttf") else { continue }
-            CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
-        }
+        guard let url = Bundle.main.url(forResource: name, withExtension: "ttf") else { return }
+        CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
     }
 
-    static var available: Bool { UIFont(name: display, size: 12) != nil && UIFont(name: condensed, size: 12) != nil }
+    static var available: Bool { UIFont(name: name, size: 12) != nil }
 }
 
 /// Arcade heading: the bold pixel font (or a heavy monospaced one) plus a hard block shadow. Retro only; in the
@@ -276,6 +272,8 @@ struct PixelHeading: ViewModifier {
     /// The font the text has in the other themes. It is passed here instead of being set on the text itself,
     /// because a `.font` set closer to the text would win over the one set here.
     var normal: Font?
+    /// Point size of that normal font, used by the Red Dead font
+    var pt: CGFloat?
     @ObservedObject private var themes = ThemeStore.shared
     func body(content: Content) -> some View {
         if themes.theme.pixelHeadings {
@@ -285,12 +283,11 @@ struct PixelHeading: ViewModifier {
                       : Font.system(size: size + 3, weight: .heavy, design: .monospaced))
                 .shadow(color: Color(hex: themes.palette.glow), radius: 0, x: 2, y: 2)
         } else if themes.theme.westernHeadings {
-            // big headings: stencil caps; smaller ones: condensed caps (stencil letters are too wide for long titles)
+            // same point size as the text has in the other themes, so nothing gets smaller or bigger
             content
-                .font(!WesternFont.available ? Font.system(size: size, weight: .heavy)
-                      : size >= 16 ? Font.custom(WesternFont.display, size: size * 0.95)
-                      : Font.custom(WesternFont.condensed, size: size * 1.4))
-                .textCase(.uppercase)
+                .font(WesternFont.available ? Font.custom(WesternFont.name, size: pt ?? size)
+                                            : (normal ?? Font.system(size: pt ?? size, weight: .heavy)))
+                .tracking(0.6)
         } else if let normal {
             content.font(normal)
         } else {
@@ -299,7 +296,9 @@ struct PixelHeading: ViewModifier {
     }
 }
 extension View {
-    func pixelHeading(_ size: CGFloat = 12, normal: Font? = nil) -> some View { modifier(PixelHeading(size: size, normal: normal)) }
+    func pixelHeading(_ size: CGFloat = 12, normal: Font? = nil, pt: CGFloat? = nil) -> some View {
+        modifier(PixelHeading(size: size, normal: normal, pt: pt))
+    }
 }
 
 /// A soft glow in the theme's accent colour behind text or an icon. Only the Terminal theme has it; in the
@@ -499,7 +498,7 @@ private struct ThemeCard: View {
 
             HStack(spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(theme.name).foregroundColor(Theme.txt).fontWeight(.semibold).textGlow(radius: 3).pixelHeading(12)
+                    Text(theme.name).foregroundColor(Theme.txt).fontWeight(.semibold).textGlow(radius: 3).pixelHeading(12, pt: 17)
                     Text(theme.detail).font(.caption).foregroundColor(Theme.muted)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -526,7 +525,6 @@ private struct ThemePreview: View {
     let theme: AppTheme
     private var p: Palette { theme.palette }
     private var pixel: Bool { p.card == .pixel }
-    private var western: Bool { p.card == .western }
     private func mono(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
         .system(size: size, weight: weight, design: theme.mono ? .monospaced : .default)
     }
@@ -536,7 +534,7 @@ private struct ThemePreview: View {
             // title bar
             HStack {
                 if let t = theme.previewTitle {
-                    Text(t).textCase(theme.westernHeadings ? .uppercase : nil).font(theme.westernHeadings ? .custom(WesternFont.condensed, size: 13) : mono(9, .bold))
+                    Text(t).textCase(theme.westernHeadings ? .uppercase : nil).font(theme.westernHeadings ? .custom(WesternFont.name, size: 13) : mono(9, .bold))
                         .foregroundColor(Color(hex: p.accent))
                 } else {
                     Capsule().fill(Color(hex: p.txt)).frame(width: 46, height: 6)
@@ -586,9 +584,9 @@ private struct ThemePreview: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: 70)
         .background(Color(hex: p.surface))
-        .clipShape(RoundedRectangle(cornerRadius: pixel ? 2 : (western ? 3 : 8), style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: pixel ? 2 : (western ? 3 : 8), style: .continuous)
-            .stroke(Color(hex: p.line), lineWidth: pixel ? 2 : (western ? 1.5 : 1)))
+        .clipShape(RoundedRectangle(cornerRadius: pixel ? 2 : 8, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: pixel ? 2 : 8, style: .continuous)
+            .stroke(Color(hex: p.line), lineWidth: pixel ? 2 : 1))
         .shadow(color: p.card == .terminal ? Color(hex: p.glow).opacity(0.9) : .clear, radius: 6)
         .shadow(color: pixel ? Color(hex: p.glow) : .clear, radius: 0, x: 2, y: 2)
     }

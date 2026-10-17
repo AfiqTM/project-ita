@@ -81,7 +81,7 @@ struct UserProfileView: View {
                 case .courses: coursesTab
                 case .more: moreTab
                 }
-                if let note { Text(note).font(.footnote).foregroundColor(Theme.muted) }
+                if let note { Text(note).font(Theme.font(.footnote)).foregroundColor(Theme.muted) }
                 if loading { ProgressView().tint(Theme.accent).frame(maxWidth: .infinity) }
                 if userid == myId { signOutButton }
             }
@@ -120,10 +120,10 @@ struct UserProfileView: View {
             }
             .buttonStyle(.plain)
             VStack(alignment: .leading, spacing: 8) {
-                Text(displayName).font(.title3.bold()).foregroundColor(Theme.txt)
+                Text(displayName).font(Theme.font(.title3).bold()).foregroundColor(Theme.txt)
                 if let la = p?.lastaccess {
                     (Text("Last access ").fontWeight(.semibold) + Text(dateText(la)))
-                        .font(.caption).foregroundColor(Theme.muted)
+                        .font(Theme.font(.caption)).foregroundColor(Theme.muted)
                 }
             }
             Spacer(minLength: 0)
@@ -160,8 +160,8 @@ struct UserProfileView: View {
 
     private func stat(_ n: Int, _ label: String) -> some View {
         VStack(spacing: 4) {
-            Text("\(n)").font(.title.bold()).foregroundColor(Theme.txt)
-            Text(label).font(.caption).foregroundColor(Theme.muted)
+            Text("\(n)").font(Theme.font(.title).bold()).foregroundColor(Theme.txt)
+            Text(label).font(Theme.font(.caption)).foregroundColor(Theme.muted)
         }
         .frame(maxWidth: .infinity)
     }
@@ -188,8 +188,8 @@ struct UserProfileView: View {
 
     private func fieldView(_ k: String, _ v: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(k).font(.subheadline.weight(.semibold)).foregroundColor(Theme.txt)
-            Text(v).font(.subheadline).foregroundColor(Theme.muted).textSelection(.enabled)
+            Text(k).font(Theme.font(.subheadline).weight(.semibold)).foregroundColor(Theme.txt)
+            Text(v).font(Theme.font(.subheadline)).foregroundColor(Theme.muted).textSelection(.enabled)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -259,7 +259,7 @@ struct UserProfileView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(c.fullname ?? c.shortname ?? "Course").foregroundColor(Theme.txt)
                         if let s = c.shortname, s != c.fullname {
-                            Text(s).font(.caption).foregroundColor(Theme.muted)
+                            Text(s).font(Theme.font(.caption)).foregroundColor(Theme.muted)
                         }
                     }
                     .padding(14).frame(maxWidth: .infinity, alignment: .leading)

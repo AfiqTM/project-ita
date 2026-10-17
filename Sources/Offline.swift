@@ -556,7 +556,7 @@ struct OfflineBanner: View {
                     Image(systemName: offline ? "wifi.slash" : "wifi.exclamationmark")
                     Text(offline ? "Offline · showing saved data" : "Slow connection · saved data first")
                 }
-                .font(.caption2.weight(.semibold))
+                .font(Theme.font(.caption2).weight(.semibold))
                 .foregroundColor(Theme.muted)
                 .padding(.horizontal, 10).padding(.vertical, 4)
                 .background(Theme.surface2)
@@ -596,7 +596,7 @@ struct OfflineSupportRow: View {
                     Image(systemName: "icloud.and.arrow.down").foregroundColor(Theme.accent).frame(width: 26)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Offline support").foregroundColor(Theme.txt).fontWeight(.semibold)
-                        Text(subtitle).font(.caption).foregroundColor(Theme.muted).lineLimit(2)
+                        Text(subtitle).font(Theme.font(.caption)).foregroundColor(Theme.muted).lineLimit(2)
                     }
                     Spacer(minLength: 0)
                 }
@@ -607,7 +607,7 @@ struct OfflineSupportRow: View {
             Toggle("", isOn: $on).labelsHidden().tint(Theme.accent)
 
             Button { open = true } label: {
-                Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundColor(Theme.muted)
+                Image(systemName: "chevron.right").font(Theme.font(.caption).weight(.semibold)).foregroundColor(Theme.muted)
                     .padding(.vertical, 6).padding(.leading, 2)
             }
             .buttonStyle(.plain)
@@ -665,7 +665,7 @@ struct OfflineSupportScreen: View {
                          : !monitor.isOnline ? "No internet · " + lastText
                          : blocked ? "Waiting for Wi-Fi · " + lastText
                          : lastText)
-                        .font(.caption).foregroundColor(Theme.muted).lineLimit(2)
+                        .font(Theme.font(.caption)).foregroundColor(Theme.muted).lineLimit(2)
                 }
                 Spacer()
                 if downloading { ProgressView().tint(Theme.accent) }
@@ -690,7 +690,7 @@ struct OfflineSupportScreen: View {
                             Text("Download on mobile data").foregroundColor(Theme.txt).fontWeight(.semibold)
                             Text(mobile ? "Saved data also updates on mobile data"
                                         : "Off · background downloads wait for Wi-Fi")
-                                .font(.caption).foregroundColor(Theme.muted).lineLimit(2)
+                                .font(Theme.font(.caption)).foregroundColor(Theme.muted).lineLimit(2)
                         }
                         Spacer()
                         Toggle("", isOn: $mobile).labelsHidden().tint(Theme.accent)
@@ -699,7 +699,7 @@ struct OfflineSupportScreen: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
                     Text("Offline support is off. Switch it on in Others to save data for use with no internet.")
-                        .font(.caption).foregroundColor(Theme.muted)
+                        .font(Theme.font(.caption)).foregroundColor(Theme.muted)
                         .padding(14).frame(maxWidth: .infinity, alignment: .leading)
                 }
 
@@ -740,7 +740,7 @@ struct OfflineQueueSection: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Waiting to upload").foregroundColor(Theme.txt).fontWeight(.semibold)
                         Text(monitor.isOnline ? "Sending now…" : "Will be sent when you're back online")
-                            .font(.caption).foregroundColor(Theme.muted)
+                            .font(Theme.font(.caption)).foregroundColor(Theme.muted)
                     }
                     Spacer()
                 }
@@ -748,23 +748,23 @@ struct OfflineQueueSection: View {
 
                 ForEach(queue.jobs) { j in
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(j.name).font(.subheadline.weight(.semibold)).foregroundColor(Theme.txt)
+                        Text(j.name).font(Theme.font(.subheadline).weight(.semibold)).foregroundColor(Theme.txt)
                         Text(title(j) + (j.error == nil ? "" : " · couldn't send"))
-                            .font(.caption).foregroundColor(j.error == nil ? Theme.muted : .red)
+                            .font(Theme.font(.caption)).foregroundColor(j.error == nil ? Theme.muted : .red)
                         if let e = j.error {
-                            Text(e).font(.caption).foregroundColor(Theme.muted)
+                            Text(e).font(Theme.font(.caption)).foregroundColor(Theme.muted)
                         }
                         ForEach(j.newFiles, id: \.self) { f in
-                            Label(f, systemImage: "doc").font(.caption).foregroundColor(Theme.txt).lineLimit(1)
+                            Label(f, systemImage: "doc").font(Theme.font(.caption)).foregroundColor(Theme.txt).lineLimit(1)
                         }
                         if j.newFiles.isEmpty && j.kind == .save {
-                            Text(j.text == nil ? "No new files" : "Text only").font(.caption).foregroundColor(Theme.muted)
+                            Text(j.text == nil ? "No new files" : "Text only").font(Theme.font(.caption)).foregroundColor(Theme.muted)
                         }
                         HStack(spacing: 18) {
                             if j.error != nil { Button("Retry") { queue.retryNow(j.id) } }
                             Button(j.error == nil ? "Cancel upload" : "Discard", role: .destructive) { cancelling = j }
                         }
-                        .font(.caption.weight(.semibold)).foregroundColor(Theme.accent)
+                        .font(Theme.font(.caption).weight(.semibold)).foregroundColor(Theme.accent)
                     }
                     .padding(12)
                     .frame(maxWidth: .infinity, alignment: .leading)

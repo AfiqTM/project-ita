@@ -206,7 +206,7 @@ struct TodoRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             Button(action: onDone) {
-                Image(systemName: "circle").font(.title2).foregroundColor(Theme.accent)
+                Image(systemName: "circle").font(Theme.font(.title2)).foregroundColor(Theme.accent)
             }
             .buttonStyle(.plain)
 
@@ -214,18 +214,18 @@ struct TodoRow: View {
                 Text(item.title).fontWeight(.semibold).foregroundColor(Theme.txt)
                     .multilineTextAlignment(.leading)
                 if let d = item.notes, !d.isEmpty {
-                    Text(d).font(.subheadline).foregroundColor(Theme.muted)
+                    Text(d).font(Theme.font(.subheadline)).foregroundColor(Theme.muted)
                         .lineLimit(3).multilineTextAlignment(.leading)
                 }
                 if showSubject, let n = item.courseName {
                     Label(n, systemImage: item.kind.icon)
-                        .font(.caption).foregroundColor(Theme.accent)
+                        .font(Theme.font(.caption)).foregroundColor(Theme.accent)
                 } else if !showSubject {
                     Label(item.kind.title, systemImage: item.kind.icon)
-                        .font(.caption).foregroundColor(Theme.accent)
+                        .font(Theme.font(.caption)).foregroundColor(Theme.accent)
                 }
                 Text("\(item.kind.dueLabel) \(dueText(item.due))")
-                    .font(.caption)
+                    .font(Theme.font(.caption))
                     .foregroundColor(overdue ? Color.red.opacity(0.85) : Theme.muted)
             }
             Spacer(minLength: 0)
@@ -250,10 +250,10 @@ struct TodoListView: View {
                 let list = todos.pending
                 if list.isEmpty {
                     VStack(spacing: 8) {
-                        Image(systemName: "checklist").font(.largeTitle).foregroundColor(Theme.accent)
+                        Image(systemName: "checklist").font(Theme.font(.largeTitle)).foregroundColor(Theme.accent)
                         Text("Nothing to do").foregroundColor(Theme.txt).fontWeight(.semibold)
                         Text("Tap + to add work, an extra class or a chapter to revise.")
-                            .font(.footnote).foregroundColor(Theme.muted).multilineTextAlignment(.center)
+                            .font(Theme.font(.footnote)).foregroundColor(Theme.muted).multilineTextAlignment(.center)
                     }
                     .padding(.vertical, 40).frame(maxWidth: .infinity)
                 } else {
@@ -300,22 +300,22 @@ struct TodoHistoryView: View {
                 let list = todos.history
                 if list.isEmpty {
                     Text("Finished to-dos will show up here.")
-                        .font(.footnote).foregroundColor(Theme.muted).padding(.top, 40)
+                        .font(Theme.font(.footnote)).foregroundColor(Theme.muted).padding(.top, 40)
                 } else {
                     VStack(spacing: 0) {
                         ForEach(list) { item in
                             HStack(alignment: .top, spacing: 12) {
-                                Image(systemName: "checkmark.circle.fill").font(.title2).foregroundColor(Theme.accent)
+                                Image(systemName: "checkmark.circle.fill").font(Theme.font(.title2)).foregroundColor(Theme.accent)
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(item.title).strikethrough().foregroundColor(Theme.muted)
                                     if let d = item.notes, !d.isEmpty {
-                                        Text(d).font(.caption).foregroundColor(Theme.muted).lineLimit(2)
+                                        Text(d).font(Theme.font(.caption)).foregroundColor(Theme.muted).lineLimit(2)
                                     }
                                     if let n = item.courseName {
-                                        Text(n).font(.caption).foregroundColor(Theme.muted)
+                                        Text(n).font(Theme.font(.caption)).foregroundColor(Theme.muted)
                                     }
                                     Text("Done \(dueText(item.completedAt ?? item.due))")
-                                        .font(.caption2).foregroundColor(Theme.muted)
+                                        .font(Theme.font(.caption2)).foregroundColor(Theme.muted)
                                 }
                                 Spacer(minLength: 0)
                                 Button { withAnimation { todos.restore(item.id) } } label: {
@@ -448,14 +448,14 @@ struct TodoEditSheet: View {
     }
 
     private func label(_ s: String) -> some View {
-        Text(s).font(.caption.weight(.medium)).foregroundColor(Theme.muted)
+        Text(s).font(Theme.font(.caption).weight(.medium)).foregroundColor(Theme.muted)
     }
 
     private func chip(_ k: TodoKind) -> some View {
         let on = kind == k
         return Button { kind = k } label: {
             Label(k.title, systemImage: k.icon)
-                .font(.subheadline.weight(.semibold))
+                .font(Theme.font(.subheadline).weight(.semibold))
                 .frame(maxWidth: .infinity).padding(.vertical, 10)
                 .background(on ? Theme.accent : Theme.surface2)
                 .foregroundColor(on ? Theme.onAccent : Theme.txt)
@@ -483,7 +483,7 @@ struct TodoEditSheet: View {
                     .foregroundColor(subjectName == nil ? Theme.muted : Theme.txt)
                     .multilineTextAlignment(.leading)
                 Spacer()
-                Image(systemName: "chevron.up.chevron.down").font(.caption).foregroundColor(Theme.muted)
+                Image(systemName: "chevron.up.chevron.down").font(Theme.font(.caption)).foregroundColor(Theme.muted)
             }
             .fieldBox()
         }

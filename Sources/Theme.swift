@@ -74,9 +74,21 @@ enum Theme {
     static var uiAccent: UIColor   { UIColor(hex: p.accent) }
     static var uiOnAccent: UIColor { UIColor(hex: p.onAccent) }
 
-    /// Corner radius for cards: the Retro theme has (almost) square, pixel-like corners
+    /// A text style in the current theme: the system one, or Chinese Rocks at the same size in Red Dead.
+    /// (`.weight()` and `.bold()` can still be chained on the result; the font has a single weight.)
+    static func font(_ style: Font) -> Font {
+        guard ThemeStore.shared.theme.westernHeadings, WesternFont.available else { return style }
+        let sizes: [(Font, CGFloat, Font.TextStyle)] = [
+            (.largeTitle, 34, .largeTitle), (.title, 28, .title), (.title2, 22, .title2), (.title3, 20, .title3),
+            (.headline, 17, .headline), (.body, 17, .body), (.subheadline, 15, .subheadline),
+            (.footnote, 13, .footnote), (.caption, 12, .caption), (.caption2, 11, .caption2)]
+        guard let m = sizes.first(where: { $0.0 == style }) else { return style }
+        return .custom(WesternFont.name, size: m.1, relativeTo: m.2)
+    }
+
+    /// Corner radius for cards: the Retro theme has (almost) square, pixel-like corners; the others keep the radius
     static func cardRadius(_ r: CGFloat) -> CGFloat {
-        switch p.card { case .pixel: return min(r, 3); case .western: return min(r, 2); default: return r }
+        p.card == .pixel ? min(r, 3) : r
     }
 
     /// Navigation bar, tab bar and tab badges. Bars that already exist keep the old look, so call this
@@ -114,9 +126,9 @@ enum Theme {
             }
         }
         if theme.westernHeadings {
-            // the game's look: condensed caps for the bar title, blocky stencil caps for the large one
-            if let f = UIFont(name: WesternFont.condensed, size: 24) { title[.font] = f }
-            if let f = UIFont(name: WesternFont.display, size: 28) { large[.font] = f }
+            // the game's lettering, a little bigger than the system sizes (17 / 34) since the letters are narrow
+            if let f = UIFont(name: WesternFont.name, size: 22) { title[.font] = f }
+            if let f = UIFont(name: WesternFont.name, size: 38) { large[.font] = f }
         }
         nav.titleTextAttributes = title
         nav.largeTitleTextAttributes = large
@@ -142,7 +154,7 @@ enum Theme {
                 item.selected.titleTextAttributes = [.font: f, .foregroundColor: uiAccent]
             }
         }
-        if theme.westernHeadings, let f = UIFont(name: WesternFont.condensed, size: 14) {
+        if theme.westernHeadings, let f = UIFont(name: WesternFont.name, size: 13) {
             for item in [tab.stackedLayoutAppearance, tab.inlineLayoutAppearance, tab.compactInlineLayoutAppearance] {
                 item.normal.titleTextAttributes = [.font: f, .foregroundColor: UIColor(hex: p.muted)]
                 item.selected.titleTextAttributes = [.font: f, .foregroundColor: uiAccent]
@@ -199,10 +211,11 @@ struct GlowCard: ViewModifier {
         }
         return content
             .background(Color(hex: p.surface))
-            .clipShape(shape)
-            .overlay(shape.stroke(Color(hex: p.line), lineWidth: p.card == .glow ? 0 : (pixel ? 2 : (western ? 1 : 1))))
-            // western: a red banner along the top edge with a torn-paper lower edge
+            // western: a red banner along the top edge with a torn-paper lower edge (inside the rounded corners)
             .overlay(alignment: .top) { TornBand().fill(Color(hex: p.accent)).frame(height: western ? 9 : 0) }
+            .clipShape(shape)
+            .overlay(shape.stroke(Color(hex: p.line), lineWidth: p.card == .glow ? 0 : (pixel ? 2 : 1)))
+
             .shadow(color: layers[0].0, radius: layers[0].1, x: layers[0].2, y: layers[0].3)
             .shadow(color: layers[1].0, radius: layers[1].1, x: layers[1].2, y: layers[1].3)
             .shadow(color: layers[2].0, radius: layers[2].1, x: layers[2].2, y: layers[2].3)

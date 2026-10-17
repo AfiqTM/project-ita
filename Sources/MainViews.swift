@@ -200,7 +200,7 @@ struct CoursesView: View {
                         Text(firstTwoNames).foregroundColor(Theme.accent).fontWeight(.semibold)
                     }
                     .textGlow()
-                    .pixelHeading(16, normal: .title3)
+                    .pixelHeading(16, normal: .title3, pt: 20)
                     Spacer()
                     MessagesButton()   // chat icon + unread badge (Messages.swift)
                 }
@@ -210,7 +210,7 @@ struct CoursesView: View {
 
                 filterBar
 
-                if let error { Text(error).font(.footnote).foregroundColor(Theme.muted) }
+                if let error { Text(error).font(Theme.font(.footnote)).foregroundColor(Theme.muted) }
 
                 LazyVStack(spacing: 22) {
                     ForEach(visibleCourses) { c in
@@ -221,7 +221,7 @@ struct CoursesView: View {
                             if filter == .hidden {
                                 Button { Task { await toggleHide(c) } } label: {
                                     Label("Show again", systemImage: "eye")
-                                        .font(.footnote.weight(.semibold))
+                                        .font(Theme.font(.footnote).weight(.semibold))
                                         .foregroundColor(Theme.onAccent)
                                         .padding(.horizontal, 12).padding(.vertical, 7)
                                         .background(Theme.accent)
@@ -306,15 +306,15 @@ struct CoursesView: View {
                 ForEach(s) { c in
                     Button { openFromSearch(c) } label: {
                         HStack(spacing: 12) {
-                            Image(systemName: "book.closed").font(.footnote).foregroundColor(Theme.accent)
+                            Image(systemName: "book.closed").font(Theme.font(.footnote)).foregroundColor(Theme.accent)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(c.prettyFull).foregroundColor(Theme.txt).multilineTextAlignment(.leading)
                                 if let sn = c.prettyShort, !sn.isEmpty {
-                                    Text(sn).font(.caption).foregroundColor(Theme.muted)
+                                    Text(sn).font(Theme.font(.caption)).foregroundColor(Theme.muted)
                                 }
                             }
                             Spacer()
-                            Image(systemName: "chevron.right").font(.caption).foregroundColor(Theme.muted)
+                            Image(systemName: "chevron.right").font(Theme.font(.caption)).foregroundColor(Theme.muted)
                         }
                         .padding(12)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -417,10 +417,10 @@ struct CourseCard: View {
                     .foregroundColor(Theme.txt)
                     .multilineTextAlignment(.leading)
                     .textGlow(radius: 3)
-                    .pixelHeading(12, normal: .subheadline.weight(.semibold))
+                    .pixelHeading(12, normal: .subheadline.weight(.semibold), pt: 15)
                 if let p = course.progress {
                     ProgressView(value: min(max(p, 0), 100), total: 100).tint(Theme.accent)
-                    Text("\(Int(p))% complete").font(.caption).foregroundColor(Theme.muted)
+                    Text("\(Int(p))% complete").font(Theme.font(.caption)).foregroundColor(Theme.muted)
                 }
             }
             .padding(14)
@@ -469,7 +469,7 @@ struct DefaultCover: View {
             Text(course.prettyShort ?? "")
                 .foregroundColor(themes.theme.westernHeadings ? Color.white : Theme.accent.opacity(0.92))
                 .textGlow()
-                .pixelHeading(16, normal: .system(size: 22, weight: .bold))
+                .pixelHeading(16, normal: .system(size: 22, weight: .bold), pt: 22)
                 .lineLimit(1).minimumScaleFactor(0.5)
                 .padding(14)
         }
@@ -531,15 +531,15 @@ struct AlertsView: View {
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 14) {
-                if let error { Text(error).font(.footnote).foregroundColor(Theme.muted) }
+                if let error { Text(error).font(Theme.font(.footnote)).foregroundColor(Theme.muted) }
                 ForEach(items) { n in
                     let card = VStack(alignment: .leading, spacing: 4) {
                         Text(n.subject ?? "Notification")
                             .foregroundColor(Theme.txt).fontWeight(isRead(n) ? .regular : .semibold)
                         if let m = n.smallmessage, !m.isEmpty {
-                            Text(m.plainText).font(.caption).foregroundColor(Theme.muted).lineLimit(3)
+                            Text(m.plainText).font(Theme.font(.caption)).foregroundColor(Theme.muted).lineLimit(3)
                         }
-                        Text(fmt(n.timecreated)).font(.caption2).foregroundColor(Theme.muted)
+                        Text(fmt(n.timecreated)).font(Theme.font(.caption2)).foregroundColor(Theme.muted)
                     }
                     .padding(14).frame(maxWidth: .infinity, alignment: .leading)
                     .background(isRead(n) ? Theme.bg : Theme.surface2)
@@ -692,16 +692,16 @@ struct ProfileRow: View {
         HStack(spacing: 14) {
             Image(systemName: icon).foregroundColor(Theme.accent).frame(width: 26).textGlow()
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).foregroundColor(Theme.txt).fontWeight(.semibold).textGlow(radius: 3).pixelHeading(12)
-                Text(subtitle).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
+                Text(title).foregroundColor(Theme.txt).fontWeight(.semibold).textGlow(radius: 3).pixelHeading(12, pt: 17)
+                Text(subtitle).font(Theme.font(.caption)).foregroundColor(Theme.muted).lineLimit(1)
             }
             Spacer()
             if badge > 0 {
-                Text("\(badge)").font(.caption.weight(.bold)).foregroundColor(Theme.onAccent)
+                Text("\(badge)").font(Theme.font(.caption).weight(.bold)).foregroundColor(Theme.onAccent)
                     .padding(.horizontal, 8).padding(.vertical, 3)
                     .background(Theme.accent).clipShape(Capsule())
             }
-            Image(systemName: "chevron.right").font(.caption).foregroundColor(Theme.muted)
+            Image(systemName: "chevron.right").font(Theme.font(.caption)).foregroundColor(Theme.muted)
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -813,7 +813,7 @@ struct FinalExamCalculator: View {
                 results(cams: c, exam: e)
             } else {
                 Text("Enter your CAMS mark to see what you need in the final exam.")
-                    .font(.footnote).foregroundColor(Theme.muted)
+                    .font(Theme.font(.footnote)).foregroundColor(Theme.muted)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
@@ -827,14 +827,14 @@ struct FinalExamCalculator: View {
         HStack(spacing: 10) {
             Image(systemName: "function").foregroundColor(Theme.accent)
             VStack(alignment: .leading, spacing: 2) {
-                Text("Final Exam Calculator").font(.headline).foregroundColor(Theme.txt)
-                Text("Marks needed for each grade").font(.caption).foregroundColor(Theme.muted)
+                Text("Final Exam Calculator").font(Theme.font(.headline)).foregroundColor(Theme.txt)
+                Text("Marks needed for each grade").font(Theme.font(.caption)).foregroundColor(Theme.muted)
             }
             Spacer()
             if focus != nil {
                 Button { focus = nil; hideKeyboard() } label: {
                     Label("Hide keyboard", systemImage: "keyboard.chevron.compact.down")
-                        .labelStyle(.iconOnly).font(.title3).foregroundColor(Theme.accent)
+                        .labelStyle(.iconOnly).font(Theme.font(.title3)).foregroundColor(Theme.accent)
                 }
             }
         }
@@ -842,7 +842,7 @@ struct FinalExamCalculator: View {
 
     private var weightPicker: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("CAMS is out of").font(.caption.weight(.medium)).foregroundColor(Theme.muted)
+            Text("CAMS is out of").font(Theme.font(.caption).weight(.medium)).foregroundColor(Theme.muted)
             HStack(spacing: 8) {
                 chip("60", .sixty)
                 chip("50", .fifty)
@@ -858,7 +858,7 @@ struct FinalExamCalculator: View {
             focus = nil
         } label: {
             Text(title)
-                .font(.subheadline.weight(.semibold))
+                .font(Theme.font(.subheadline).weight(.semibold))
                 .frame(maxWidth: .infinity).padding(.vertical, 10)
                 .background(on ? Theme.accent : Theme.surface2)
                 .foregroundColor(on ? Theme.onAccent : Theme.txt)
@@ -872,13 +872,13 @@ struct FinalExamCalculator: View {
     private func inputRow(title: String, suffix: String, placeholder: String,
                           text: Binding<String>, field: Field, invalid: Bool) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title).font(.caption.weight(.medium)).foregroundColor(Theme.muted)
+            Text(title).font(Theme.font(.caption).weight(.medium)).foregroundColor(Theme.muted)
             HStack {
                 TextField("", text: text, prompt: Text(placeholder).foregroundColor(Theme.muted.opacity(0.6)))
                     .keyboardType(.decimalPad)
                     .focused($focus, equals: field)
                     .foregroundColor(Theme.txt)
-                Text(suffix).foregroundColor(Theme.muted).font(.subheadline)
+                Text(suffix).foregroundColor(Theme.muted).font(Theme.font(.subheadline))
             }
             .padding(.horizontal, 12).padding(.vertical, 12)
             .background(Theme.surface2)
@@ -889,7 +889,7 @@ struct FinalExamCalculator: View {
     }
 
     private func hint(_ s: String) -> some View {
-        Text(s).font(.footnote).foregroundColor(.red.opacity(0.85))
+        Text(s).font(Theme.font(.footnote)).foregroundColor(.red.opacity(0.85))
     }
 
     private func results(cams: Double, exam: Double) -> some View {
@@ -900,7 +900,7 @@ struct FinalExamCalculator: View {
                 Spacer()
                 Text("Exam needed (/\(clean(exam)))")
             }
-            .font(.caption.weight(.medium)).foregroundColor(Theme.muted)
+            .font(Theme.font(.caption).weight(.medium)).foregroundColor(Theme.muted)
             .padding(.horizontal, 12).padding(.vertical, 8)
             .background(Theme.titleBar)
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -908,9 +908,9 @@ struct FinalExamCalculator: View {
             ForEach(Array(grades.enumerated()), id: \.element.id) { i, g in
                 let needed = ceil((g.threshold - cams) * 100) / 100
                 HStack {
-                    Text(g.letter).font(.headline).foregroundColor(Theme.accent)
+                    Text(g.letter).font(Theme.font(.headline)).foregroundColor(Theme.accent)
                         .frame(width: 56, alignment: .leading)
-                    Text(g.remark).font(.footnote).foregroundColor(Theme.muted)
+                    Text(g.remark).font(Theme.font(.footnote)).foregroundColor(Theme.muted)
                     Spacer()
                     outcome(needed: needed, exam: exam)
                 }
@@ -926,15 +926,15 @@ struct FinalExamCalculator: View {
     private func outcome(needed: Double, exam: Double) -> some View {
         if needed <= 0 {
             Label("Secured", systemImage: "checkmark.circle.fill")
-                .font(.subheadline.weight(.semibold)).foregroundColor(Theme.accent)
+                .font(Theme.font(.subheadline).weight(.semibold)).foregroundColor(Theme.accent)
         } else if needed > exam {
-            Text("Not achievable").font(.subheadline).foregroundColor(.red.opacity(0.8))
+            Text("Not achievable").font(Theme.font(.subheadline)).foregroundColor(.red.opacity(0.8))
         } else {
             VStack(alignment: .trailing, spacing: 1) {
                 Text("\(clean(needed / exam * 100))%")
-                    .font(.subheadline.weight(.semibold)).foregroundColor(Theme.txt)
+                    .font(Theme.font(.subheadline).weight(.semibold)).foregroundColor(Theme.txt)
                 Text("\(clean(needed)) / \(clean(exam))")
-                    .font(.caption2).foregroundColor(Theme.muted)
+                    .font(Theme.font(.caption2)).foregroundColor(Theme.muted)
             }
         }
     }

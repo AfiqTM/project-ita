@@ -121,7 +121,7 @@ struct CamsCalculatorCard: View {
                     Spacer()
                     if !open, totalWeight > 0 {
                         Text("\(camsFormat(totalEarned)) / \(camsFormat(totalWeight))")
-                            .font(.caption).foregroundColor(Theme.muted)
+                            .font(Theme.font(.caption)).foregroundColor(Theme.muted)
                     }
                     Image(systemName: open ? "chevron.up" : "chevron.down").foregroundColor(Theme.accent)
                 }
@@ -132,7 +132,7 @@ struct CamsCalculatorCard: View {
                 VStack(spacing: 14) {
                     if groups.isEmpty {
                         Text("Add work (quizzes, assignments, ...) to start.")
-                            .font(.footnote).foregroundColor(Theme.muted)
+                            .font(Theme.font(.footnote)).foregroundColor(Theme.muted)
                     }
                     ForEach($groups) { $g in
                         CamsGroupBox(group: $g) { groups.removeAll { $0.id == g.id } }
@@ -178,12 +178,12 @@ private struct CamsGroupBox: View {
                 } label: {
                     HStack(spacing: 4) {
                         Text(group.kind).fontWeight(.semibold)
-                        Image(systemName: "chevron.up.chevron.down").font(.caption2)
+                        Image(systemName: "chevron.up.chevron.down").font(Theme.font(.caption2))
                     }
                     .foregroundColor(Theme.accent)
                 }
                 Spacer()
-                Text("Weight").font(.caption).foregroundColor(Theme.muted)
+                Text("Weight").font(Theme.font(.caption)).foregroundColor(Theme.muted)
                 CamsField(text: $group.weight, placeholder: "10", width: 52)
                 Text("%").foregroundColor(Theme.muted)
                 Button(action: onDelete) { Image(systemName: "trash").foregroundColor(Theme.muted) }
@@ -203,7 +203,7 @@ private struct CamsGroupBox: View {
             ForEach($group.entries) { $e in
                 HStack(spacing: 8) {
                     Text("\(group.title) \((group.entries.firstIndex(where: { $0.id == e.id }) ?? 0) + 1)")
-                        .font(.subheadline).foregroundColor(Theme.txt).lineLimit(1)
+                        .font(Theme.font(.subheadline)).foregroundColor(Theme.txt).lineLimit(1)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     CamsField(text: $e.score, placeholder: "10")
                     Text("/").foregroundColor(Theme.muted)
@@ -217,20 +217,20 @@ private struct CamsGroupBox: View {
             HStack {
                 Button { group.entries.append(CamsEntry(outOf: group.entries.last?.outOf ?? "")) } label: {
                     Label("Add \(group.title.lowercased())", systemImage: "plus")
-                        .font(.footnote).foregroundColor(Theme.accent)
+                        .font(Theme.font(.footnote)).foregroundColor(Theme.accent)
                 }
                 Spacer()
                 if let p = group.percent {
                     if let e = group.earned, let w = group.weightValue {
                         Text("\(camsFormat(p))%  →  \(camsFormat(e)) / \(camsFormat(w))")
-                            .font(.footnote.weight(.semibold)).foregroundColor(Theme.accent)
+                            .font(Theme.font(.footnote).weight(.semibold)).foregroundColor(Theme.accent)
                     } else {
-                        Text("\(camsFormat(p))%").font(.footnote.weight(.semibold)).foregroundColor(Theme.accent)
+                        Text("\(camsFormat(p))%").font(Theme.font(.footnote).weight(.semibold)).foregroundColor(Theme.accent)
                     }
                 }
             }
             if let hint = group.hint {
-                Text(hint).font(.caption).foregroundColor(.orange.opacity(0.85))
+                Text(hint).font(Theme.font(.caption)).foregroundColor(.orange.opacity(0.85))
             }
         }
         .padding(12)

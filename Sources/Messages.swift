@@ -283,7 +283,7 @@ struct ChatListView: View {
                 .listRowSeparator(.hidden)
 
                 if let error {
-                    Text(error).font(.footnote).foregroundColor(Theme.muted)
+                    Text(error).font(Theme.font(.footnote)).foregroundColor(Theme.muted)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .listRowBackground(Color.clear).listRowSeparator(.hidden)
                 }
@@ -356,18 +356,18 @@ struct ChatListView: View {
                         .foregroundColor(Theme.txt).lineLimit(1)
                     Spacer()
                     Text(ChatTime.listStamp(last?.timecreated))
-                        .font(.caption)
+                        .font(Theme.font(.caption))
                         .foregroundColor(c.unread > 0 ? Theme.accent : Theme.muted)
                 }
                 HStack {
                     Text((mine && !preview.isEmpty ? "You: " : "") + preview)
-                        .font(.subheadline)
+                        .font(Theme.font(.subheadline))
                         .foregroundColor(c.unread > 0 ? Theme.txt : Theme.muted)
                         .lineLimit(2)
                     Spacer()
                     if c.unread > 0 {
                         Text("\(c.unread)")
-                            .font(.caption.bold()).foregroundColor(Theme.onAccent)
+                            .font(Theme.font(.caption).bold()).foregroundColor(Theme.onAccent)
                             .padding(.horizontal, 7).padding(.vertical, 2)
                             .background(Theme.accent).clipShape(Capsule())
                     }
@@ -465,7 +465,7 @@ struct ChatThreadView: View {
                             limit += 50
                             Task { await load() }
                         }
-                        .font(.subheadline).foregroundColor(Theme.accent).padding(.vertical, 8)
+                        .font(Theme.font(.subheadline)).foregroundColor(Theme.accent).padding(.vertical, 8)
                     }
                     if loading && msgs.isEmpty {
                         ProgressView().tint(Theme.accent).padding(.top, 40)
@@ -475,7 +475,7 @@ struct ChatThreadView: View {
                         let next: ChatMsg? = i < msgs.count - 1 ? msgs[i + 1] : nil
                         if prev == nil || !ChatTime.sameDay(prev?.timecreated, m.timecreated) {
                             Text(ChatTime.dayLabel(m.timecreated))
-                                .font(.caption.weight(.medium)).foregroundColor(Theme.muted)
+                                .font(Theme.font(.caption).weight(.medium)).foregroundColor(Theme.muted)
                                 .padding(.horizontal, 12).padding(.vertical, 4)
                                 .background(Theme.surface2.opacity(0.7))
                                 .clipShape(Capsule())
@@ -485,7 +485,7 @@ struct ChatThreadView: View {
                         row(m, prev: prev, next: next)
                     }
                     if let error {
-                        Text(error).font(.footnote).foregroundColor(.red.opacity(0.85))
+                        Text(error).font(Theme.font(.footnote)).foregroundColor(.red.opacity(0.85))
                             .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 6)
                     }
                     Color.clear.frame(height: 1).id("bottom")
@@ -561,7 +561,7 @@ struct ChatThreadView: View {
         return HStack(spacing: 10) {
             if selecting {
                 Image(systemName: isSel ? "checkmark.circle.fill" : "circle")
-                    .font(.title3)
+                    .font(Theme.font(.title3))
                     .foregroundColor(isSel ? Theme.accent : Theme.muted)
             }
             bubble(m, prev: prev, next: next)
@@ -597,7 +597,7 @@ struct ChatThreadView: View {
             || !ChatTime.sameDay(next?.timecreated, m.timecreated)
         return VStack(alignment: mine ? .trailing : .leading, spacing: 2) {
             if showName, let id = m.useridfrom, let n = names[id] {
-                Text(n).font(.caption.weight(.medium)).foregroundColor(Theme.accent.opacity(0.85))
+                Text(n).font(Theme.font(.caption).weight(.medium)).foregroundColor(Theme.accent.opacity(0.85))
                     .padding(.horizontal, 4)
             }
             Text(text)

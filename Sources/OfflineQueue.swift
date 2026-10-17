@@ -330,7 +330,7 @@ struct QueuedNote: View {
                     Text(j.error == nil
                          ? "Waiting for internet · your \(j.kind == .remove ? "removal" : (j.submit ? "submission" : "changes")) will be sent automatically"
                          : "Couldn't send: \(j.error ?? "")")
-                        .font(.caption)
+                        .font(Theme.font(.caption))
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
                 }
@@ -339,11 +339,11 @@ struct QueuedNote: View {
                         Button("Retry") { queue.retryNow(j.id) }
                         Button("Discard", role: .destructive) { queue.discard(j.id) }
                     }
-                    .font(.caption.weight(.semibold))
+                    .font(Theme.font(.caption).weight(.semibold))
                     .foregroundColor(Theme.accent)
                 } else {
                     Button("Cancel", role: .destructive) { queue.discard(j.id) }
-                        .font(.caption.weight(.semibold))
+                        .font(Theme.font(.caption).weight(.semibold))
                 }
             }
             .foregroundColor(Theme.muted)

@@ -350,7 +350,7 @@ struct SiteBrowserView: View {
             }
             if let n = browser.notice {
                 Text(n)
-                    .font(.footnote)
+                    .font(Theme.font(.footnote))
                     .foregroundColor(Theme.txt)
                     .padding(10)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -392,7 +392,7 @@ struct SiteBrowserView: View {
                 Link(destination: u) { Image(systemName: "safari") }
             }
         }
-        .font(.title3)
+        .font(Theme.font(.title3))
         .foregroundColor(Theme.accent)
         .padding(.horizontal, 20).padding(.vertical, 10)
         .background(Theme.surface)

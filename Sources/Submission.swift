@@ -511,7 +511,7 @@ struct AttendanceView: View {
                 NavigationLink {
                     WebActivityView(url: URL(string: module.url ?? "") ?? Site.url, title: module.name)
                 } label: {
-                    Text("Open full report on website").font(.subheadline).foregroundColor(Theme.accent)
+                    Text("Open full report on website").font(Theme.font(.subheadline)).foregroundColor(Theme.accent)
                 }
             }
             .padding(16)
@@ -538,15 +538,15 @@ struct AttendanceView: View {
     @ViewBuilder private var offlineNote: some View {
         if let d = savedAt {
             HStack(spacing: 8) {
-                Image(systemName: "wifi.slash").font(.caption2)
+                Image(systemName: "wifi.slash").font(Theme.font(.caption2))
                 Text("Offline copy · saved " + d.formatted(date: .abbreviated, time: .shortened))
-                    .font(.caption).lineLimit(1).minimumScaleFactor(0.8)
+                    .font(Theme.font(.caption)).lineLimit(1).minimumScaleFactor(0.8)
                 Spacer(minLength: 8)
                 if net.isOnline {
                     NavigationLink {
                         WebActivityView(url: URL(string: module.url ?? "") ?? Site.url, title: module.name)
                     } label: {
-                        Text("Sign in again").font(.caption.weight(.semibold)).foregroundColor(Theme.accent)
+                        Text("Sign in again").font(Theme.font(.caption).weight(.semibold)).foregroundColor(Theme.accent)
                     }
                 }
             }
@@ -563,18 +563,18 @@ struct AttendanceView: View {
     @ViewBuilder private var maxCard: some View {
         if let s = summary, let pct = s.maxPercent {
             VStack(alignment: .leading, spacing: 12) {
-                Text("MAXIMUM POSSIBLE ATTENDANCE").font(.caption).foregroundColor(Theme.muted)
+                Text("MAXIMUM POSSIBLE ATTENDANCE").font(Theme.font(.caption)).foregroundColor(Theme.muted)
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(pct).font(Font.largeTitle.bold()).foregroundColor(Theme.accent)
-                    Text("if you attend every remaining session").font(.subheadline).foregroundColor(Theme.txt)
+                    Text("if you attend every remaining session").font(Theme.font(.subheadline)).foregroundColor(Theme.txt)
                 }
                 if let p = Double(pct.replacingOccurrences(of: "%", with: "")) {
                     ProgressView(value: min(max(p, 0), 100), total: 100).tint(Theme.accent)
                 }
                 HStack(spacing: 14) {
-                    if let pts = s.maxPoints { Text("\(pts) points").font(.caption).foregroundColor(Theme.muted) }
+                    if let pts = s.maxPoints { Text("\(pts) points").font(Theme.font(.caption)).foregroundColor(Theme.muted) }
                     if let t = s.total, let k = s.taken {
-                        Text("\(k) of \(t) sessions taken").font(.caption).foregroundColor(Theme.muted)
+                        Text("\(k) of \(t) sessions taken").font(Theme.font(.caption)).foregroundColor(Theme.muted)
                     }
                 }
                 if let k = s.absencesLeft() { absenceRow(k, s) }
@@ -604,10 +604,10 @@ struct AttendanceView: View {
         }
         return HStack(spacing: 12) {
             Text(k < 0 ? "!" : "\(k)")
-                .font(.title.bold()).foregroundColor(color).frame(minWidth: 34)
+                .font(Theme.font(.title).bold()).foregroundColor(color).frame(minWidth: 34)
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.subheadline.weight(.semibold)).foregroundColor(Theme.txt)
-                Text(detail).font(.caption).foregroundColor(Theme.muted)
+                Text(title).font(Theme.font(.subheadline).weight(.semibold)).foregroundColor(Theme.txt)
+                Text(detail).font(Theme.font(.caption)).foregroundColor(Theme.muted)
             }
             Spacer(minLength: 0)
         }
@@ -620,7 +620,7 @@ struct AttendanceView: View {
 
     @ViewBuilder private var summaryCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("ATTENDANCE").font(.caption).foregroundColor(Theme.muted)
+            Text("ATTENDANCE").font(Theme.font(.caption)).foregroundColor(Theme.muted)
             if let s = summary {
                 ForEach(Array(s.rows.enumerated()), id: \.offset) { i, r in
                     VStack(alignment: .leading, spacing: 6) {
@@ -633,7 +633,7 @@ struct AttendanceView: View {
                         }
                     }
                 }
-                if let p = s.points { Text(p).font(.caption).foregroundColor(Theme.muted) }
+                if let p = s.points { Text(p).font(Theme.font(.caption)).foregroundColor(Theme.muted) }
                 if !s.records.isEmpty {
                     HStack(spacing: 8) {
                         ForEach(AttKind.allCases) { k in
@@ -643,7 +643,7 @@ struct AttendanceView: View {
                     }
                 }
             } else if let n = note {
-                Text(n).font(.subheadline).foregroundColor(Theme.muted)
+                Text(n).font(Theme.font(.subheadline)).foregroundColor(Theme.muted)
             }
         }
         .padding(16).frame(maxWidth: .infinity, alignment: .leading)
@@ -691,10 +691,10 @@ struct AttendanceView: View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(r.date).fontWeight(.medium).foregroundColor(Theme.txt)
-                if !r.time.isEmpty { Text(r.time).font(.caption).foregroundColor(Theme.accent) }
-                if !r.desc.isEmpty { Text(r.desc).font(.caption).foregroundColor(Theme.muted) }
+                if !r.time.isEmpty { Text(r.time).font(Theme.font(.caption)).foregroundColor(Theme.accent) }
+                if !r.desc.isEmpty { Text(r.desc).font(Theme.font(.caption)).foregroundColor(Theme.muted) }
                 if !r.remarks.isEmpty {
-                    Text(r.remarks).font(.caption).italic().foregroundColor(Theme.muted)
+                    Text(r.remarks).font(Theme.font(.caption)).italic().foregroundColor(Theme.muted)
                 }
             }
             Spacer()
@@ -702,7 +702,7 @@ struct AttendanceView: View {
                 StatusPill(text: r.status.isEmpty || r.status == "?" ? AttKind.pending.rawValue : r.status,
                            color: r.kind.color)
                 if !r.points.isEmpty {
-                    Text(r.points).font(.caption).foregroundColor(Theme.muted)
+                    Text(r.points).font(Theme.font(.caption)).foregroundColor(Theme.muted)
                 }
             }
         }
@@ -830,7 +830,7 @@ struct AssignmentView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                if let error { Text(error).font(.footnote).foregroundColor(Theme.muted) }
+                if let error { Text(error).font(Theme.font(.footnote)).foregroundColor(Theme.muted) }
                 if let a = assign {
                     infoCard(a)
                     if let intro = a.intro?.linkedText, !intro.characters.isEmpty {
@@ -846,7 +846,7 @@ struct AssignmentView: View {
                 NavigationLink {
                     WebActivityView(url: URL(string: module.url ?? "") ?? Site.url, title: module.name)
                 } label: {
-                    Text("Open on website").font(.subheadline).foregroundColor(Theme.accent)
+                    Text("Open on website").font(Theme.font(.subheadline)).foregroundColor(Theme.accent)
                 }
                 if loading { ProgressView().tint(Theme.accent).frame(maxWidth: .infinity) }
             }
@@ -872,7 +872,7 @@ struct AssignmentView: View {
         HStack(spacing: 8) {
             Image(systemName: "wifi.slash")
             Text("This assignment's details aren't saved on your phone yet, so you can still add text or files and submit. It is sent automatically when you're back online (the site refuses it if this assignment doesn't take that kind of submission).")
-                .font(.caption).fixedSize(horizontal: false, vertical: true)
+                .font(Theme.font(.caption)).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
         .foregroundColor(Theme.muted)
@@ -887,7 +887,7 @@ struct AssignmentView: View {
     private var attachmentsCard: some View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 12) {
-                Text("ATTACHMENTS").font(.caption).foregroundColor(Theme.muted)
+                Text("ATTACHMENTS").font(Theme.font(.caption)).foregroundColor(Theme.muted)
                 ForEach(introFiles) { f in
                     if let s = f.fileurl, let u = MoodleAPI.shared.fileURL(s) {
                         NavigationLink { FileViewer(url: u, title: f.filename ?? "File") } label: {
@@ -896,7 +896,7 @@ struct AssignmentView: View {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(f.filename ?? "File").foregroundColor(Theme.accent).lineLimit(2)
                                     if let t = f.timemodified {
-                                        Text(fmt(t)).font(.caption).foregroundColor(Theme.muted)
+                                        Text(fmt(t)).font(Theme.font(.caption)).foregroundColor(Theme.muted)
                                     }
                                 }
                                 Spacer(minLength: 0)
@@ -952,7 +952,7 @@ struct AssignmentView: View {
         let fileOn = a.enabled("file")
         let textOn = a.enabled("onlinetext")
         VStack(alignment: .leading, spacing: 12) {
-            Text("SUBMISSION").font(.caption).foregroundColor(Theme.muted)
+            Text("SUBMISSION").font(Theme.font(.caption)).foregroundColor(Theme.muted)
             if !(fileOn || textOn) {
                 Text("This assignment doesn't accept online submissions.").foregroundColor(Theme.muted)
             } else if !canEdit {
@@ -961,7 +961,7 @@ struct AssignmentView: View {
             } else {
                 if fileOn { fileSection }
                 if textOn { textSection }
-                if let message { Text(message).font(.footnote).foregroundColor(Theme.accent) }
+                if let message { Text(message).font(Theme.font(.footnote)).foregroundColor(Theme.accent) }
                 actionButtons(a)
                 if hasSubmission { removeButton }
                 if busy { ProgressView().tint(Theme.accent).frame(maxWidth: .infinity) }
@@ -994,7 +994,7 @@ struct AssignmentView: View {
         }
         if !removedFiles.isEmpty {
             Text("\(removedFiles.count) file(s) will be removed when you save.")
-                .font(.caption).foregroundColor(Theme.muted)
+                .font(Theme.font(.caption)).foregroundColor(Theme.muted)
         }
     }
 
@@ -1279,7 +1279,7 @@ struct SharePickerSheet: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 12) {
                 ShareButtonLabel(size: 40)
-                Text("Share").font(.title3.bold()).foregroundColor(Theme.txt)
+                Text("Share").font(Theme.font(.title3).bold()).foregroundColor(Theme.txt)
                 Spacer()
             }
             Button {
@@ -1290,7 +1290,7 @@ struct SharePickerSheet: View {
                         .foregroundColor(allSelected ? Theme.accent : Theme.muted)
                     Text("Select all").foregroundColor(Theme.txt)
                     Spacer()
-                    Text("\(selected.count) of \(files.count)").font(.caption).foregroundColor(Theme.muted)
+                    Text("\(selected.count) of \(files.count)").font(Theme.font(.caption)).foregroundColor(Theme.muted)
                 }
                 .padding(14).contentShape(Rectangle())
             }
@@ -1318,7 +1318,7 @@ struct SharePickerSheet: View {
                 .glowCard()
             }
 
-            if let error { Text(error).font(.footnote).foregroundColor(.red.opacity(0.85)) }
+            if let error { Text(error).font(Theme.font(.footnote)).foregroundColor(.red.opacity(0.85)) }
 
             Button { Task { await send() } } label: {
                 HStack {

@@ -464,9 +464,9 @@ struct DriveConnectCard: View {
         ScrollView {
             VStack(spacing: 16) {
                 Image(systemName: "externaldrive").font(.system(size: 44)).foregroundColor(Theme.accent)
-                Text("Connect Google Drive").font(.title3.weight(.semibold)).foregroundColor(Theme.txt)
+                Text("Connect Google Drive").font(Theme.font(.title3).weight(.semibold)).foregroundColor(Theme.txt)
                 Text("Sign in once to browse your files here and keep your to-dos, CAMS marks and pins in sync with the website. You stay signed in.")
-                    .font(.footnote).foregroundColor(Theme.muted).multilineTextAlignment(.center)
+                    .font(Theme.font(.footnote)).foregroundColor(Theme.muted).multilineTextAlignment(.center)
 
                 Button { auth.signIn() } label: {
                     HStack(spacing: 8) {
@@ -480,7 +480,7 @@ struct DriveConnectCard: View {
                 }
                 .disabled(auth.busy)
 
-                if let e = auth.error { Text(e).font(.footnote).foregroundColor(Color.red.opacity(0.85)) }
+                if let e = auth.error { Text(e).font(Theme.font(.footnote)).foregroundColor(Color.red.opacity(0.85)) }
             }
             .padding(24)
             .frame(maxWidth: .infinity)
@@ -526,10 +526,10 @@ struct DriveRow: View {
                         HStack(spacing: 6) {
                             Text(ref.name).foregroundColor(Theme.txt).lineLimit(2).multilineTextAlignment(.leading)
                             if lib.isPinned(ref) {
-                                Image(systemName: "pin.fill").font(.caption2).foregroundColor(Theme.accent)
+                                Image(systemName: "pin.fill").font(Theme.font(.caption2)).foregroundColor(Theme.accent)
                             }
                         }
-                        if let s = subtitle, !s.isEmpty { Text(s).font(.caption).foregroundColor(Theme.muted) }
+                        if let s = subtitle, !s.isEmpty { Text(s).font(Theme.font(.caption)).foregroundColor(Theme.muted) }
                     }
                     Spacer(minLength: 0)
                 }
@@ -582,7 +582,7 @@ struct SaveToSubjectSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("“\(ref.name)” will show in the My Drive tab of each subject you tick.")
-                        .font(.footnote).foregroundColor(Theme.muted)
+                        .font(Theme.font(.footnote)).foregroundColor(Theme.muted)
                     if catalog.courses.isEmpty {
                         Text(catalog.loaded ? "No subjects found." : "Loading subjects…")
                             .foregroundColor(Theme.muted).padding(.top, 20)
@@ -724,7 +724,7 @@ struct MyDriveView: View {
         if !lib.pins.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 Label("Pinned", systemImage: "pin.fill")
-                    .font(.caption.weight(.semibold)).foregroundColor(Theme.muted)
+                    .font(Theme.font(.caption).weight(.semibold)).foregroundColor(Theme.muted)
                 VStack(spacing: 0) {
                     ForEach(lib.pins) { DriveRow(ref: $0, subtitle: $0.isFolder ? "Folder" : nil) }
                 }
@@ -734,7 +734,7 @@ struct MyDriveView: View {
     }
 
     @ViewBuilder private var results: some View {
-        if let e = model.error { Text(e).font(.footnote).foregroundColor(Theme.muted) }
+        if let e = model.error { Text(e).font(Theme.font(.footnote)).foregroundColor(Theme.muted) }
         if !model.items.isEmpty {
             VStack(spacing: 0) {
                 ForEach(model.items) { DriveRow(ref: $0.ref, subtitle: $0.subtitle) }
@@ -767,7 +767,7 @@ struct DriveFolderView: View {
         DriveGate {
             ScrollView {
                 LazyVStack(spacing: 14) {
-                    if let e = model.error { Text(e).font(.footnote).foregroundColor(Theme.muted) }
+                    if let e = model.error { Text(e).font(Theme.font(.footnote)).foregroundColor(Theme.muted) }
                     if !model.items.isEmpty {
                         VStack(spacing: 0) {
                             ForEach(model.items) { DriveRow(ref: $0.ref, subtitle: $0.subtitle) }
@@ -817,14 +817,14 @@ struct DrivePreviewView: View {
                     QuickLookView(url: fileURL).ignoresSafeArea(edges: .bottom)
                 } else if let error {
                     VStack(spacing: 14) {
-                        Text(error).font(.footnote).foregroundColor(Theme.muted).multilineTextAlignment(.center)
+                        Text(error).font(Theme.font(.footnote)).foregroundColor(Theme.muted).multilineTextAlignment(.center)
                         Button("Try again") { Task { await load() } }.foregroundColor(Theme.accent)
                     }
                     .padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     VStack(spacing: 10) {
                         ProgressView().tint(Theme.accent)
-                        Text("Opening…").font(.footnote).foregroundColor(Theme.muted)
+                        Text("Opening…").font(Theme.font(.footnote)).foregroundColor(Theme.muted)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }

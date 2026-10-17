@@ -31,7 +31,7 @@ struct LoginView: View {
 
                 Button { withAnimation { showPassword.toggle() } } label: {
                     Text(showPassword ? "Hide password sign-in" : "Use username & password instead")
-                        .foregroundColor(Theme.accent).font(.subheadline)
+                        .foregroundColor(Theme.accent).font(Theme.font(.subheadline))
                 }
 
                 if showPassword {
@@ -48,12 +48,12 @@ struct LoginView: View {
                         }
                         .disabled(busy || user.isEmpty || pass.isEmpty)
                         Text("Password sign-in can't complete 2FA. If your account uses 2FA, use the button above.")
-                            .font(.footnote).foregroundColor(Theme.muted)
+                            .font(Theme.font(.footnote)).foregroundColor(Theme.muted)
                     }
                 }
 
                 if busy { ProgressView().tint(Theme.accent).frame(maxWidth: .infinity) }
-                if let error { Text(error).font(.footnote).foregroundColor(.red.opacity(0.85)) }
+                if let error { Text(error).font(Theme.font(.footnote)).foregroundColor(.red.opacity(0.85)) }
             }
             .padding(24)
         }

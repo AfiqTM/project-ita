@@ -15,7 +15,7 @@ struct StatusPill: View {
     let color: Color
     var body: some View {
         Text(text)
-            .font(.caption.weight(.semibold))
+            .font(Theme.font(.caption).weight(.semibold))
             .foregroundColor(color)
             .padding(.horizontal, 8).padding(.vertical, 3)
             .background(color.opacity(0.16))
@@ -228,14 +228,14 @@ struct AssignmentsTabView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                Text("Assignments").foregroundColor(Theme.txt).textGlow(radius: 4).pixelHeading(16, normal: .title3.weight(.semibold))
+                Text("Assignments").foregroundColor(Theme.txt).textGlow(radius: 4).pixelHeading(16, normal: .title3.weight(.semibold), pt: 20)
                 filterBar
                 rangeBar
-                if let error = model.error { Text(error).font(.footnote).foregroundColor(Theme.muted) }
+                if let error = model.error { Text(error).font(Theme.font(.footnote)).foregroundColor(Theme.muted) }
 
                 ForEach(groups, id: \.0) { title, list in
                     VStack(alignment: .leading, spacing: 10) {
-                        Text(title).font(.footnote.weight(.semibold)).foregroundColor(Theme.muted)
+                        Text(title).font(Theme.font(.footnote).weight(.semibold)).foregroundColor(Theme.muted)
                         VStack(spacing: 0) {
                             ForEach(list) { i in row(i) }
                         }
@@ -271,7 +271,7 @@ struct AssignmentsTabView: View {
                             let n = model.count(f)
                             if (f == .todo || f == .overdue) && n > 0 {
                                 Text("\(n)")
-                                    .font(.caption2.bold())
+                                    .font(Theme.font(.caption2).bold())
                                     .foregroundColor(Theme.onAccent)
                                     .padding(.horizontal, 6).padding(.vertical, 2)
                                     .background(f == .overdue ? Tone.red : Theme.accent)
@@ -287,13 +287,13 @@ struct AssignmentsTabView: View {
     // Chooses how far ahead to look; drives the To do list and the number on the tab icon
     private var rangeBar: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("DUE WITHIN").font(.caption).foregroundColor(Theme.muted)
+            Text("DUE WITHIN").font(Theme.font(.caption)).foregroundColor(Theme.muted)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(AssignRange.allCases) { r in
                         Button { model.range = r } label: {
                             Text(r.title)
-                                .font(.footnote.weight(.semibold))
+                                .font(Theme.font(.footnote).weight(.semibold))
                                 .foregroundColor(model.range == r ? Theme.onAccent : Theme.txt)
                                 .padding(.horizontal, 12).padding(.vertical, 6)
                                 .background(model.range == r ? Theme.accent : Theme.surface2)
@@ -327,10 +327,10 @@ struct AssignmentsTabView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(i.a.name).foregroundColor(Theme.txt).fontWeight(.medium)
                         .multilineTextAlignment(.leading)
-                    Text(i.courseName).font(.caption).foregroundColor(Theme.muted)
+                    Text(i.courseName).font(Theme.font(.caption)).foregroundColor(Theme.muted)
                         .multilineTextAlignment(.leading)
                     if i.due > 0 {
-                        Text("Due " + fmt(i.due, time: true)).font(.caption).foregroundColor(Theme.accent)
+                        Text("Due " + fmt(i.due, time: true)).font(Theme.font(.caption)).foregroundColor(Theme.accent)
                     }
                 }
                 Spacer()

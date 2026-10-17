@@ -340,9 +340,9 @@ struct FileStateIcon: View {
             if store.busy.contains(k) {
                 ProgressView().scaleEffect(0.7).tint(Theme.accent)
             } else if store.isDownloaded(k) {
-                Image(systemName: "arrow.down.circle.fill").font(.caption).foregroundColor(Theme.accent)
+                Image(systemName: "arrow.down.circle.fill").font(Theme.font(.caption)).foregroundColor(Theme.accent)
             } else if store.failed.contains(k) {
-                Image(systemName: "exclamationmark.circle").font(.caption).foregroundColor(Theme.muted)
+                Image(systemName: "exclamationmark.circle").font(Theme.font(.caption)).foregroundColor(Theme.muted)
             }
         }
     }
@@ -400,7 +400,7 @@ struct OfflineFilesSection: View {
             Image(systemName: icon).foregroundColor(Theme.accent).frame(width: 26)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).foregroundColor(Theme.txt).fontWeight(.semibold)
-                Text(subtitle).font(.caption).foregroundColor(Theme.muted).lineLimit(2)
+                Text(subtitle).font(Theme.font(.caption)).foregroundColor(Theme.muted).lineLimit(2)
             }
             Spacer()
             Toggle("", isOn: isOn).labelsHidden().tint(Theme.accent)
@@ -415,7 +415,7 @@ struct OfflineFilesSection: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Size limit per file").foregroundColor(Theme.txt).fontWeight(.semibold)
                 Text("Bigger files are skipped. Press and hold a file to download it anyway.")
-                    .font(.caption).foregroundColor(Theme.muted).lineLimit(3)
+                    .font(Theme.font(.caption)).foregroundColor(Theme.muted).lineLimit(3)
             }
             Spacer()
             Picker("", selection: $limit) {
@@ -438,7 +438,7 @@ struct OfflineFilesSection: View {
                     Text(hasFiles
                          ? "\(store.count) file\(store.count == 1 ? "" : "s") · \(store.sizeText()) · offline data is kept"
                          : "No files downloaded")
-                        .font(.caption).foregroundColor(Theme.muted).lineLimit(2)
+                        .font(Theme.font(.caption)).foregroundColor(Theme.muted).lineLimit(2)
                 }
                 Spacer()
             }

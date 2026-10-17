@@ -51,7 +51,7 @@ struct CourseDetailView: View {
                                     .foregroundColor(tab == t ? Theme.accent : Theme.muted)
                                 if t == .todo {
                                     Text("\(todoCount)")
-                                        .font(.caption2.weight(.bold)).foregroundColor(Theme.onAccent)
+                                        .font(Theme.font(.caption2).weight(.bold)).foregroundColor(Theme.onAccent)
                                         .padding(.horizontal, 6).padding(.vertical, 2)
                                         .background(Theme.accent).clipShape(Capsule())
                                 }
@@ -92,7 +92,7 @@ struct CourseContentView: View {
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 22) {
-                if let error { Text(error).font(.footnote).foregroundColor(Theme.muted) }
+                if let error { Text(error).font(Theme.font(.footnote)).foregroundColor(Theme.muted) }
                 ForEach(sections.filter { !$0.modules.isEmpty || !$0.name.isEmpty }) { s in
                     SectionCard(courseId: courseId, section: s)
                 }
@@ -192,7 +192,7 @@ struct ModuleRow: View {
     var body: some View {
         if module.modname == "label" {
             if let d = module.description?.plainText, !d.isEmpty {
-                Text(d).font(.subheadline).foregroundColor(Theme.muted)
+                Text(d).font(Theme.font(.subheadline)).foregroundColor(Theme.muted)
                     .padding(14).frame(maxWidth: .infinity, alignment: .leading)
             }
         } else {
@@ -226,7 +226,7 @@ struct FolderView: View {
                                 Image(systemName: "doc").foregroundColor(Theme.accent)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(c.filename ?? "File").foregroundColor(Theme.txt)
-                                    Text(fmt(c.timemodified, time: false)).font(.caption).foregroundColor(Theme.muted)
+                                    Text(fmt(c.timemodified, time: false)).font(Theme.font(.caption)).foregroundColor(Theme.muted)
                                 }
                                 Spacer()
                                 FileStateIcon(file: c)
@@ -280,20 +280,20 @@ struct ForumView: View {
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 18) {
-                if let error { Text(error).font(.footnote).foregroundColor(Theme.muted) }
+                if let error { Text(error).font(Theme.font(.footnote)).foregroundColor(Theme.muted) }
                 ForEach(items) { d in
                     NavigationLink { PostsView(discussionId: d.discussion, title: d.name ?? d.subject ?? title) } label: {
                         VStack(alignment: .leading, spacing: 6) {
                             Text(d.name ?? d.subject ?? "Discussion")
                                 .fontWeight(.semibold).foregroundColor(Theme.txt).multilineTextAlignment(.leading)
                             Text("\(d.userfullname ?? "") · \(fmt(d.created, time: false))")
-                                .font(.caption).foregroundColor(Theme.muted)
+                                .font(Theme.font(.caption)).foregroundColor(Theme.muted)
                             if let m = d.message?.plainText, !m.isEmpty {
-                                Text(m).font(.subheadline).foregroundColor(Theme.muted).lineLimit(4)
+                                Text(m).font(Theme.font(.subheadline)).foregroundColor(Theme.muted).lineLimit(4)
                                     .multilineTextAlignment(.leading)
                             }
                             if let r = d.numreplies, r > 0 {
-                                Text("\(r) replies").font(.caption).foregroundColor(Theme.accent)
+                                Text("\(r) replies").font(Theme.font(.caption)).foregroundColor(Theme.accent)
                             }
                         }
                         .padding(16).frame(maxWidth: .infinity, alignment: .leading)
@@ -340,12 +340,12 @@ struct PostsView: View {
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 18) {
-                if let error { Text(error).font(.footnote).foregroundColor(Theme.muted) }
+                if let error { Text(error).font(Theme.font(.footnote)).foregroundColor(Theme.muted) }
                 ForEach(posts) { p in
                     VStack(alignment: .leading, spacing: 8) {
                         Text(p.subject ?? "").fontWeight(.semibold).foregroundColor(Theme.txt)
                         Text("\(p.author?.fullname ?? "") · \(fmt(p.timecreated))")
-                            .font(.caption).foregroundColor(Theme.muted)
+                            .font(Theme.font(.caption)).foregroundColor(Theme.muted)
                         Text((p.message ?? "").plainText).foregroundColor(Theme.txt)
                     }
                     .padding(16).frame(maxWidth: .infinity, alignment: .leading)
@@ -392,14 +392,14 @@ struct GradesView: View {
             VStack(spacing: 16) {
                 CamsCalculatorCard(courseId: courseId)
                 VStack(spacing: 0) {
-                if let error { Text(error).font(.footnote).foregroundColor(Theme.muted).padding() }
+                if let error { Text(error).font(Theme.font(.footnote)).foregroundColor(Theme.muted).padding() }
                 ForEach(items) { g in
                     HStack(alignment: .top) {
                         Text(g.itemname ?? "Course total").foregroundColor(Theme.txt)
                         Spacer()
                         VStack(alignment: .trailing, spacing: 2) {
                             Text(g.gradeformatted ?? "-").foregroundColor(Theme.accent).fontWeight(.semibold)
-                            if let r = g.rangeformatted { Text(r).font(.caption).foregroundColor(Theme.muted) }
+                            if let r = g.rangeformatted { Text(r).font(Theme.font(.caption)).foregroundColor(Theme.muted) }
                         }
                     }
                     .padding(14)
@@ -455,7 +455,7 @@ struct ParticipantsView: View {
                     .foregroundColor(Theme.txt).padding(12)
                     .background(Theme.surface).clipShape(RoundedRectangle(cornerRadius: 10))
                     .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.line))
-                if let error { Text(error).font(.footnote).foregroundColor(Theme.muted) }
+                if let error { Text(error).font(Theme.font(.footnote)).foregroundColor(Theme.muted) }
                 VStack(spacing: 0) {
                     ForEach(shown) { p in
                         NavigationLink {
@@ -469,7 +469,7 @@ struct ParticipantsView: View {
                                 .frame(width: 34, height: 34).clipShape(Circle())
                                 Text(p.fullname).foregroundColor(Theme.txt)
                                 Spacer()
-                                Image(systemName: "chevron.right").font(.caption).foregroundColor(Theme.muted)
+                                Image(systemName: "chevron.right").font(Theme.font(.caption)).foregroundColor(Theme.muted)
                             }
                             .padding(12)
                             .contentShape(Rectangle())
@@ -610,7 +610,7 @@ struct PageModuleView: View {
                         ForEach(Array(blocks.enumerated()), id: \.offset) { _, b in
                             switch b {
                             case .text(let t):
-                                Text(t).font(.subheadline).lineSpacing(3)
+                                Text(t).font(Theme.font(.subheadline)).lineSpacing(3)
                                     .multilineTextAlignment(.leading)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             case .image(let u):
@@ -619,7 +619,7 @@ struct PageModuleView: View {
                                         switch phase {
                                         case .success(let img): img.resizable().scaledToFit()
                                         case .failure: Label("Image couldn't load", systemImage: "photo")
-                                                .font(.footnote).foregroundColor(Theme.muted)
+                                                .font(Theme.font(.footnote)).foregroundColor(Theme.muted)
                                         default: ProgressView().tint(Theme.accent).frame(height: 120)
                                         }
                                     }
@@ -632,7 +632,7 @@ struct PageModuleView: View {
                     } else if loading {
                         ProgressView().tint(Theme.accent).frame(maxWidth: .infinity)
                     } else {
-                        Text("Couldn't load this page.").font(.footnote).foregroundColor(Theme.muted)
+                        Text("Couldn't load this page.").font(Theme.font(.footnote)).foregroundColor(Theme.muted)
                     }
                 }
                 .padding(16).frame(maxWidth: .infinity, alignment: .leading)
@@ -640,7 +640,7 @@ struct PageModuleView: View {
 
                 if !attachments.isEmpty {
                     VStack(alignment: .leading, spacing: 0) {
-                        Text("Attachments").font(.caption.weight(.medium)).foregroundColor(Theme.muted)
+                        Text("Attachments").font(Theme.font(.caption).weight(.medium)).foregroundColor(Theme.muted)
                             .padding(14)
                         ForEach(attachments) { c in
                             if let f = c.fileurl, let u = MoodleAPI.shared.fileURL(f) {
@@ -652,12 +652,12 @@ struct PageModuleView: View {
                                                 .multilineTextAlignment(.leading)
                                             if let sz = c.filesize, sz > 0 {
                                                 Text(ByteCountFormatter.string(fromByteCount: Int64(sz), countStyle: .file))
-                                                    .font(.caption).foregroundColor(Theme.muted)
+                                                    .font(Theme.font(.caption)).foregroundColor(Theme.muted)
                                             }
                                         }
                                         Spacer()
                                         FileStateIcon(file: c)
-                                        Image(systemName: "chevron.right").font(.caption).foregroundColor(Theme.muted)
+                                        Image(systemName: "chevron.right").font(Theme.font(.caption)).foregroundColor(Theme.muted)
                                     }
                                     .padding(14)
                                     .contentShape(Rectangle())
