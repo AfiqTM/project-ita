@@ -12,115 +12,76 @@ import UIKit
 // happens and then faded out.
 
 enum AppTheme: String, CaseIterable, Identifiable {
-    case dark, light, terminal, retro
+    case amoledDark, light, programmer
 
     var id: String { rawValue }
 
     var name: String {
         switch self {
-        case .dark: return "Dark"
+        case .amoledDark: return "AMOLED Dark"
         case .light: return "Light"
-        case .terminal: return "Terminal"
-        case .retro: return "Retro"
+        case .programmer: return "Programmer"
         }
     }
 
     var detail: String {
         switch self {
-        case .dark: return "True black with the tan accent. Easy on the eyes at night."
+        case .amoledDark: return "True black with the tan accent. Easy on the eyes at night."
         case .light: return "Warm off-white with a deeper tan accent. Easier to read in bright light."
-        case .terminal: return "Terminal look: near-black, neon green, a monospaced font and a green glow."
-        case .retro: return "Pixel-art look: pure black, bright yellow, flat dark tiles, a pixel font and yellow-toned covers."
+        case .programmer: return "Terminal look: near-black, neon green, a monospaced font and a green glow."
         }
     }
 
     /// Light themes use the light look for system parts (keyboard, pickers, status bar); the others use dark
     var scheme: ColorScheme { self == .light ? .light : .dark }
 
-    /// Which font look the whole app gets
-    enum FontStyle { case standard, mono, arcade }
-
-    var fontStyle: FontStyle {
-        switch self {
-        case .terminal: return .mono
-        case .retro: return .arcade
-        default: return .standard
-        }
-    }
-
-    /// Monospaced font everywhere (Terminal)
-    var mono: Bool { fontStyle == .mono }
-
-    /// Wide, chunky type everywhere (Retro)
-    var arcade: Bool { fontStyle == .arcade }
+    /// Monospaced font everywhere
+    var mono: Bool { self == .programmer }
 
     var palette: Palette {
         switch self {
-        case .dark: return .dark
+        case .amoledDark: return .amoledDark
         case .light: return .light
-        case .terminal: return .terminal
-        case .retro: return .retro
+        case .programmer: return .programmer
         }
     }
 
     /// CRT scanlines and a vignette over the whole app
-    var scanlines: Bool { self == .terminal }
+    var scanlines: Bool { self == .programmer }
 
     /// Soft glow around prominent text (see `textGlow()`)
-    var glowsText: Bool { self == .terminal }
+    var glowsText: Bool { self == .programmer }
 
     // MARK: Course covers (My courses)
 
     /// Gradients for courses without an image, picked per course
     var covers: [(UInt32, UInt32)] {
         switch self {
-        case .dark:
+        case .amoledDark:
             return [(0x1b1712, 0x3a2f22), (0x14181c, 0x2c3a46), (0x1a1417, 0x3d2a33),
                     (0x121a16, 0x263b2f), (0x181510, 0x4a3a22), (0x15151c, 0x302f4a)]
         case .light:
             return [(0xF1E8DA, 0xE0CFB4), (0xDFE8F0, 0xC3D4E2), (0xF0DFE5, 0xE0C3CF),
                     (0xDDECE3, 0xBFD9C9), (0xF2E9CF, 0xE3CFA0), (0xE2E2F1, 0xC9C8E6)]
-        case .terminal:
+        case .programmer:
             return [(0x03120A, 0x0B3A1C), (0x021512, 0x0A3A35), (0x0A1204, 0x2A3F0A),
                     (0x041208, 0x0F4A24), (0x02130F, 0x0C4040), (0x0A1005, 0x1E3A12)]
-        case .retro:
-            return [(0x0D0C00, 0x3D3800), (0x0A0A06, 0x2B2A12), (0x120F00, 0x4A4200),
-                    (0x080800, 0x2E2C00), (0x0F0E02, 0x524A08), (0x0B0B0B, 0x34331C)]
         }
     }
 
     /// Photo covers: dimmed on the dark themes so they sit in the page, left as they are on the light one
     var coverBrightness: Double {
         switch self {
-        case .dark: return -0.2
+        case .amoledDark: return -0.2
         case .light: return 0
-        case .terminal: return -0.25
-        case .retro: return -0.1
+        case .programmer: return -0.25
         }
     }
-    var coverSaturation: Double {
-        switch self {
-        case .terminal: return 0.6
-        case .retro: return 0.5
-        default: return 1
-        }
-    }
-    /// Terminal: photos get a green monitor tint, Retro: a yellow one
-    var coverTint: UInt32? {
-        switch self {
-        case .terminal: return 0x1FBF55
-        case .retro: return 0xF4E52C   // yellow-toned artwork, like the album art in the reference
-        default: return nil
-        }
-    }
+    var coverSaturation: Double { self == .programmer ? 0.6 : 1 }
+    /// Programmer: photos get a green monitor tint
+    var coverTint: UInt32? { self == .programmer ? 0x1FBF55 : nil }
     /// The star on a cover sits on a dark circle, so it needs a bright accent in every theme
-    var onCoverAccent: UInt32 {
-        switch self {
-        case .terminal: return Palette.terminal.accent
-        case .retro: return Palette.retro.accent
-        default: return Palette.dark.accent
-        }
-    }
+    var onCoverAccent: UInt32 { self == .programmer ? Palette.programmer.accent : Palette.amoledDark.accent }
 }
 
 /// The chosen theme, remembered across launches.
@@ -133,18 +94,7 @@ final class ThemeStore: ObservableObject {
     var palette: Palette { theme.palette }
 
     private init() {
-        theme = Self.stored()
-    }
-
-    /// Reads the saved theme. The old names ("amoledDark", "programmer") are mapped to the renamed themes,
-    /// so nobody who picked one loses their choice.
-    private static func stored() -> AppTheme {
-        let raw = UserDefaults.standard.string(forKey: key) ?? ""
-        switch raw {
-        case "amoledDark": return .dark
-        case "programmer": return .terminal
-        default: return AppTheme(rawValue: raw) ?? .dark
-        }
+        theme = AppTheme(rawValue: UserDefaults.standard.string(forKey: Self.key) ?? "") ?? .amoledDark
     }
 
     /// Switches theme with a cross-fade: the current screen is frozen as a picture on top of the window,
@@ -180,7 +130,7 @@ final class ThemeStore: ObservableObject {
     }
 }
 
-/// A soft glow in the theme's accent colour behind text or an icon. Only the Terminal theme has it; in the
+/// A soft glow in the theme's accent colour behind text or an icon. Only the Programmer theme has it; in the
 /// others this changes nothing. Used on prominent texts only (a glow on a whole screen would slow scrolling).
 struct TextGlow: ViewModifier {
     var radius: CGFloat
@@ -196,26 +146,22 @@ extension View {
 }
 
 /// Faint CRT scanlines (a dark line every 3 points) and darker screen corners over the whole app.
-/// Terminal has them stronger, Retro lighter. Touches pass through it; it is hidden when Reduce Transparency is on.
+/// Touches pass through it; it is hidden when Reduce Transparency is on.
 struct ScanlineOverlay: View {
     @Environment(\.accessibilityReduceTransparency) private var reduce
-    @ObservedObject private var themes = ThemeStore.shared
 
     var body: some View {
         if !reduce {
-            let retro = themes.theme == .retro
-            let lineOpacity = retro ? 0.10 : 0.16
-            let vignette = retro ? 0.22 : 0.35
             ZStack {
                 Canvas { ctx, size in
                     var y: CGFloat = 0
                     while y < size.height {
                         ctx.fill(Path(CGRect(x: 0, y: y, width: size.width, height: 1)),
-                                 with: .color(Color.black.opacity(lineOpacity)))
+                                 with: .color(Color.black.opacity(0.16)))
                         y += 3
                     }
                 }
-                RadialGradient(colors: [Color.clear, Color.black.opacity(vignette)],
+                RadialGradient(colors: [Color.clear, Color.black.opacity(0.35)],
                                center: .center, startRadius: 160, endRadius: 560)
             }
             .ignoresSafeArea()
@@ -225,18 +171,11 @@ struct ScanlineOverlay: View {
     }
 }
 
-/// Font look for a whole screen tree.
-/// `mono`: monospaced (Terminal, iOS 16.1+). `arcade`: the bundled pixel font (Retro, see RetroFonts.swift) for
-/// every text that doesn't set its own font; texts that do (.font(.caption) and so on) are covered by
-/// RetroFontStyles.swift.
+/// Monospaced font for a whole screen tree (iOS 16.1 and later; older versions keep the normal font)
 struct ThemeFont: ViewModifier {
     let mono: Bool
-    var arcade = false
-
     func body(content: Content) -> some View {
-        if arcade {
-            content.environment(\.font, RetroFonts.body)
-        } else if #available(iOS 16.1, *) {
+        if #available(iOS 16.1, *) {
             content.fontDesign(mono ? Font.Design.monospaced : nil)
         } else {
             content
@@ -309,14 +248,8 @@ private struct ThemeCard: View {
 private struct ThemePreview: View {
     let theme: AppTheme
     private var p: Palette { theme.palette }
-
     private func mono(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
-        if theme.arcade { return RetroFonts.font(size, display: weight == .bold) }
-        return .system(size: size, weight: weight, design: theme.mono ? .monospaced : .default)
-    }
-
-    private var cardShadow: Color {
-        p.card == .terminal ? Color(hex: p.glow).opacity(0.9) : .clear
+        .system(size: size, weight: weight, design: theme.mono ? .monospaced : .default)
     }
 
     var body: some View {
@@ -325,13 +258,11 @@ private struct ThemePreview: View {
             HStack {
                 if theme.mono {
                     Text("> italeem_").font(mono(9, .bold)).foregroundColor(Color(hex: p.accent))
-                } else if theme.arcade {
-                    Text("00:00:32").font(mono(10)).foregroundColor(Color(hex: p.accent))
                 } else {
-                    SwiftUI.Capsule().fill(Color(hex: p.txt)).frame(width: 46, height: 6)
+                    Capsule().fill(Color(hex: p.txt)).frame(width: 46, height: 6)
                 }
                 Spacer()
-                SwiftUI.Circle().fill(Color(hex: p.accent)).frame(width: 8, height: 8)
+                Circle().fill(Color(hex: p.accent)).frame(width: 8, height: 8)
             }
             .padding(.horizontal, 10)
             .frame(height: 20)
@@ -339,8 +270,8 @@ private struct ThemePreview: View {
 
             // two cards
             HStack(spacing: 8) {
-                card(active: false)
-                card(active: theme.arcade)
+                card
+                card
             }
             .padding(.horizontal, 10)
 
@@ -349,43 +280,35 @@ private struct ThemePreview: View {
         .padding(.bottom, 10)
         .frame(maxWidth: .infinity)
         .background(Color(hex: p.bg))
-        .clipShape(SwiftUI.RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(SwiftUI.RoundedRectangle(cornerRadius: 10, style: .continuous)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
             .stroke(Color(hex: p.line), lineWidth: 1))
     }
 
-    /// `active`: the Retro "pressed" tile, solid yellow with dark text (like the play button in the reference)
-    private func card(active: Bool) -> some View {
+    private var card: some View {
         VStack(alignment: .leading, spacing: 6) {
             if theme.mono {
                 Text("$ cs101").font(mono(9, .bold)).foregroundColor(Color(hex: p.txt))
                 Text("> 85% ok").font(mono(8)).foregroundColor(Color(hex: p.muted))
-            } else if theme.arcade {
-                Text("CS 101").font(mono(10, .bold))
-                    .foregroundColor(Color(hex: active ? p.onAccent : p.accent))
-                Text("85% done").font(mono(9))
-                    .foregroundColor(Color(hex: active ? p.onAccent : p.muted))
             } else {
-                SwiftUI.Capsule().fill(Color(hex: p.txt)).frame(width: 52, height: 6)
-                SwiftUI.Capsule().fill(Color(hex: p.muted)).frame(width: 36, height: 5)
+                Capsule().fill(Color(hex: p.txt)).frame(width: 52, height: 6)
+                Capsule().fill(Color(hex: p.muted)).frame(width: 36, height: 5)
             }
             Spacer(minLength: 0)
-            if !theme.arcade {
-                Text("Open")
-                    .font(mono(9, .bold))
-                    .foregroundColor(Color(hex: p.onAccent))
-                    .padding(.horizontal, 8).padding(.vertical, 3)
-                    .background(Color(hex: p.accent))
-                    .clipShape(SwiftUI.Capsule())
-            }
+            Text("Open")
+                .font(mono(9, .bold))
+                .foregroundColor(Color(hex: p.onAccent))
+                .padding(.horizontal, 8).padding(.vertical, 3)
+                .background(Color(hex: p.accent))
+                .clipShape(Capsule())
         }
         .padding(8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: 70)
-        .background(Color(hex: active ? p.accent : p.surface))
-        .clipShape(SwiftUI.RoundedRectangle(cornerRadius: theme.arcade ? 12 : 8, style: .continuous))
-        .overlay(SwiftUI.RoundedRectangle(cornerRadius: theme.arcade ? 12 : 8, style: .continuous)
+        .background(Color(hex: p.surface))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
             .stroke(Color(hex: p.line), lineWidth: 1))
-        .shadow(color: cardShadow, radius: 6)
+        .shadow(color: p.card == .terminal ? Color(hex: p.glow).opacity(0.9) : .clear, radius: 6)
     }
 }
