@@ -787,6 +787,7 @@ struct AssignmentView: View {
     @State private var busy = false
     @State private var introFiles: [IntroFile] = []      // files the lecturer attached to the assignment
     @State private var showShare = false
+    @State private var sharePick: SharePick?             // submitted files being shared (picker sheet)
     /// Offline and nothing saved about this assignment yet: a basic form (text + files) is shown so it can still be queued
     @State private var limited = false
 
@@ -813,6 +814,23 @@ struct AssignmentView: View {
             }
         }
         return out
+    }
+
+    /// Submitted files the share sheet can offer
+    private var shareableFiles: [ShareItem] {
+        existingFiles.filter { $0.fileurl != nil }
+            .map { ShareItem(id: $0.id, name: $0.filename ?? "File", url: $0.fileurl) }
+    }
+
+    /// Opens the same picker as the lecturer's attachments, with the tapped file ticked (the others can be added)
+    private func shareSubmitted(_ f: FileRef) {
+        sharePick = SharePick(items: shareableFiles, selected: [f.id])
+    }
+
+    private func shareButton(_ f: FileRef) -> some View {
+        Button { shareSubmitted(f) } label: { ShareButtonLabel(size: 36) }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Share submitted files")
     }
 
     private var subStatus: String { status?.lastattempt?.submission?.status ?? "" }
@@ -975,6 +993,7 @@ struct AssignmentView: View {
         } message: {
             Text("Your submitted files and text will be deleted. You can submit again while the assignment is still open.")
         }
+        .sheet(item: $sharePick) { SharePickerSheet(items: $0.items, preselected: $0.selected) }
     }
 
     @ViewBuilder private var fileSection: some View {
@@ -1049,14 +1068,17 @@ struct AssignmentView: View {
     // Read-only file row (locked submissions)
     @ViewBuilder private func fileLink(_ f: FileRef) -> some View {
         if let s = f.fileurl, let u = MoodleAPI.shared.fileURL(s) {
-            NavigationLink { FileViewer(url: u, title: f.filename ?? "File") } label: {
-                HStack {
-                    Image(systemName: "doc").foregroundColor(Theme.accent)
-                    Text(f.filename ?? "File").foregroundColor(Theme.txt).lineLimit(1)
-                    Spacer()
+            HStack(spacing: 12) {
+                NavigationLink { FileViewer(url: u, title: f.filename ?? "File") } label: {
+                    HStack {
+                        Image(systemName: "doc").foregroundColor(Theme.accent)
+                        Text(f.filename ?? "File").foregroundColor(Theme.txt).lineLimit(1)
+                        Spacer()
+                    }
                 }
+                .buttonStyle(.plain)
+                shareButton(f)
             }
-            .buttonStyle(.plain)
         }
     }
 
@@ -1080,6 +1102,7 @@ struct AssignmentView: View {
                     Spacer()
                 }
             }
+            if !removed && f.fileurl != nil { shareButton(f) }
             Button {
                 if removed { removedFiles.remove(f.id) } else { removedFiles.insert(f.id) }
             } label: {
@@ -1262,15 +1285,34 @@ enum Sharer {
     }
 }
 
+/// One file the picker can share (the lecturer's attachments or the student's submitted files)
+struct ShareItem: Identifiable, Hashable {
+    let id: String
+    let name: String
+    let url: String?
+}
+
+/// Submitted files offered in the picker, and which of them start ticked
+struct SharePick: Identifiable {
+    let id = UUID()
+    let items: [ShareItem]
+    let selected: Set<String>
+}
+
 struct SharePickerSheet: View {
-    let files: [IntroFile]
+    let files: [ShareItem]
     @State private var selected: Set<String>
     @State private var busy = false
     @State private var error: String?
 
+    init(items: [ShareItem], preselected: Set<String>? = nil) {
+        self.files = items
+        _selected = State(initialValue: preselected ?? Set(items.map { $0.id }))
+    }
+
+    /// The lecturer's attached files, all ticked
     init(files: [IntroFile]) {
-        self.files = files
-        _selected = State(initialValue: Set(files.map { $0.id }))
+        self.init(items: files.map { ShareItem(id: $0.id, name: $0.filename ?? "File", url: $0.fileurl) })
     }
 
     private var allSelected: Bool { selected.count == files.count }
@@ -1306,7 +1348,7 @@ struct SharePickerSheet: View {
                             HStack(spacing: 12) {
                                 Image(systemName: selected.contains(f.id) ? "checkmark.circle.fill" : "circle")
                                     .foregroundColor(selected.contains(f.id) ? Theme.accent : Theme.muted)
-                                Text(f.filename ?? "File").foregroundColor(Theme.txt).lineLimit(2)
+                                Text(f.name).foregroundColor(Theme.txt).lineLimit(2)
                                 Spacer(minLength: 0)
                             }
                             .padding(14).contentShape(Rectangle())
@@ -1345,11 +1387,11 @@ struct SharePickerSheet: View {
         do {
             var urls: [URL] = []
             for f in files where selected.contains(f.id) {
-                guard let s = f.fileurl, let u = MoodleAPI.shared.fileURL(s) else { continue }
+                guard let s = f.url, let u = MoodleAPI.shared.fileURL(s) else { continue }
                 let (d, _) = try await URLSession.shared.data(from: u)
                 let dir = FileManager.default.temporaryDirectory.appendingPathComponent("share-" + UUID().uuidString)
                 try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-                let dest = dir.appendingPathComponent(f.filename ?? "file")
+                let dest = dir.appendingPathComponent(f.name)
                 try d.write(to: dest)
                 urls.append(dest)
             }
