@@ -47,7 +47,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
     /// Arcade headings: the pixel font (when bundled, see PixelFont) with a hard block shadow
     var pixelHeadings: Bool { self == .retro }
 
-    /// Western wood-type headings (Rye) with a soft dark shadow
+    /// Red Dead headings: stencil caps (Black Ops One) and condensed caps (Bebas Neue)
     var westernHeadings: Bool { self == .redDead }
 
     /// Aged-photograph vignette and film grain over the whole app
