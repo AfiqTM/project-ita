@@ -5,12 +5,12 @@ import UIKit
 // Themes.swift lists the themes the user can pick; each one needs a palette here.
 struct Palette {
     /// How cards are lifted off the page: a soft glow (dark), a drop shadow + outline (light),
-    /// a glow + outline like a terminal window, or a chunky outline + hard offset shadow like an arcade game
-    enum Card { case glow, soft, terminal, pixel }
+    /// a glow + outline like a terminal window, or a flat tile with a thin outline and no shadow (Retro)
+    enum Card { case glow, soft, terminal, tile }
 
     let bg, surface, surface2, titleBar, line, txt, muted, accent, onAccent: UInt32
     let green, red, amber, blue: UInt32     // status colours (present / absent / late / info)
-    let glow: UInt32                        // colour of the glow behind cards (the hard shadow for .pixel)
+    let glow: UInt32                        // colour of the glow behind cards (unused by flat .tile cards)
     let card: Card
 
     static let dark = Palette(bg: 0x000000, surface: 0x060606, surface2: 0x0b0b0b, titleBar: 0x0a0a0a,
@@ -34,14 +34,14 @@ struct Palette {
                                   green: 0x39FF6E, red: 0xFF5C5C, amber: 0xFFC83D, blue: 0x4FB3FF,
                                   glow: 0x0C3D20, card: .terminal)
 
-    // Retro arcade: midnight purple page, cream text, arcade-yellow accent, purple outlines and a hard
-    // offset shadow under every card. Status colours are bright "game" colours; amber is orange so it
-    // stays different from the yellow accent.
-    static let retro = Palette(bg: 0x0B0A1A, surface: 0x15122B, surface2: 0x1F1A40, titleBar: 0x110E26,
-                               line: 0x3B3580, txt: 0xFFF3C4, muted: 0x9E96D0, accent: 0xFFD60A,
-                               onAccent: 0x1A1300,
-                               green: 0x3DFF8B, red: 0xFF4D5E, amber: 0xFF9F1C, blue: 0x38BDF8,
-                               glow: 0x2A2466, card: .pixel)
+    // Retro: pure black with arcade-yellow, like a pixel-art music widget. Cards are flat dark-olive tiles
+    // with a thin olive outline (no glow, no shadow); the accent is a bright pixel yellow with black text on it;
+    // body text is warm white and secondary text a dull grey, like the greyed icons in the reference.
+    static let retro = Palette(bg: 0x000000, surface: 0x151400, surface2: 0x211F03, titleBar: 0x0D0C00,
+                               line: 0x3A3705, txt: 0xF5F2DC, muted: 0x8C8A78, accent: 0xF4E52C,
+                               onAccent: 0x000000,
+                               green: 0x6CF28B, red: 0xFF5A4D, amber: 0xFFA31A, blue: 0x5CC8FF,
+                               glow: 0x000000, card: .tile)
 }
 
 // Every colour reads from the palette of the chosen theme (Themes.swift). Screens pick the new colours up
@@ -66,11 +66,6 @@ enum Theme {
     static var uiAccent: UIColor   { UIColor(hex: p.accent) }
     static var uiOnAccent: UIColor { UIColor(hex: p.onAccent) }
 
-    /// Corner radius for cards: the Retro theme uses small, square-ish corners
-    static func cardRadius(_ r: CGFloat) -> CGFloat {
-        ThemeStore.shared.palette.card == .pixel ? min(r, 4) : r
-    }
-
     /// A UIKit font for the nav bar / tab bar in the theme's font style (nil = keep the normal system font)
     static func uiFont(_ size: CGFloat, _ weight: UIFont.Weight, style: AppTheme.FontStyle) -> UIFont? {
         switch style {
@@ -79,7 +74,8 @@ enum Theme {
         case .mono:
             return UIFont.monospacedSystemFont(ofSize: size, weight: weight)
         case .arcade:
-            // the system font at its wide ("expanded") width, in a heavy weight
+            // the pixel display font (Fonts/Silkscreen-Regular.ttf); if it isn't bundled, the system font at its wide width
+            if let f = UIFont(name: RetroFonts.displayName, size: size) { return f }
             let base = UIFont.systemFont(ofSize: size, weight: weight)
             let traits: [UIFontDescriptor.TraitKey: Any] = [.weight: weight.rawValue, .width: 0.4]
             let desc = base.fontDescriptor.addingAttributes([.traits: traits])
@@ -97,11 +93,11 @@ enum Theme {
         let nav = UINavigationBarAppearance()
         nav.configureWithOpaqueBackground()
         nav.backgroundColor = uiBg
-        nav.shadowColor = arcade ? UIColor(hex: p.line) : .clear   // Retro: a pixel divider under the bar
+        nav.shadowColor = arcade ? UIColor(hex: p.line) : .clear   // Retro: a thin olive divider under the bar
         var title: [NSAttributedString.Key: Any] = [.foregroundColor: arcade ? uiAccent : uiTxt]
         var large: [NSAttributedString.Key: Any] = [.foregroundColor: arcade ? uiAccent : uiTxt]
-        if let f = uiFont(arcade ? 15 : 17, arcade ? .heavy : .semibold, style: style) { title[.font] = f }
-        if let f = uiFont(arcade ? 26 : 34, arcade ? .black : .bold, style: style) { large[.font] = f }
+        if let f = uiFont(arcade ? 14 : 17, arcade ? .heavy : .semibold, style: style) { title[.font] = f }
+        if let f = uiFont(arcade ? 24 : 34, arcade ? .black : .bold, style: style) { large[.font] = f }
         if style == .mono {
             let glow = NSShadow()
             glow.shadowColor = uiAccent.withAlphaComponent(0.6)
@@ -158,7 +154,7 @@ extension UIColor {
 // Card background. Dark: soft glow (the 10/30/64px rgba(28,28,28) shadows from the userscript).
 // Light: a gentle drop shadow and a thin outline, since a glow doesn't show on a light page.
 // Terminal: a green glow and a thin green outline, like a terminal window.
-// Retro: a 2pt outline, small corners and a hard, un-blurred shadow offset down and right, like a pixel box.
+// Retro: a flat dark tile with a thin outline and no shadow, like the tiles of a pixel-art widget.
 struct GlowCard: ViewModifier {
     var radius: CGFloat = 14
     @ObservedObject private var themes = ThemeStore.shared
@@ -166,20 +162,18 @@ struct GlowCard: ViewModifier {
         // One fixed structure (only the values change), so switching theme never rebuilds what is inside the card
         let p = themes.theme.palette
         let soft = p.card == .soft
-        let pixel = p.card == .pixel
-        let shape = RoundedRectangle(cornerRadius: pixel ? min(radius, 4) : radius, style: .continuous)
+        let tile = p.card == .tile
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
         let g = Color(hex: p.glow)
         return content
             .background(Color(hex: p.surface))
             .clipShape(shape)
-            .overlay(shape.stroke(Color(hex: p.line), lineWidth: p.card == .glow ? 0 : (pixel ? 2 : 1)))
-            .shadow(color: pixel ? g : (soft ? Color.black.opacity(0.06) : g.opacity(0.85)),
-                    radius: pixel ? 0 : (soft ? 6 : 5),
-                    x: pixel ? 4 : 0,
-                    y: pixel ? 4 : (soft ? 2 : 0))
-            .shadow(color: pixel ? Color.clear : (soft ? Color.black.opacity(0.04) : g.opacity(0.5)),
+            .overlay(shape.stroke(Color(hex: p.line), lineWidth: p.card == .glow ? 0 : 1))
+            .shadow(color: tile ? Color.clear : (soft ? Color.black.opacity(0.06) : g.opacity(0.85)),
+                    radius: soft ? 6 : 5, y: soft ? 2 : 0)
+            .shadow(color: tile ? Color.clear : (soft ? Color.black.opacity(0.04) : g.opacity(0.5)),
                     radius: soft ? 18 : 15, y: soft ? 6 : 0)
-            .shadow(color: (soft || pixel) ? Color.clear : g.opacity(0.25), radius: 32)
+            .shadow(color: (soft || tile) ? Color.clear : g.opacity(0.25), radius: 32)
     }
 }
 extension View {
@@ -233,70 +227,6 @@ func fmt(_ ts: Int?, time: Bool = true) -> String {
     f.dateStyle = .medium
     f.timeStyle = time ? .short : .none
     return f.string(from: Date(timeIntervalSince1970: TimeInterval(ts)))
-}
-
-// MARK: - Theme-aware shapes
-//
-// These three types have the same names as SwiftUI's, so every `Capsule()`, `RoundedRectangle(cornerRadius:)`
-// and `Circle()` in the app uses them automatically (a type declared in the app wins over an imported one).
-// In every theme except Retro they draw exactly what SwiftUI's would. In Retro they draw small square-ish
-// corners, so buttons, chips, badges, search bars and avatars all get the blocky pixel look.
-// To get SwiftUI's own shape regardless of theme (the theme previews do), write `SwiftUI.Capsule()` etc.
-
-private var pixelShapes: Bool { ThemeStore.shared.palette.card == .pixel }
-
-struct Capsule: InsettableShape {
-    var style: RoundedCornerStyle
-    var inset: CGFloat = 0
-    init(style: RoundedCornerStyle = .continuous) { self.style = style }
-
-    func path(in rect: CGRect) -> Path {
-        let r = rect.insetBy(dx: inset, dy: inset)
-        if pixelShapes { return Path(roundedRect: r, cornerRadius: 2, style: style) }
-        return SwiftUI.Capsule(style: style).path(in: r)
-    }
-    func inset(by amount: CGFloat) -> Capsule {
-        var c = self
-        c.inset += amount
-        return c
-    }
-}
-
-struct RoundedRectangle: InsettableShape {
-    var cornerRadius: CGFloat
-    var style: RoundedCornerStyle
-    var inset: CGFloat = 0
-    init(cornerRadius: CGFloat, style: RoundedCornerStyle = .circular) {
-        self.cornerRadius = cornerRadius
-        self.style = style
-    }
-
-    func path(in rect: CGRect) -> Path {
-        let r = rect.insetBy(dx: inset, dy: inset)
-        let radius = pixelShapes ? min(cornerRadius, 3) : cornerRadius
-        return Path(roundedRect: r, cornerRadius: max(radius - inset, 0), style: style)
-    }
-    func inset(by amount: CGFloat) -> RoundedRectangle {
-        var s = self
-        s.inset += amount
-        return s
-    }
-}
-
-struct Circle: InsettableShape {
-    var inset: CGFloat = 0
-    init() {}
-
-    func path(in rect: CGRect) -> Path {
-        let r = rect.insetBy(dx: inset, dy: inset)
-        if pixelShapes { return Path(roundedRect: r, cornerRadius: 2, style: .continuous) }
-        return SwiftUI.Circle().path(in: r)
-    }
-    func inset(by amount: CGFloat) -> Circle {
-        var c = self
-        c.inset += amount
-        return c
-    }
 }
 
 // Dark CSS injected into every page shown in the in-app web view
