@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import CoreText
 
 // MARK: - Themes (Others > Themes)
 //
@@ -12,7 +13,7 @@ import UIKit
 // happens and then faded out.
 
 enum AppTheme: String, CaseIterable, Identifiable {
-    case dark, light, terminal
+    case dark, light, terminal, retro
 
     var id: String { rawValue }
 
@@ -21,6 +22,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
         case .dark: return "Dark"
         case .light: return "Light"
         case .terminal: return "Terminal"
+        case .retro: return "Retro"
         }
     }
 
@@ -29,6 +31,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
         case .dark: return "True black with the tan accent. Easy on the eyes at night."
         case .light: return "Warm off-white with a deeper tan accent. Easier to read in bright light."
         case .terminal: return "Terminal look: near-black, neon green, a monospaced font and a green glow."
+        case .retro: return "Old-school arcade: black and olive tiles, yellow accent, hard pixel edges and a pixel-style font."
         }
     }
 
@@ -36,13 +39,17 @@ enum AppTheme: String, CaseIterable, Identifiable {
     var scheme: ColorScheme { self == .light ? .light : .dark }
 
     /// Monospaced font everywhere
-    var mono: Bool { self == .terminal }
+    var mono: Bool { self == .terminal || self == .retro }
+
+    /// Arcade headings: the pixel font (when bundled, see PixelFont) with a hard block shadow
+    var pixelHeadings: Bool { self == .retro }
 
     var palette: Palette {
         switch self {
         case .dark: return .dark
         case .light: return .light
         case .terminal: return .terminal
+        case .retro: return .retro
         }
     }
 
@@ -66,6 +73,9 @@ enum AppTheme: String, CaseIterable, Identifiable {
         case .terminal:
             return [(0x03120A, 0x0B3A1C), (0x021512, 0x0A3A35), (0x0A1204, 0x2A3F0A),
                     (0x041208, 0x0F4A24), (0x02130F, 0x0C4040), (0x0A1005, 0x1E3A12)]
+        case .retro:
+            return [(0x0E0D00, 0x2B2700), (0x0A0A0A, 0x2A2A18), (0x140A00, 0x3D2600),
+                    (0x081000, 0x24330A), (0x100012, 0x2E1A36), (0x00101A, 0x0A2E44)]
         }
     }
 
@@ -75,17 +85,55 @@ enum AppTheme: String, CaseIterable, Identifiable {
         case .dark: return -0.2
         case .light: return 0
         case .terminal: return -0.25
+        case .retro: return -0.15
         }
     }
-    var coverSaturation: Double { self == .terminal ? 0.6 : 1 }
-    /// Terminal: photos get a green monitor tint
-    var coverTint: UInt32? { self == .terminal ? 0x1FBF55 : nil }
+    var coverSaturation: Double {
+        switch self {
+        case .terminal: return 0.6
+        case .retro: return 0.9
+        default: return 1
+        }
+    }
+    /// Terminal: photos get a green monitor tint. Retro: a yellow one, like a two-colour game screen.
+    var coverTint: UInt32? {
+        switch self {
+        case .terminal: return 0x1FBF55
+        case .retro: return 0xFFE628
+        default: return nil
+        }
+    }
     /// The star on a cover sits on a dark circle, so it needs a bright accent in every theme
-    var onCoverAccent: UInt32 { self == .terminal ? Palette.terminal.accent : Palette.dark.accent }
+    var onCoverAccent: UInt32 {
+        switch self {
+        case .terminal: return Palette.terminal.accent
+        case .retro: return Palette.retro.accent
+        default: return Palette.dark.accent
+        }
+    }
+
+    // MARK: Preview card (Themes screen)
+
+    /// Text in the preview's title bar, for themes that look like text (nil = a plain bar)
+    var previewTitle: String? {
+        switch self {
+        case .terminal: return "> italeem_"
+        case .retro: return "ITA'LEEM  1UP"
+        default: return nil
+        }
+    }
+    /// Two lines in the preview's cards (nil = plain bars)
+    var previewLines: (String, String)? {
+        switch self {
+        case .terminal: return ("$ cs101", "> 85% ok")
+        case .retro: return ("CS101", "SCORE 85")
+        default: return nil
+        }
+    }
 }
 
 /// The home-screen icon that goes with each theme. Each one is an alternate icon set in the asset catalog
-/// (Assets.xcassets/AppIcon-Dark, AppIcon-Light, AppIcon-Terminal) and listed in project.yml under
+/// (Assets.xcassets/AppIcon-Dark, AppIcon-Light, AppIcon-Terminal, AppIcon-Retro) and listed in project.yml under
 /// ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES.
 /// iOS shows its own "You have changed the icon" notice every time the icon changes; apps can't hide it.
 enum AppIcon {
@@ -94,6 +142,7 @@ enum AppIcon {
         case .dark: return "AppIcon-Dark"
         case .light: return "AppIcon-Light"
         case .terminal: return "AppIcon-Terminal"
+        case .retro: return "AppIcon-Retro"
         }
     }
 
@@ -155,6 +204,41 @@ final class ThemeStore: ObservableObject {
             }
         }
     }
+}
+
+/// The pixel font of the Retro theme: Press Start 2P (free, SIL Open Font License) from Google Fonts.
+/// Put `PressStart2P-Regular.ttf` into the Sources folder and rebuild; it is registered at launch. Without
+/// the file nothing breaks: Retro headings then use a heavy monospaced font instead.
+enum PixelFont {
+    static let name = "PressStart2P-Regular"
+
+    static func register() {
+        guard let url = Bundle.main.url(forResource: name, withExtension: "ttf") else { return }
+        CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+    }
+
+    static var available: Bool { UIFont(name: name, size: 10) != nil }
+}
+
+/// Arcade heading: the pixel font (or a heavy monospaced one) plus a hard block shadow. Retro only; in the
+/// other themes this changes nothing, so the text keeps whatever font it already had.
+struct PixelHeading: ViewModifier {
+    var size: CGFloat
+    @ObservedObject private var themes = ThemeStore.shared
+    func body(content: Content) -> some View {
+        if themes.theme.pixelHeadings {
+            content
+                .font(PixelFont.available
+                      ? Font.custom(PixelFont.name, size: size)
+                      : Font.system(size: size + 3, weight: .heavy, design: .monospaced))
+                .shadow(color: Color(hex: themes.palette.glow), radius: 0, x: 2, y: 2)
+        } else {
+            content
+        }
+    }
+}
+extension View {
+    func pixelHeading(_ size: CGFloat = 12) -> some View { modifier(PixelHeading(size: size)) }
 }
 
 /// A soft glow in the theme's accent colour behind text or an icon. Only the Terminal theme has it; in the
@@ -249,7 +333,7 @@ private struct ThemeCard: View {
 
             HStack(spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(theme.name).foregroundColor(Theme.txt).fontWeight(.semibold).textGlow(radius: 3)
+                    Text(theme.name).foregroundColor(Theme.txt).fontWeight(.semibold).textGlow(radius: 3).pixelHeading(10)
                     Text(theme.detail).font(.caption).foregroundColor(Theme.muted)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -263,7 +347,7 @@ private struct ThemeCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .glowCard()
         .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: Theme.cardRadius(14), style: .continuous)
                 .stroke(Theme.accent, lineWidth: selected ? 2 : 0)
         )
         .contentShape(Rectangle())
@@ -275,6 +359,7 @@ private struct ThemeCard: View {
 private struct ThemePreview: View {
     let theme: AppTheme
     private var p: Palette { theme.palette }
+    private var pixel: Bool { p.card == .pixel }
     private func mono(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
         .system(size: size, weight: weight, design: theme.mono ? .monospaced : .default)
     }
@@ -283,8 +368,8 @@ private struct ThemePreview: View {
         VStack(spacing: 8) {
             // title bar
             HStack {
-                if theme.mono {
-                    Text("> italeem_").font(mono(9, .bold)).foregroundColor(Color(hex: p.accent))
+                if let t = theme.previewTitle {
+                    Text(t).font(mono(9, .bold)).foregroundColor(Color(hex: p.accent))
                 } else {
                     Capsule().fill(Color(hex: p.txt)).frame(width: 46, height: 6)
                 }
@@ -314,9 +399,9 @@ private struct ThemePreview: View {
 
     private var card: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if theme.mono {
-                Text("$ cs101").font(mono(9, .bold)).foregroundColor(Color(hex: p.txt))
-                Text("> 85% ok").font(mono(8)).foregroundColor(Color(hex: p.muted))
+            if let l = theme.previewLines {
+                Text(l.0).font(mono(9, .bold)).foregroundColor(Color(hex: p.txt))
+                Text(l.1).font(mono(8)).foregroundColor(Color(hex: p.muted))
             } else {
                 Capsule().fill(Color(hex: p.txt)).frame(width: 52, height: 6)
                 Capsule().fill(Color(hex: p.muted)).frame(width: 36, height: 5)
@@ -333,9 +418,10 @@ private struct ThemePreview: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: 70)
         .background(Color(hex: p.surface))
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
-            .stroke(Color(hex: p.line), lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: pixel ? 2 : 8, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: pixel ? 2 : 8, style: .continuous)
+            .stroke(Color(hex: p.line), lineWidth: pixel ? 2 : 1))
         .shadow(color: p.card == .terminal ? Color(hex: p.glow).opacity(0.9) : .clear, radius: 6)
+        .shadow(color: pixel ? Color(hex: p.glow) : .clear, radius: 0, x: 2, y: 2)
     }
 }

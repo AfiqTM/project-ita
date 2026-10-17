@@ -33,9 +33,10 @@ Native client for iTa'leem (IIUM Moodle) using Moodle's mobile web-service API, 
 - Sync with the iTa'leem userscript through one file in your Google Drive (`iTaleem-sync.json`): to-dos, CAMS marks, pins and saved files merge both ways, newest change wins
 
 ### Themes
-- Others > Themes: pick the look of the app (Dark, Light, Terminal); the whole app cross-fades to the new theme straight away, you stay on the same tab and screen, and the choice is remembered
+- Others > Themes: pick the look of the app (Dark, Light, Terminal, Retro); the whole app cross-fades to the new theme straight away, you stay on the same tab and screen, and the choice is remembered
 - The home-screen icon follows the theme (Dark, Light and Terminal each have their own). iOS shows its own "You have changed the icon" notice when it changes; apps can't hide it
 - Terminal: near-black with a green tint, neon green accent, monospaced font, a green glow around cards and prominent text, faint CRT scanlines over the app (off when Reduce Transparency is on) and green-tinted course covers
+- Retro: old arcade look. Black with dark olive tiles, yellow accent, almost square cards with a thick outline and a hard offset block shadow, monospaced font, yellow-tinted course covers and a pixel-art yellow app icon. Optional pixel font: download Press Start 2P (free, SIL Open Font License, on Google Fonts), put `PressStart2P-Regular.ttf` in `Sources/` and rebuild; headings and navigation titles then use it, otherwise they use a heavy monospaced font
 - Course covers follow the theme: bright pastel default covers and undimmed photos in Light, dimmed photos in the dark themes
 - Each theme is a `Palette` in `Theme.swift` plus an entry in `Themes.swift`, and an icon set in `Sources/Assets.xcassets` (`AppIcon-<Name>`, listed in `project.yml`)
 

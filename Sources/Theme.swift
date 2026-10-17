@@ -5,8 +5,8 @@ import UIKit
 // Themes.swift lists the themes the user can pick; each one needs a palette here.
 struct Palette {
     /// How cards are lifted off the page: a soft glow (dark), a drop shadow + outline (light),
-    /// or a glow + outline like a terminal window
-    enum Card { case glow, soft, terminal }
+    /// a glow + outline like a terminal window, or hard pixel edges with an offset block shadow (8-bit)
+    enum Card { case glow, soft, terminal, pixel }
 
     let bg, surface, surface2, titleBar, line, txt, muted, accent, onAccent: UInt32
     let green, red, amber, blue: UInt32     // status colours (present / absent / late / info)
@@ -33,6 +33,14 @@ struct Palette {
                                   onAccent: 0x02140A,
                                   green: 0x39FF6E, red: 0xFF5C5C, amber: 0xFFC83D, blue: 0x4FB3FF,
                                   glow: 0x0C3D20, card: .terminal)
+
+    // Old arcade: black with dark olive tiles, warm white text, yellow accent. Hard dim-yellow outlines and an
+    // offset block shadow instead of a glow (card: .pixel).
+    static let retro = Palette(bg: 0x000000, surface: 0x0E0D00, surface2: 0x1A1800, titleBar: 0x141200,
+                               line: 0x5A5100, txt: 0xF3EEC4, muted: 0x9B9560, accent: 0xFFE628,
+                               onAccent: 0x000000,
+                               green: 0x7CFF6B, red: 0xFF5A4F, amber: 0xFFA928, blue: 0x58B4FF,
+                               glow: 0x4A4300, card: .pixel)
 }
 
 // Every colour reads from the palette of the chosen theme (Themes.swift). Screens pick the new colours up
@@ -57,10 +65,14 @@ enum Theme {
     static var uiAccent: UIColor   { UIColor(hex: p.accent) }
     static var uiOnAccent: UIColor { UIColor(hex: p.onAccent) }
 
+    /// Corner radius for cards: the Retro theme has (almost) square, pixel-like corners
+    static func cardRadius(_ r: CGFloat) -> CGFloat { p.card == .pixel ? min(r, 3) : r }
+
     /// Navigation bar, tab bar and tab badges. Bars that already exist keep the old look, so call this
     /// before the screens are rebuilt for a new theme (ThemeStore.select does).
     static func applyAppearance() {
-        let mono = ThemeStore.shared.theme.mono
+        let theme = ThemeStore.shared.theme
+        let mono = theme.mono
 
         let nav = UINavigationBarAppearance()
         nav.configureWithOpaqueBackground()
@@ -71,12 +83,24 @@ enum Theme {
         if mono {
             title[.font] = UIFont.monospacedSystemFont(ofSize: 17, weight: .semibold)
             large[.font] = UIFont.monospacedSystemFont(ofSize: 34, weight: .bold)
-            let glow = NSShadow()
-            glow.shadowColor = uiAccent.withAlphaComponent(0.6)
-            glow.shadowBlurRadius = 6
-            glow.shadowOffset = .zero
-            title[.shadow] = glow
-            large[.shadow] = glow
+            if theme.glowsText {
+                let glow = NSShadow()
+                glow.shadowColor = uiAccent.withAlphaComponent(0.6)
+                glow.shadowBlurRadius = 6
+                glow.shadowOffset = .zero
+                title[.shadow] = glow
+                large[.shadow] = glow
+            } else if theme.pixelHeadings {
+                // arcade title: hard block shadow, and the pixel font when it is bundled
+                let hard = NSShadow()
+                hard.shadowColor = UIColor(hex: p.glow)
+                hard.shadowBlurRadius = 0
+                hard.shadowOffset = CGSize(width: 2, height: 2)
+                title[.shadow] = hard
+                large[.shadow] = hard
+                if let f = UIFont(name: PixelFont.name, size: 10) { title[.font] = f }
+                if let f = UIFont(name: PixelFont.name, size: 18) { large[.font] = f }
+            }
         }
         nav.titleTextAttributes = title
         nav.largeTitleTextAttributes = large
@@ -127,22 +151,33 @@ extension UIColor {
 // Card background. Dark: soft glow (the 10/30/64px rgba(28,28,28) shadows from the userscript).
 // Light: a gentle drop shadow and a thin outline, since a glow doesn't show on a light page.
 // Terminal: a green glow and a thin green outline, like a terminal window.
+// Retro: almost square corners, a thick outline and a hard offset block shadow, like an 8-bit window.
 struct GlowCard: ViewModifier {
     var radius: CGFloat = 14
     @ObservedObject private var themes = ThemeStore.shared
     func body(content: Content) -> some View {
         // One fixed structure (only the values change), so switching theme never rebuilds what is inside the card
         let p = themes.theme.palette
-        let soft = p.card == .soft
-        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+        let pixel = p.card == .pixel
+        let shape = RoundedRectangle(cornerRadius: pixel ? min(radius, 3) : radius, style: .continuous)
         let g = Color(hex: p.glow)
+        // three shadow layers: colour, blur, x offset, y offset
+        let layers: [(Color, CGFloat, CGFloat, CGFloat)]
+        switch p.card {
+        case .glow, .terminal:
+            layers = [(g.opacity(0.85), 5, 0, 0), (g.opacity(0.5), 15, 0, 0), (g.opacity(0.25), 32, 0, 0)]
+        case .soft:
+            layers = [(Color.black.opacity(0.06), 6, 0, 2), (Color.black.opacity(0.04), 18, 0, 6), (Color.clear, 0, 0, 0)]
+        case .pixel:
+            layers = [(g, 0, 3, 3), (Color.clear, 0, 0, 0), (Color.clear, 0, 0, 0)]
+        }
         return content
             .background(Color(hex: p.surface))
             .clipShape(shape)
-            .overlay(shape.stroke(Color(hex: p.line), lineWidth: p.card == .glow ? 0 : 1))
-            .shadow(color: soft ? Color.black.opacity(0.06) : g.opacity(0.85), radius: soft ? 6 : 5, y: soft ? 2 : 0)
-            .shadow(color: soft ? Color.black.opacity(0.04) : g.opacity(0.5), radius: soft ? 18 : 15, y: soft ? 6 : 0)
-            .shadow(color: soft ? Color.clear : g.opacity(0.25), radius: 32)
+            .overlay(shape.stroke(Color(hex: p.line), lineWidth: p.card == .glow ? 0 : (pixel ? 2 : 1)))
+            .shadow(color: layers[0].0, radius: layers[0].1, x: layers[0].2, y: layers[0].3)
+            .shadow(color: layers[1].0, radius: layers[1].1, x: layers[1].2, y: layers[1].3)
+            .shadow(color: layers[2].0, radius: layers[2].1, x: layers[2].2, y: layers[2].3)
     }
 }
 extension View {
