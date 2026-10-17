@@ -228,7 +228,7 @@ struct AssignmentsTabView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                Text("Assignments").foregroundColor(Theme.txt).textGlow(radius: 4).pixelHeading(16, normal: .title3.weight(.semibold), pt: 20)
+                Text("Assignments").foregroundColor(Theme.txt).textGlow(radius: 4).rocksHeading(16, normal: .title3.weight(.semibold), pt: 20)
                 filterBar
                 rangeBar
                 if let error = model.error { Text(error).font(Theme.font(.footnote)).foregroundColor(Theme.muted) }
@@ -268,6 +268,7 @@ struct AssignmentsTabView: View {
                             Text(f.rawValue)
                                 .fontWeight(model.filter == f ? .semibold : .regular)
                                 .foregroundColor(model.filter == f ? Theme.accent : Theme.txt)
+                                .rocks(17)
                             let n = model.count(f)
                             if (f == .todo || f == .overdue) && n > 0 {
                                 Text("\(n)")

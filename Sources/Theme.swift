@@ -127,8 +127,9 @@ enum Theme {
         }
         if theme.westernHeadings {
             // the game's lettering, a little bigger than the system sizes (17 / 34) since the letters are narrow
-            if let f = UIFont(name: WesternFont.name, size: 26) { title[.font] = f }
-            if let f = UIFont(name: WesternFont.name, size: 44) { large[.font] = f }
+            // Chinese Rocks Rg, with a little letter spacing
+            if let f = RocksFont.ui(28) ?? UIFont(name: WesternFont.name, size: 26) { title[.font] = f; title[.kern] = 1.2 }
+            if let f = RocksFont.ui(46) ?? UIFont(name: WesternFont.name, size: 44) { large[.font] = f; large[.kern] = 1.6 }
         }
         nav.titleTextAttributes = title
         nav.largeTitleTextAttributes = large
@@ -168,10 +169,12 @@ enum Theme {
             barButton.setTitleTextAttributes(nil, for: .normal)
             barButton.setTitleTextAttributes(nil, for: .highlighted)
         }
-        if theme.westernHeadings, let f = UIFont(name: WesternFont.name, size: 15) {
+        if theme.westernHeadings, let f = RocksFont.ui(15) ?? UIFont(name: WesternFont.name, size: 15) {
+            // tab bar labels: Chinese Rocks Rg; the kern keeps the narrow capitals from touching and
+            // "Assignments" still fits its slot (about 71 pt wide at this size)
             for item in [tab.stackedLayoutAppearance, tab.inlineLayoutAppearance, tab.compactInlineLayoutAppearance] {
-                item.normal.titleTextAttributes = [.font: f, .foregroundColor: UIColor(hex: p.muted)]
-                item.selected.titleTextAttributes = [.font: f, .foregroundColor: uiAccent]
+                item.normal.titleTextAttributes = [.font: f, .kern: 0.5, .foregroundColor: UIColor(hex: p.muted)]
+                item.selected.titleTextAttributes = [.font: f, .kern: 0.5, .foregroundColor: uiAccent]
             }
         }
         UITabBar.appearance().standardAppearance = tab

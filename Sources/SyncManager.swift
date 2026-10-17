@@ -313,20 +313,20 @@ struct SyncStatusRow: View {
     var body: some View {
         HStack(spacing: 14) {
             Image(systemName: "arrow.triangle.2.circlepath").foregroundColor(Theme.accent).frame(width: 26)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Sync with website").foregroundColor(Theme.txt).fontWeight(.semibold)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Sync with website").foregroundColor(Theme.txt).fontWeight(.semibold).rocks(18)
                 Text(text).font(Theme.font(.caption)).foregroundColor(Theme.muted).lineLimit(2)
             }
             Spacer()
             switch sync.state {
             case .needsPermission, .needsSignIn:
                 Button(sync.state == .needsSignIn ? "Connect" : "Allow") { auth.signIn() }
-                    .font(Theme.font(.subheadline).weight(.semibold)).foregroundColor(Theme.accent)
+                    .rocks(17, normal: Theme.font(.subheadline).weight(.semibold)).foregroundColor(Theme.accent)
             case .syncing:
                 ProgressView().tint(Theme.accent)
             default:
                 Button("Sync now") { sync.syncNow(force: true) }
-                    .font(Theme.font(.subheadline).weight(.semibold)).foregroundColor(Theme.accent)
+                    .rocks(17, normal: Theme.font(.subheadline).weight(.semibold)).foregroundColor(Theme.accent)
             }
         }
         .padding(14)

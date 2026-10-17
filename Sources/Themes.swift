@@ -269,6 +269,74 @@ enum WesternFont {
     static var available: Bool { UIFont(name: name, size: 12) != nil }
 }
 
+/// Chinese Rocks Rg (Fonts/ChineseRocksCaps-Regular.ttf, built by Tools/make_rocks_caps.py): all capitals, the
+/// game's lettering, letters untouched. Only "&" "(" ")" "{" "}" are redrawn (from Staatliches), the same fix as in
+/// WesternFont, because the original draws them like a plus and square brackets. The Red Dead theme uses it for
+/// headings, tab strips, the tab bar, nav bar titles and buttons; body text keeps WesternFont.
+enum RocksFont {
+    static let name = "ChineseRocksCaps-Regular"
+    /// Capitals only, so a little smaller than WesternFont's 1.2 keeps headings from looking shouty
+    static let scale: CGFloat = 1.1
+    /// Letter spacing (points) for headings; the capitals are narrow and touch at small sizes
+    static let tracking: CGFloat = 0.9
+
+    static func register() {
+        guard let url = Bundle.main.url(forResource: name, withExtension: "ttf") else { return }
+        CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+    }
+
+    static var available: Bool { UIFont(name: name, size: 12) != nil }
+
+    /// UIKit font for the nav bar / tab bar (size is the final point size, `scale` is not applied)
+    static func ui(_ size: CGFloat) -> UIFont? { UIFont(name: name, size: size) }
+}
+
+/// Chinese Rocks Rg for one piece of text in the Red Dead theme; every other theme keeps `normal` (or whatever
+/// font the text already had). Use it on the text itself, and give the other themes' font through `normal`,
+/// since a `.font` set closer to the text would win over this one.
+struct RocksText: ViewModifier {
+    var pt: CGFloat
+    var tracking: CGFloat
+    var normal: Font?
+    @ObservedObject private var themes = ThemeStore.shared
+    func body(content: Content) -> some View {
+        if themes.theme.westernHeadings && RocksFont.available {
+            content
+                .font(.custom(RocksFont.name, size: pt * RocksFont.scale))
+                .tracking(tracking)
+        } else if let normal {
+            content.font(normal)
+        } else {
+            content
+        }
+    }
+}
+
+/// Like `pixelHeading`, but Red Dead uses Chinese Rocks Rg instead of the Tavern-mixed WesternFont.
+struct RocksHeading: ViewModifier {
+    var size: CGFloat
+    var normal: Font?
+    var pt: CGFloat
+    @ObservedObject private var themes = ThemeStore.shared
+    func body(content: Content) -> some View {
+        if themes.theme.westernHeadings && RocksFont.available {
+            content
+                .font(.custom(RocksFont.name, size: pt * RocksFont.scale))
+                .tracking(RocksFont.tracking)
+        } else {
+            content.pixelHeading(size, normal: normal, pt: pt)
+        }
+    }
+}
+extension View {
+    func rocks(_ pt: CGFloat, tracking: CGFloat = RocksFont.tracking, normal: Font? = nil) -> some View {
+        modifier(RocksText(pt: pt, tracking: tracking, normal: normal))
+    }
+    func rocksHeading(_ size: CGFloat = 12, normal: Font? = nil, pt: CGFloat) -> some View {
+        modifier(RocksHeading(size: size, normal: normal, pt: pt))
+    }
+}
+
 /// Arcade heading: the bold pixel font (or a heavy monospaced one) plus a hard block shadow. Retro only; in the
 /// other themes this changes nothing, so the text keeps whatever font it already had.
 struct PixelHeading: ViewModifier {

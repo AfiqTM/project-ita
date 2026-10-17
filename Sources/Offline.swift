@@ -594,8 +594,8 @@ struct OfflineSupportRow: View {
             Button { open = true } label: {
                 HStack(spacing: 14) {
                     Image(systemName: "icloud.and.arrow.down").foregroundColor(Theme.accent).frame(width: 26)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Offline support").foregroundColor(Theme.txt).fontWeight(.semibold)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Offline support").foregroundColor(Theme.txt).fontWeight(.semibold).rocks(18)
                         Text(subtitle).font(Theme.font(.caption)).foregroundColor(Theme.muted).lineLimit(2)
                     }
                     Spacer(minLength: 0)

@@ -200,7 +200,7 @@ struct CoursesView: View {
                         Text(firstTwoNames).foregroundColor(Theme.accent).fontWeight(.semibold)
                     }
                     .textGlow()
-                    .pixelHeading(16, normal: .title3, pt: 20)
+                    .rocksHeading(16, normal: .title3, pt: 20)
                     Spacer()
                     MessagesButton()   // chat icon + unread badge (Messages.swift)
                 }
@@ -336,6 +336,7 @@ struct CoursesView: View {
                         Text(f.rawValue)
                             .fontWeight(filter == f ? .semibold : .regular)
                             .foregroundColor(filter == f ? Theme.accent : Theme.txt)
+                            .rocks(17)
                     }
                 }
             }
@@ -691,8 +692,8 @@ struct ProfileRow: View {
     var body: some View {
         HStack(spacing: 14) {
             Image(systemName: icon).foregroundColor(Theme.accent).frame(width: 26).textGlow()
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).foregroundColor(Theme.txt).fontWeight(.semibold).textGlow(radius: 3).pixelHeading(12, pt: 17)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).foregroundColor(Theme.txt).fontWeight(.semibold).textGlow(radius: 3).rocksHeading(12, pt: 18)
                 Text(subtitle).font(Theme.font(.caption)).foregroundColor(Theme.muted).lineLimit(1)
             }
             Spacer()

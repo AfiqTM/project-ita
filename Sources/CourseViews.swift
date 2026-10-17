@@ -49,6 +49,7 @@ struct CourseDetailView: View {
                                 Text(t.rawValue)
                                     .fontWeight(tab == t ? .semibold : .regular)
                                     .foregroundColor(tab == t ? Theme.accent : Theme.muted)
+                                    .rocks(17)
                                 if t == .todo {
                                     Text("\(todoCount)")
                                         .font(Theme.font(.caption2).weight(.bold)).foregroundColor(Theme.onAccent)
@@ -130,6 +131,7 @@ struct SectionCard: View {
                 HStack {
                     Text(section.name.isEmpty ? "General" : section.name)
                         .fontWeight(.semibold).foregroundColor(Theme.txt)
+                        .rocks(20)
                     Spacer()
                     Image(systemName: open ? "chevron.up" : "chevron.down").foregroundColor(Theme.accent)
                 }
