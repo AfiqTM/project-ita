@@ -33,15 +33,17 @@ Native client for iTa'leem (IIUM Moodle) using Moodle's mobile web-service API, 
 - Sync with the iTa'leem userscript through one file in your Google Drive (`iTaleem-sync.json`): to-dos, CAMS marks, pins and saved files merge both ways, newest change wins
 
 ### Themes
-- Others > Themes: pick the look of the app (AMOLED Dark, Light, Programmer); the whole app cross-fades to the new theme straight away, you stay on the same tab and screen, and the choice is remembered
-- Programmer: near-black with a green tint, neon green accent, monospaced font, a green glow around cards and prominent text, faint CRT scanlines over the app (off when Reduce Transparency is on) and green-tinted course covers
+- Others > Themes: pick the look of the app (Dark, Light, Terminal); the whole app cross-fades to the new theme straight away, you stay on the same tab and screen, and the choice is remembered
+- The home-screen icon follows the theme (Dark, Light and Terminal each have their own). iOS shows its own "You have changed the icon" notice when it changes; apps can't hide it
+- Terminal: near-black with a green tint, neon green accent, monospaced font, a green glow around cards and prominent text, faint CRT scanlines over the app (off when Reduce Transparency is on) and green-tinted course covers
 - Course covers follow the theme: bright pastel default covers and undimmed photos in Light, dimmed photos in the dark themes
-- Each theme is a `Palette` in `Theme.swift` plus an entry in `Themes.swift`
+- Each theme is a `Palette` in `Theme.swift` plus an entry in `Themes.swift`, and an icon set in `Sources/Assets.xcassets` (`AppIcon-<Name>`, listed in `project.yml`)
 
 ### Website
 - Website tab: the full iTa'leem site in a normal browser view that stays logged in and keeps its page when you switch tabs
 
 ### Offline
+- **Slow or unstable connection**: every answer from the site is timed. Screens always open from the saved copy first. If the site is slow, the app only waits 1.5 s (1 s when the connection keeps failing, 4 s on a good one) before it stays on the saved copy and shows a "Slow connection" pill. The request is not cancelled: when it arrives the data is saved and every open screen swaps to it at once, with no reload and no animation.
 - **Offline support** (Others, on by default): course lists, course contents, grades, announcements, notifications and attendance pages are saved and open with no internet, with a small "Offline" pill. Updated about every 12 hours (random 10-14 h); course contents are only downloaded again when the site says they changed. Optional "Download on mobile data" switch.
 - **Download course files** (inside Offline support, off by default): saves PDFs, slides and attachments (resources, folder files, page attachments; no videos or links).
   - Own Wi-Fi / mobile-data rule ("Files on mobile data", off by default), separate from the general one

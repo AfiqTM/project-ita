@@ -48,7 +48,9 @@ struct RootView: View {
         .overlay { MessagesOverlay() }   // Messages: full-screen, above the tab bar (Messages.swift)
         // Load at launch so the badges are right before either tab is opened
         .task(id: app.site?.userid) {
-            if let uid = app.site?.userid { await assignments.load(uid: uid) }
+            guard let uid = app.site?.userid else { return }
+            await OfflineCache.paintFromCache { await assignments.load(uid: uid) }   // last download first, instantly
+            await assignments.load(uid: uid)                                          // then the online version
         }
         .task { await NotificationManager.shared.requestPermission() }
         // Offline support: download the lists in the background so they open with no internet
@@ -59,6 +61,12 @@ struct RootView: View {
         .onReceive(NotificationCenter.default.publisher(for: .offlineBackOnline)) { _ in
             guard let uid = app.site?.userid else { return }
             Task { await assignments.load(uid: uid); await notifs.refresh(uid: uid) }
+        }
+        // Newer data was saved in the background (slow connection): show it at once
+        .onFreshData {
+            guard let uid = app.site?.userid else { return }
+            await assignments.load(uid: uid)
+            await notifs.refresh(uid: uid)
         }
         // Changes made with no internet are sent when the app opens, and when the connection returns
         .task { await OfflineQueue.shared.flush() }
@@ -264,6 +272,7 @@ struct CoursesView: View {
         }
         .task { await loadAll() }
         .onReceive(NotificationCenter.default.publisher(for: .offlineBackOnline)) { _ in Task { await load(); await loadAll() } }
+        .onFreshData { await load(); await loadAll() }
     }
 
     private var searchBar: some View {
@@ -587,6 +596,7 @@ struct AlertsView: View {
             await load()
         }
         .onReceive(NotificationCenter.default.publisher(for: .offlineBackOnline)) { _ in Task { await load() } }
+        .onFreshData { await load() }
     }
 
     private func load() async {

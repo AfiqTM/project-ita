@@ -73,21 +73,6 @@ final class MoodleAPI {
         return v
     }
 
-    /// Network request that gives up after `limit` seconds (used when a saved copy can stand in)
-    private func fetch(_ req: URLRequest, limit: TimeInterval?) async throws -> (Data, URLResponse) {
-        guard let limit else { return try await MoodleAPI.session.data(for: req) }
-        return try await withThrowingTaskGroup(of: (Data, URLResponse).self) { g in
-            g.addTask { try await MoodleAPI.session.data(for: req) }
-            g.addTask {
-                try await Task.sleep(nanoseconds: UInt64(limit * 1_000_000_000))
-                throw URLError(.timedOut)
-            }
-            defer { g.cancelAll() }
-            guard let first = try await g.next() else { throw URLError(.unknown) }
-            return first
-        }
-    }
-
     static let offlineCodes: Set<URLError.Code> = [
         .notConnectedToInternet, .timedOut, .networkConnectionLost, .cannotConnectToHost,
         .cannotFindHost, .dnsLookupFailed, .dataNotAllowed, .internationalRoamingOff, .secureConnectionFailed]
@@ -122,20 +107,26 @@ final class MoodleAPI {
         req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         req.httpBody = items.map { "\(enc($0.0))=\(enc($0.1))" }.joined(separator: "&").data(using: .utf8)
 
-        let data: Data
-        do {
-            let (d, resp) = try await fetch(req, limit: saved == nil ? nil : OfflineCache.slowLimit)
-            if let saved, let h = resp as? HTTPURLResponse, h.statusCode >= 500 {
-                await OfflineMonitor.shared.markCache()
-                return saved
-            }
-            data = d
-        } catch let e as URLError where saved != nil && MoodleAPI.offlineCodes.contains(e.code) {
-            await OfflineMonitor.shared.markCache()
-            return saved!
-        }
-        await OfflineMonitor.shared.markOnline()
+        // 3) a saved copy exists: the network gets only a short time (shorter when the connection has been
+        //    slow or unstable); if it is late the saved copy is used now and the answer replaces it later
+        if let saved { return try await answer(req, saved: saved, name: cacheName) }
 
+        // 4) nothing saved: wait for the network
+        let started = Date()
+        let d: Data
+        do {
+            (d, _) = try await MoodleAPI.session.data(for: req)
+        } catch {
+            if let e = error as? URLError, MoodleAPI.offlineCodes.contains(e.code) { OfflineQuality.shared.record(failed: true) }
+            throw error
+        }
+        OfflineQuality.shared.record(seconds: Date().timeIntervalSince(started), bytes: d.count)
+        await OfflineMonitor.shared.markOnline()
+        return try finish(d, useCache: useCache, name: cacheName)
+    }
+
+    /// Checks an answer, saves it for offline use and returns it with the HTML entities decoded
+    private func finish(_ data: Data, useCache: Bool, name: String) throws -> Data {
         guard let obj = try? JSONSerialization.jsonObject(with: data) else { return data }
         if let o = obj as? [String: Any], o["exception"] != nil || o["errorcode"] != nil {
             throw APIError(message: (o["message"] as? String) ?? "Request failed",
@@ -143,10 +134,68 @@ final class MoodleAPI {
         }
         if obj is [String: Any] || obj is [Any],
            let out = try? JSONSerialization.data(withJSONObject: decodeEntities(obj)) {
-            if useCache { OfflineCache.save(cacheName, out) }
+            if useCache { OfflineCache.save(name, out) }
             return out
         }
         return data
+    }
+
+    private enum Race {
+        case answer(Result<(Data, URLResponse), Error>)
+        case late
+    }
+
+    /// Races the network against `OfflineQuality.waitLimit`. On time: the fresh answer. Late, or no connection,
+    /// or a server error: the saved copy straight away. A late request is not cancelled: when it arrives it is
+    /// saved and the screens are told, so the new data replaces the saved copy as soon as it exists.
+    private func answer(_ req: URLRequest, saved: Data, name: String) async throws -> Data {
+        let started = Date()
+        let limit = OfflineQuality.shared.waitLimit
+        let net = OfflineInflight.shared.task(name, req)   // the same request already on its way is joined, not repeated
+
+        let race: Race = await withCheckedContinuation { cont in
+            let once = ResumeOnce()
+            Task { once.resume(cont, .answer(await net.result)) }
+            Task {
+                try? await Task.sleep(nanoseconds: UInt64(limit * 1_000_000_000))
+                once.resume(cont, .late)
+            }
+        }
+
+        switch race {
+        case .late:
+            OfflineQuality.shared.record(seconds: limit, bytes: 0)   // counts as a slow answer
+            await OfflineMonitor.shared.markCache()
+            Task.detached(priority: .utility) { [self] in
+                guard case .success(let (d, resp)) = await net.result else {
+                    OfflineQuality.shared.record(failed: true)
+                    return
+                }
+                if let h = resp as? HTTPURLResponse, h.statusCode >= 500 { return }
+                guard let fresh = try? finish(d, useCache: true, name: name) else { return }
+                await OfflineMonitor.shared.markOnlineQuietly()
+                if fresh != saved { await OfflineFresh.announce() }   // screens swap to it straight away
+            }
+            return saved
+
+        case .answer(.failure(let error)):
+            if let e = error as? URLError, MoodleAPI.offlineCodes.contains(e.code) {
+                OfflineQuality.shared.record(failed: true)
+                await OfflineMonitor.shared.markCache()
+                return saved
+            }
+            throw error
+
+        case .answer(.success(let (d, resp))):
+            if let h = resp as? HTTPURLResponse, h.statusCode >= 500 {
+                OfflineQuality.shared.record(failed: true)
+                await OfflineMonitor.shared.markCache()
+                return saved
+            }
+            OfflineQuality.shared.record(seconds: Date().timeIntervalSince(started), bytes: d.count)
+            await OfflineMonitor.shared.markOnline()
+            return try finish(d, useCache: true, name: name)
+        }
     }
 
     func call<T: Decodable>(_ fn: String, _ params: [String: Any] = [:]) async throws -> T {

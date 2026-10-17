@@ -12,23 +12,23 @@ import UIKit
 // happens and then faded out.
 
 enum AppTheme: String, CaseIterable, Identifiable {
-    case amoledDark, light, programmer
+    case dark, light, terminal
 
     var id: String { rawValue }
 
     var name: String {
         switch self {
-        case .amoledDark: return "AMOLED Dark"
+        case .dark: return "Dark"
         case .light: return "Light"
-        case .programmer: return "Programmer"
+        case .terminal: return "Terminal"
         }
     }
 
     var detail: String {
         switch self {
-        case .amoledDark: return "True black with the tan accent. Easy on the eyes at night."
+        case .dark: return "True black with the tan accent. Easy on the eyes at night."
         case .light: return "Warm off-white with a deeper tan accent. Easier to read in bright light."
-        case .programmer: return "Terminal look: near-black, neon green, a monospaced font and a green glow."
+        case .terminal: return "Terminal look: near-black, neon green, a monospaced font and a green glow."
         }
     }
 
@@ -36,34 +36,34 @@ enum AppTheme: String, CaseIterable, Identifiable {
     var scheme: ColorScheme { self == .light ? .light : .dark }
 
     /// Monospaced font everywhere
-    var mono: Bool { self == .programmer }
+    var mono: Bool { self == .terminal }
 
     var palette: Palette {
         switch self {
-        case .amoledDark: return .amoledDark
+        case .dark: return .dark
         case .light: return .light
-        case .programmer: return .programmer
+        case .terminal: return .terminal
         }
     }
 
     /// CRT scanlines and a vignette over the whole app
-    var scanlines: Bool { self == .programmer }
+    var scanlines: Bool { self == .terminal }
 
     /// Soft glow around prominent text (see `textGlow()`)
-    var glowsText: Bool { self == .programmer }
+    var glowsText: Bool { self == .terminal }
 
     // MARK: Course covers (My courses)
 
     /// Gradients for courses without an image, picked per course
     var covers: [(UInt32, UInt32)] {
         switch self {
-        case .amoledDark:
+        case .dark:
             return [(0x1b1712, 0x3a2f22), (0x14181c, 0x2c3a46), (0x1a1417, 0x3d2a33),
                     (0x121a16, 0x263b2f), (0x181510, 0x4a3a22), (0x15151c, 0x302f4a)]
         case .light:
             return [(0xF1E8DA, 0xE0CFB4), (0xDFE8F0, 0xC3D4E2), (0xF0DFE5, 0xE0C3CF),
                     (0xDDECE3, 0xBFD9C9), (0xF2E9CF, 0xE3CFA0), (0xE2E2F1, 0xC9C8E6)]
-        case .programmer:
+        case .terminal:
             return [(0x03120A, 0x0B3A1C), (0x021512, 0x0A3A35), (0x0A1204, 0x2A3F0A),
                     (0x041208, 0x0F4A24), (0x02130F, 0x0C4040), (0x0A1005, 0x1E3A12)]
         }
@@ -72,16 +72,38 @@ enum AppTheme: String, CaseIterable, Identifiable {
     /// Photo covers: dimmed on the dark themes so they sit in the page, left as they are on the light one
     var coverBrightness: Double {
         switch self {
-        case .amoledDark: return -0.2
+        case .dark: return -0.2
         case .light: return 0
-        case .programmer: return -0.25
+        case .terminal: return -0.25
         }
     }
-    var coverSaturation: Double { self == .programmer ? 0.6 : 1 }
-    /// Programmer: photos get a green monitor tint
-    var coverTint: UInt32? { self == .programmer ? 0x1FBF55 : nil }
+    var coverSaturation: Double { self == .terminal ? 0.6 : 1 }
+    /// Terminal: photos get a green monitor tint
+    var coverTint: UInt32? { self == .terminal ? 0x1FBF55 : nil }
     /// The star on a cover sits on a dark circle, so it needs a bright accent in every theme
-    var onCoverAccent: UInt32 { self == .programmer ? Palette.programmer.accent : Palette.amoledDark.accent }
+    var onCoverAccent: UInt32 { self == .terminal ? Palette.terminal.accent : Palette.dark.accent }
+}
+
+/// The home-screen icon that goes with each theme. Each one is an alternate icon set in the asset catalog
+/// (Assets.xcassets/AppIcon-Dark, AppIcon-Light, AppIcon-Terminal) and listed in project.yml under
+/// ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES.
+/// iOS shows its own "You have changed the icon" notice every time the icon changes; apps can't hide it.
+enum AppIcon {
+    static func name(for theme: AppTheme) -> String {
+        switch theme {
+        case .dark: return "AppIcon-Dark"
+        case .light: return "AppIcon-Light"
+        case .terminal: return "AppIcon-Terminal"
+        }
+    }
+
+    @MainActor
+    static func apply(for theme: AppTheme) {
+        let app = UIApplication.shared
+        let wanted = name(for: theme)
+        guard app.supportsAlternateIcons, app.alternateIconName != wanted else { return }
+        app.setAlternateIconName(wanted) { _ in }   // a failure just leaves the old icon
+    }
 }
 
 /// The chosen theme, remembered across launches.
@@ -94,7 +116,11 @@ final class ThemeStore: ObservableObject {
     var palette: Palette { theme.palette }
 
     private init() {
-        theme = AppTheme(rawValue: UserDefaults.standard.string(forKey: Self.key) ?? "") ?? .amoledDark
+        // "AMOLED Dark" and "Programmer" were renamed: keep what people had chosen
+        let saved = UserDefaults.standard.string(forKey: Self.key) ?? ""
+        let renamed = ["amoledDark": AppTheme.dark.rawValue, "programmer": AppTheme.terminal.rawValue][saved] ?? saved
+        theme = AppTheme(rawValue: renamed) ?? .dark
+        if renamed != saved { UserDefaults.standard.set(renamed, forKey: Self.key) }
     }
 
     /// Switches theme with a cross-fade: the current screen is frozen as a picture on top of the window,
@@ -117,6 +143,7 @@ final class ThemeStore: ObservableObject {
         theme = new
         UserDefaults.standard.set(new.rawValue, forKey: Self.key)
         Theme.applyAppearance()   // new navigation / tab bars (created when the screens are rebuilt) get the new look
+        AppIcon.apply(for: new)   // home-screen icon follows the theme
 
         guard let cover else { return }
         // a moment for the rebuilt screens to render underneath, then fade the old picture out
@@ -130,7 +157,7 @@ final class ThemeStore: ObservableObject {
     }
 }
 
-/// A soft glow in the theme's accent colour behind text or an icon. Only the Programmer theme has it; in the
+/// A soft glow in the theme's accent colour behind text or an icon. Only the Terminal theme has it; in the
 /// others this changes nothing. Used on prominent texts only (a glow on a whole screen would slow scrolling).
 struct TextGlow: ViewModifier {
     var radius: CGFloat

@@ -191,7 +191,7 @@ final class AssignmentsModel: ObservableObject {
                 out.append(contentsOf: part)
             }
             items = out
-            NotificationManager.shared.scheduleAssignments(out)
+            if !OfflineCache.cacheOnly { NotificationManager.shared.scheduleAssignments(out) }   // not from the first paint: statuses may be missing
         } catch {
             if !(error is CancellationError), (error as? URLError)?.code != .cancelled {
                 self.error = error.localizedDescription

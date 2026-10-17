@@ -106,6 +106,7 @@ struct CourseContentView: View {
             await load()
         }
         .onReceive(NotificationCenter.default.publisher(for: .offlineBackOnline)) { _ in Task { await load() } }
+        .onFreshData { await load() }
     }
 
     private func load() async {
@@ -314,6 +315,7 @@ struct ForumView: View {
             await load()
         }
         .onReceive(NotificationCenter.default.publisher(for: .offlineBackOnline)) { _ in Task { await load() } }
+        .onFreshData { await load() }
     }
 
     private func load() async {
@@ -361,6 +363,7 @@ struct PostsView: View {
             await load()
         }
         .onReceive(NotificationCenter.default.publisher(for: .offlineBackOnline)) { _ in Task { await load() } }
+        .onFreshData { await load() }
     }
 
     private func load() async {
@@ -415,6 +418,7 @@ struct GradesView: View {
             await load()
         }
         .onReceive(NotificationCenter.default.publisher(for: .offlineBackOnline)) { _ in Task { await load() } }
+        .onFreshData { await load() }
     }
 
     private func load() async {

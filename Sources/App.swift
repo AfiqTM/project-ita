@@ -32,11 +32,11 @@ struct iTaleemApp: App {
             .environmentObject(sync)
             .onAppear { sync.configure(todos: todos, lib: driveLib, auth: driveAuth) }
             .onChange(of: scenePhase) { phase in if phase == .active { sync.syncNow() } }
-            .modifier(ThemeFont(mono: themes.theme.mono))   // Programmer theme: monospaced font
+            .modifier(ThemeFont(mono: themes.theme.mono))   // Terminal theme: monospaced font
             .preferredColorScheme(themes.theme.scheme)
             .tint(Theme.accent)
             .background(Theme.bg.ignoresSafeArea())
-            .overlay { if themes.theme.scanlines { ScanlineOverlay() } }   // Programmer: CRT scanlines
+            .overlay { if themes.theme.scanlines { ScanlineOverlay() } }   // Terminal: CRT scanlines
         }
     }
 }

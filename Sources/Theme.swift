@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-// The colours of one theme, as 0xRRGGBB values. The AMOLED one is taken 1:1 from the "iTa'leem AMOLED Dark" userscript.
+// The colours of one theme, as 0xRRGGBB values. The Dark one is taken 1:1 from the "iTa'leem AMOLED Dark" userscript.
 // Themes.swift lists the themes the user can pick; each one needs a palette here.
 struct Palette {
     /// How cards are lifted off the page: a soft glow (dark), a drop shadow + outline (light),
@@ -13,11 +13,11 @@ struct Palette {
     let glow: UInt32                        // colour of the glow behind cards
     let card: Card
 
-    static let amoledDark = Palette(bg: 0x000000, surface: 0x060606, surface2: 0x0b0b0b, titleBar: 0x0a0a0a,
-                                    line: 0x1c1c1c, txt: 0xe6e6e6, muted: 0x9a9a9a, accent: 0xD2B48C,
-                                    onAccent: 0x000000,
-                                    green: 0x5fbf7f, red: 0xe0605a, amber: 0xe0b050, blue: 0x5a9be0,
-                                    glow: 0x1c1c1c, card: .glow)
+    static let dark = Palette(bg: 0x000000, surface: 0x060606, surface2: 0x0b0b0b, titleBar: 0x0a0a0a,
+                              line: 0x1c1c1c, txt: 0xe6e6e6, muted: 0x9a9a9a, accent: 0xD2B48C,
+                              onAccent: 0x000000,
+                              green: 0x5fbf7f, red: 0xe0605a, amber: 0xe0b050, blue: 0x5a9be0,
+                              glow: 0x1c1c1c, card: .glow)
 
     // Warm off-white page with white cards. The accent is a deeper tan so it stays readable on light
     // backgrounds (about 5:1 against white), and text on accent buttons is white.
@@ -28,11 +28,11 @@ struct Palette {
                                glow: 0x000000, card: .soft)
 
     // Terminal look: near-black with a green tint, mint text, neon green accent, green glow around cards
-    static let programmer = Palette(bg: 0x020805, surface: 0x06120B, surface2: 0x0A1B11, titleBar: 0x08160E,
-                                    line: 0x15402A, txt: 0xA9F5BC, muted: 0x5FA777, accent: 0x39FF6E,
-                                    onAccent: 0x02140A,
-                                    green: 0x39FF6E, red: 0xFF5C5C, amber: 0xFFC83D, blue: 0x4FB3FF,
-                                    glow: 0x0C3D20, card: .terminal)
+    static let terminal = Palette(bg: 0x020805, surface: 0x06120B, surface2: 0x0A1B11, titleBar: 0x08160E,
+                                  line: 0x15402A, txt: 0xA9F5BC, muted: 0x5FA777, accent: 0x39FF6E,
+                                  onAccent: 0x02140A,
+                                  green: 0x39FF6E, red: 0xFF5C5C, amber: 0xFFC83D, blue: 0x4FB3FF,
+                                  glow: 0x0C3D20, card: .terminal)
 }
 
 // Every colour reads from the palette of the chosen theme (Themes.swift). Screens pick the new colours up
@@ -124,9 +124,9 @@ extension UIColor {
     }
 }
 
-// Card background. AMOLED: soft glow (the 10/30/64px rgba(28,28,28) shadows from the userscript).
+// Card background. Dark: soft glow (the 10/30/64px rgba(28,28,28) shadows from the userscript).
 // Light: a gentle drop shadow and a thin outline, since a glow doesn't show on a light page.
-// Programmer: a green glow and a thin green outline, like a terminal window.
+// Terminal: a green glow and a thin green outline, like a terminal window.
 struct GlowCard: ViewModifier {
     var radius: CGFloat = 14
     @ObservedObject private var themes = ThemeStore.shared

@@ -8,13 +8,27 @@ import CryptoKit
 // after it succeeds. A screen then opens in two steps:
 //   1. it is filled straight from the saved copy (no waiting, works with no internet),
 //   2. the normal online request runs and replaces it as soon as the answer arrives.
-// If the request fails (no internet, server error) or takes longer than `slowLimit`, the saved copy is
-// used instead and a small "Offline" pill appears at the top of the app.
+// If the request fails (no internet, server error) or takes longer than `OfflineQuality.waitLimit` (4 s on a
+// good connection, 1.5 s when it has been slow, 1 s when it has been unstable) the saved copy is used instead.
+// A late request is not thrown away: when its answer arrives it is saved and every open screen swaps to it
+// at once (`.offlineFreshData`). A small pill at the top shows "Offline" or "Slow connection" meanwhile.
 // Turn it on/off in Others > Offline support. Turning it off deletes the saved data.
 
 extension Notification.Name {
     /// The app was showing saved data and the website answered again: screens should reload
     static let offlineBackOnline = Notification.Name("italeem.offline.backOnline")
+    /// A slow request finished after the saved copy was shown, and the answer was different: screens swap to it
+    static let offlineFreshData = Notification.Name("italeem.offline.freshData")
+}
+
+extension View {
+    /// Runs `reload` when newer data was just saved in the background. It reads the saved copy only (no
+    /// network), so the new data appears at once; state is set without an animation.
+    func onFreshData(_ reload: @escaping () async -> Void) -> some View {
+        onReceive(NotificationCenter.default.publisher(for: .offlineFreshData)) { _ in
+            Task { await OfflineCache.paintFromCache { await reload() } }
+        }
+    }
 }
 
 enum OfflineSettings {
@@ -54,6 +68,7 @@ final class OfflineNet {
             let was = self._online
             self._online = ok; self._expensive = path.isExpensive; self._constrained = path.isConstrained
             self.lock.unlock()
+            if !ok { OfflineQuality.shared.record(failed: true) }   // dropping out repeatedly = unstable
             Task { @MainActor in
                 OfflineMonitor.shared.isOnline = ok
                 // connection came back: waiting changes (submissions, to-dos) are sent
@@ -70,12 +85,120 @@ final class OfflineMonitor: ObservableObject {
     @Published var isOnline = true
     /// true while the app is showing saved data because the website couldn't be reached
     @Published var usingCache = false
+    /// the connection has been slow or unstable lately (see OfflineQuality)
+    @Published var slow = false
 
     func markCache() { if !usingCache { usingCache = true } }
+    /// A late answer arrived and was saved: no reload needed (screens are told with `.offlineFreshData`)
+    func markOnlineQuietly() { if usingCache { usingCache = false } }
     func markOnline() {
         guard usingCache else { return }
         usingCache = false
         NotificationCenter.default.post(name: .offlineBackOnline, object: nil)
+    }
+}
+
+// MARK: connection quality
+//
+// Every answer from the site is timed. The last few results decide how long the app is willing to wait before
+// it shows the saved copy instead:
+//   good ........ 4 s
+//   slow ........ 1.5 s   (2 of the last 5 answers took 1.5 s or more, or hit the limit)
+//   unstable .... 1 s     (2 of the last 5 requests failed, or the connection dropped out)
+// Results older than 90 seconds are forgotten, so the app tries the normal wait again after a quiet moment.
+
+enum ConnectionQuality { case good, slow, unstable }
+
+final class OfflineQuality {
+    static let shared = OfflineQuality()
+    private struct Sample { let at: Date; let seconds: TimeInterval; let failed: Bool }
+    private let lock = NSLock()
+    private var samples: [Sample] = []
+    private static let slowSeconds: TimeInterval = 1.5
+    private static let memory: TimeInterval = 90
+
+    func record(seconds: TimeInterval, bytes: Int) {
+        // a big answer (course contents) is slow because of its size, not because of the connection
+        add(Sample(at: Date(), seconds: bytes > 100_000 ? min(seconds, 1) : seconds, failed: false))
+    }
+    func record(failed: Bool) { add(Sample(at: Date(), seconds: 0, failed: failed)) }
+
+    private func add(_ s: Sample) {
+        lock.lock()
+        samples.append(s)
+        if samples.count > 12 { samples.removeFirst(samples.count - 12) }
+        lock.unlock()
+        publish()
+        // forget old results (and hide the pill) once they have expired, even if nothing else is requested
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.memory + 1) { [weak self] in self?.publish() }
+    }
+
+    var quality: ConnectionQuality {
+        lock.lock(); defer { lock.unlock() }
+        let recent = samples.filter { Date().timeIntervalSince($0.at) < Self.memory }.suffix(5)
+        if recent.filter({ $0.failed }).count >= 2 { return .unstable }
+        if recent.filter({ $0.seconds >= Self.slowSeconds }).count >= 2 { return .slow }
+        return .good
+    }
+
+    /// How long a request with a saved copy may take before the saved copy is shown instead
+    var waitLimit: TimeInterval {
+        switch quality {
+        case .good: return 4
+        case .slow: return 1.5
+        case .unstable: return 1
+        }
+    }
+
+    private func publish() {
+        let q = quality
+        Task { @MainActor in
+            let slow = q != .good
+            if OfflineMonitor.shared.slow != slow { OfflineMonitor.shared.slow = slow }
+        }
+    }
+}
+
+/// One network request per saved answer at a time: a screen asking again while the first request is still
+/// on its way joins it instead of sending another one.
+final class OfflineInflight {
+    static let shared = OfflineInflight()
+    private let lock = NSLock()
+    private var tasks: [String: Task<(Data, URLResponse), Error>] = [:]
+
+    func task(_ key: String, _ req: URLRequest) -> Task<(Data, URLResponse), Error> {
+        lock.lock(); defer { lock.unlock() }
+        if let t = tasks[key] { return t }
+        let t = Task<(Data, URLResponse), Error> { [weak self] in
+            defer { self?.finish(key) }
+            return try await MoodleAPI.session.data(for: req)
+        }
+        tasks[key] = t
+        return t
+    }
+    private func finish(_ key: String) { lock.lock(); tasks[key] = nil; lock.unlock() }
+}
+
+/// Lets a continuation be resumed by whichever of two tasks gets there first
+final class ResumeOnce {
+    private let lock = NSLock()
+    private var done = false
+    func resume<T>(_ c: CheckedContinuation<T, Never>, _ v: T) {
+        lock.lock(); let first = !done; done = true; lock.unlock()
+        if first { c.resume(returning: v) }
+    }
+}
+
+/// Tells the screens that newer data was saved. Several answers arriving together send one message.
+enum OfflineFresh {
+    @MainActor private static var pending = false
+    @MainActor static func announce() {
+        guard !pending else { return }
+        pending = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            pending = false
+            NotificationCenter.default.post(name: .offlineFreshData, object: nil)
+        }
     }
 }
 
@@ -84,7 +207,6 @@ final class OfflineMonitor: ObservableObject {
 enum OfflineCache {
     /// While true (inside `paintFromCache`), API calls answer from disk only and never touch the network
     @TaskLocal static var cacheOnly = false
-    static let slowLimit: TimeInterval = 6
 
     private static let dir: URL = {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -426,11 +548,13 @@ struct OfflineBanner: View {
     @ObservedObject private var m = OfflineMonitor.shared
 
     var body: some View {
+        let offline = !m.isOnline
+        let show = m.usingCache || (m.slow && OfflineSettings.enabled)
         Group {
-            if m.usingCache {
+            if show {
                 HStack(spacing: 6) {
-                    Image(systemName: "wifi.slash")
-                    Text("Offline · showing saved data")
+                    Image(systemName: offline ? "wifi.slash" : "wifi.exclamationmark")
+                    Text(offline ? "Offline · showing saved data" : "Slow connection · saved data first")
                 }
                 .font(.caption2.weight(.semibold))
                 .foregroundColor(Theme.muted)
@@ -443,7 +567,7 @@ struct OfflineBanner: View {
                 .transition(.opacity)
             }
         }
-        .animation(.easeInOut(duration: 0.2), value: m.usingCache)
+        .animation(.easeInOut(duration: 0.2), value: show)
     }
 }
 
