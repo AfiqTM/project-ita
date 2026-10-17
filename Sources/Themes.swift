@@ -343,7 +343,47 @@ struct ScanlineOverlay: View {
     }
 }
 
-/// Red Dead: dark vignette and a fixed print-grain speckle. Touches pass through.
+/// A band whose bottom edge is ragged like torn paper (fixed pattern, so it never changes between redraws)
+struct TornBand: Shape {
+    func path(in rect: CGRect) -> Path {
+        var seed: UInt64 = 0xC0FFEE
+        func next() -> CGFloat {
+            seed = seed &* 6364136223846793005 &+ 1442695040888963407
+            return CGFloat(seed >> 40) / CGFloat(1 << 24)
+        }
+        var p = Path()
+        p.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        var x = rect.maxX
+        p.addLine(to: CGPoint(x: x, y: rect.minY + rect.height * 0.6))
+        while x > rect.minX {
+            x = max(rect.minX, x - (3 + next() * 7))
+            p.addLine(to: CGPoint(x: x, y: rect.minY + rect.height * (0.35 + next() * 0.65)))
+        }
+        p.closeSubpath()
+        return p
+    }
+}
+
+/// A five-pointed star
+struct StarShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let c = CGPoint(x: rect.midX, y: rect.midY)
+        let r = min(rect.width, rect.height) / 2
+        var p = Path()
+        for i in 0..<10 {
+            let a = -CGFloat.pi / 2 + CGFloat(i) * .pi / 5
+            let rr = i % 2 == 0 ? r : r * 0.42
+            let pt = CGPoint(x: c.x + cos(a) * rr, y: c.y + sin(a) * rr)
+            i == 0 ? p.move(to: pt) : p.addLine(to: pt)
+        }
+        p.closeSubpath()
+        return p
+    }
+}
+
+/// Red Dead: faded red grunge stars over the page (like the website's footer), a dark vignette and a fixed
+/// print-grain speckle. Touches pass through.
 struct AgedOverlay: View {
     @Environment(\.accessibilityReduceTransparency) private var reduce
 
@@ -355,6 +395,20 @@ struct AgedOverlay: View {
                     func next() -> CGFloat {   // fixed pseudo-random sequence, so the grain doesn't change
                         seed = seed &* 6364136223846793005 &+ 1442695040888963407
                         return CGFloat(seed >> 40) / CGFloat(1 << 24)
+                    }
+                    // big faded stars, each worn away by dark speckles
+                    for i in 0..<9 {
+                        let d = 70 + next() * 110
+                        let c = CGPoint(x: next() * size.width, y: next() * size.height)
+                        var star = StarShape().path(in: CGRect(x: -d / 2, y: -d / 2, width: d, height: d))
+                        star = star.applying(CGAffineTransform(rotationAngle: next() * .pi / 2)
+                            .concatenating(CGAffineTransform(translationX: c.x, y: c.y)))
+                        ctx.fill(star, with: .color(Color(hex: 0xD42B1F).opacity(0.07 + Double(i % 3) * 0.015)))
+                        for _ in 0..<26 {
+                            let r = 1 + next() * 3.5
+                            let dot = CGRect(x: c.x + (next() - 0.5) * d, y: c.y + (next() - 0.5) * d, width: r, height: r)
+                            ctx.fill(Path(ellipseIn: dot), with: .color(Color.black.opacity(0.55)))
+                        }
                     }
                     for _ in 0..<500 {
                         let r = next() * 1.4 + 0.4

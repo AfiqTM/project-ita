@@ -201,8 +201,8 @@ struct GlowCard: ViewModifier {
             .background(Color(hex: p.surface))
             .clipShape(shape)
             .overlay(shape.stroke(Color(hex: p.line), lineWidth: p.card == .glow ? 0 : (pixel ? 2 : (western ? 1 : 1))))
-            // western: a red banner strip along the top edge
-            .overlay(alignment: .top) { Rectangle().fill(Color(hex: p.accent)).frame(height: western ? 3 : 0) }
+            // western: a red banner along the top edge with a torn-paper lower edge
+            .overlay(alignment: .top) { TornBand().fill(Color(hex: p.accent)).frame(height: western ? 9 : 0) }
             .shadow(color: layers[0].0, radius: layers[0].1, x: layers[0].2, y: layers[0].3)
             .shadow(color: layers[1].0, radius: layers[1].1, x: layers[1].2, y: layers[1].3)
             .shadow(color: layers[2].0, radius: layers[2].1, x: layers[2].2, y: layers[2].3)
