@@ -6,7 +6,7 @@ import UIKit
 struct Palette {
     /// How cards are lifted off the page: a soft glow (dark), a drop shadow + outline (light),
     /// a glow + outline like a terminal window, hard pixel edges with an offset block shadow (8-bit),
-    /// or an aged-paper look: small corners, a double border and a dark drop shadow (western)
+    /// or flat black with a red top strip and a dark drop shadow (western, Red Dead)
     enum Card { case glow, soft, terminal, pixel, western }
 
     let bg, surface, surface2, titleBar, line, txt, muted, accent, onAccent: UInt32
@@ -43,12 +43,12 @@ struct Palette {
                                green: 0x7CFF6B, red: 0xFF5A4F, amber: 0xFFA928, blue: 0x58B4FF,
                                glow: 0x4A4300, card: .pixel)
 
-    // Red Dead: sooty brown-black, parchment text, blood-red accent, brass for the details. Cards are dark leather
-    // with a thin double border, like the frames on an old wanted poster (card: .western).
-    static let redDead = Palette(bg: 0x0B0806, surface: 0x16100C, surface2: 0x1F1711, titleBar: 0x110B08,
-                                 line: 0x5A4128, txt: 0xEADFC4, muted: 0xA09078, accent: 0xC4281C,
-                                 onAccent: 0xF6ECD2,
-                                 green: 0x8FA35A, red: 0xE0553F, amber: 0xD9A441, blue: 0x7C9BB0,
+    // Red Dead (after the game's own artwork and website): black, rockstar red, off-white text. Flat black cards with
+    // a dark-red outline and a red banner strip on top (card: .western).
+    static let redDead = Palette(bg: 0x050505, surface: 0x0E0E0E, surface2: 0x171717, titleBar: 0x0A0A0A,
+                                 line: 0x3A1511, txt: 0xF1ECE4, muted: 0x9C9590, accent: 0xD42B1F,
+                                 onAccent: 0xFFFFFF,
+                                 green: 0x8FA35A, red: 0xFF5440, amber: 0xE0A030, blue: 0x7C9BB0,
                                  glow: 0x000000, card: .western)
 }
 
@@ -76,7 +76,7 @@ enum Theme {
 
     /// Corner radius for cards: the Retro theme has (almost) square, pixel-like corners
     static func cardRadius(_ r: CGFloat) -> CGFloat {
-        switch p.card { case .pixel: return min(r, 3); case .western: return min(r, 5); default: return r }
+        switch p.card { case .pixel: return min(r, 3); case .western: return min(r, 2); default: return r }
     }
 
     /// Navigation bar, tab bar and tab badges. Bars that already exist keep the old look, so call this
@@ -114,9 +114,9 @@ enum Theme {
             }
         }
         if theme.westernHeadings {
-            // Rye (Western wood type) for the bar titles; Terminal and Retro have their own fonts above
-            if let f = UIFont(name: WesternFont.name, size: 17) { title[.font] = f }
-            if let f = UIFont(name: WesternFont.name, size: 30) { large[.font] = f }
+            // the game's look: condensed caps for the bar title, blocky stencil caps for the large one
+            if let f = UIFont(name: WesternFont.condensed, size: 24) { title[.font] = f }
+            if let f = UIFont(name: WesternFont.display, size: 28) { large[.font] = f }
         }
         nav.titleTextAttributes = title
         nav.largeTitleTextAttributes = large
@@ -138,6 +138,12 @@ enum Theme {
             }
             if mono {
                 let f = UIFont.monospacedSystemFont(ofSize: 10, weight: .medium)
+                item.normal.titleTextAttributes = [.font: f, .foregroundColor: UIColor(hex: p.muted)]
+                item.selected.titleTextAttributes = [.font: f, .foregroundColor: uiAccent]
+            }
+        }
+        if theme.westernHeadings, let f = UIFont(name: WesternFont.condensed, size: 14) {
+            for item in [tab.stackedLayoutAppearance, tab.inlineLayoutAppearance, tab.compactInlineLayoutAppearance] {
                 item.normal.titleTextAttributes = [.font: f, .foregroundColor: UIColor(hex: p.muted)]
                 item.selected.titleTextAttributes = [.font: f, .foregroundColor: uiAccent]
             }
@@ -167,7 +173,7 @@ extension UIColor {
 // Card background. Dark: soft glow (the 10/30/64px rgba(28,28,28) shadows from the userscript).
 // Light: a gentle drop shadow and a thin outline, since a glow doesn't show on a light page.
 // Terminal: a green glow and a thin green outline, like a terminal window.
-// Red Dead: small corners, a double border and a dark drop shadow, like a framed poster.
+// Red Dead: flat black card, dark-red outline, red strip on top and a dark drop shadow, like the game's banners.
 // Retro: almost square corners, a thick outline and a hard offset block shadow, like an 8-bit window.
 struct GlowCard: ViewModifier {
     var radius: CGFloat = 14
@@ -194,9 +200,9 @@ struct GlowCard: ViewModifier {
         return content
             .background(Color(hex: p.surface))
             .clipShape(shape)
-            .overlay(shape.stroke(Color(hex: p.line), lineWidth: p.card == .glow ? 0 : (pixel ? 2 : (western ? 1.5 : 1))))
-            // western: a second, thinner border just inside the first (double frame)
-            .overlay(shape.inset(by: 4).stroke(Color(hex: p.line).opacity(western ? 0.55 : 0), lineWidth: 0.6))
+            .overlay(shape.stroke(Color(hex: p.line), lineWidth: p.card == .glow ? 0 : (pixel ? 2 : (western ? 1 : 1))))
+            // western: a red banner strip along the top edge
+            .overlay(alignment: .top) { Rectangle().fill(Color(hex: p.accent)).frame(height: western ? 3 : 0) }
             .shadow(color: layers[0].0, radius: layers[0].1, x: layers[0].2, y: layers[0].3)
             .shadow(color: layers[1].0, radius: layers[1].1, x: layers[1].2, y: layers[1].3)
             .shadow(color: layers[2].0, radius: layers[2].1, x: layers[2].2, y: layers[2].3)

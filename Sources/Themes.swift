@@ -34,7 +34,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
         case .light: return "Warm off-white with a deeper tan accent. Easier to read in bright light."
         case .terminal: return "Terminal look: near-black, neon green, a monospaced font and a green glow."
         case .retro: return "Old-school arcade: black and olive tiles, yellow accent, hard pixel edges and a pixel-style font."
-        case .redDead: return "Old West: sooty brown, parchment text, blood-red accent, Western wood-type headings and framed cards."
+        case .redDead: return "Rockstar-poster look: black and red, stencil-style caps headings, flat cards with a red banner strip."
         }
     }
 
@@ -87,8 +87,8 @@ enum AppTheme: String, CaseIterable, Identifiable {
             return [(0x0E0D00, 0x2B2700), (0x0A0A0A, 0x2A2A18), (0x140A00, 0x3D2600),
                     (0x081000, 0x24330A), (0x100012, 0x2E1A36), (0x00101A, 0x0A2E44)]
         case .redDead:
-            return [(0x1A0D08, 0x4A2214), (0x17120A, 0x4A3A1E), (0x120C0A, 0x3A1A1A),
-                    (0x0F140C, 0x2E3A1E), (0x1A140C, 0x5A4426), (0x0E1114, 0x2A3640)]
+            return [(0x0A0A0A, 0x4A0F0B), (0x120606, 0x7A1A12), (0x0A0A0A, 0x2E0B08),
+                    (0x180808, 0x8A1F14), (0x0C0C0C, 0x5A120D), (0x100505, 0x3A0D0A)]
         }
     }
 
@@ -99,14 +99,14 @@ enum AppTheme: String, CaseIterable, Identifiable {
         case .light: return 0
         case .terminal: return -0.25
         case .retro: return -0.15
-        case .redDead: return -0.12
+        case .redDead: return -0.2
         }
     }
     var coverSaturation: Double {
         switch self {
         case .terminal: return 0.6
         case .retro: return 0.9
-        case .redDead: return 0.55
+        case .redDead: return 0.3
         default: return 1
         }
     }
@@ -115,7 +115,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
         switch self {
         case .terminal: return 0x1FBF55
         case .retro: return 0xFFE628
-        case .redDead: return 0xB5844A   // sepia, like an old photograph
+        case .redDead: return 0xC4281C   // red-and-black print
         default: return nil
         }
     }
@@ -124,7 +124,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
         switch self {
         case .terminal: return Palette.terminal.accent
         case .retro: return Palette.retro.accent
-        case .redDead: return 0xD9A441   // brass: a red star would vanish on the dark circle
+        case .redDead: return 0xFFFFFF   // white: a red star would vanish on the dark circle
         default: return Palette.dark.accent
         }
     }
@@ -251,24 +251,31 @@ enum PixelFont {
     static var available: Bool { UIFont(name: bold, size: 8) != nil }
 }
 
-/// Western wood-type font of the Red Dead theme: Rye (Fonts/Rye-Regular.ttf, SIL Open Font License, see
-/// Fonts/Rye-OFL.txt). Rockstar's own typeface is proprietary and can't be bundled, so Rye stands in for it.
-/// To use another font, drop the .ttf into Fonts/ and change `name` to its PostScript name.
+/// Fonts of the Red Dead theme (Fonts/, both SIL Open Font License, licences next to them): Black Ops One for big
+/// headings (blocky stencil caps, close to the game's title lettering) and Bebas Neue for smaller titles and the
+/// tab bar (condensed caps like the website's menu). Rockstar's own typefaces are proprietary and can't be bundled.
+/// To use other fonts, drop the .ttf files into Fonts/ and change the PostScript names here.
 enum WesternFont {
-    static let name = "Rye-Regular"
+    static let display = "BlackOpsOne-Regular"
+    static let condensed = "BebasNeue-Regular"
 
     static func register() {
-        guard let url = Bundle.main.url(forResource: name, withExtension: "ttf") else { return }
-        CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+        for name in [display, condensed] {
+            guard let url = Bundle.main.url(forResource: name, withExtension: "ttf") else { continue }
+            CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+        }
     }
 
-    static var available: Bool { UIFont(name: name, size: 12) != nil }
+    static var available: Bool { UIFont(name: display, size: 12) != nil && UIFont(name: condensed, size: 12) != nil }
 }
 
 /// Arcade heading: the bold pixel font (or a heavy monospaced one) plus a hard block shadow. Retro only; in the
 /// other themes this changes nothing, so the text keeps whatever font it already had.
 struct PixelHeading: ViewModifier {
     var size: CGFloat
+    /// The font the text has in the other themes. It is passed here instead of being set on the text itself,
+    /// because a `.font` set closer to the text would win over the one set here.
+    var normal: Font?
     @ObservedObject private var themes = ThemeStore.shared
     func body(content: Content) -> some View {
         if themes.theme.pixelHeadings {
@@ -278,19 +285,21 @@ struct PixelHeading: ViewModifier {
                       : Font.system(size: size + 3, weight: .heavy, design: .monospaced))
                 .shadow(color: Color(hex: themes.palette.glow), radius: 0, x: 2, y: 2)
         } else if themes.theme.westernHeadings {
-            // sizes are tuned for the pixel font (wide, tall letters); Rye is a little smaller for the same look
+            // big headings: stencil caps; smaller ones: condensed caps (stencil letters are too wide for long titles)
             content
-                .font(WesternFont.available
-                      ? Font.custom(WesternFont.name, size: size * 0.95)
-                      : Font.system(size: size, weight: .heavy, design: .serif))
-                .shadow(color: .black.opacity(0.8), radius: 0, x: 1, y: 1.5)
+                .font(!WesternFont.available ? Font.system(size: size, weight: .heavy)
+                      : size >= 16 ? Font.custom(WesternFont.display, size: size * 0.95)
+                      : Font.custom(WesternFont.condensed, size: size * 1.4))
+                .textCase(.uppercase)
+        } else if let normal {
+            content.font(normal)
         } else {
             content
         }
     }
 }
 extension View {
-    func pixelHeading(_ size: CGFloat = 12) -> some View { modifier(PixelHeading(size: size)) }
+    func pixelHeading(_ size: CGFloat = 12, normal: Font? = nil) -> some View { modifier(PixelHeading(size: size, normal: normal)) }
 }
 
 /// A soft glow in the theme's accent colour behind text or an icon. Only the Terminal theme has it; in the
@@ -334,7 +343,7 @@ struct ScanlineOverlay: View {
     }
 }
 
-/// Red Dead: warm dark vignette and a fixed film-grain speckle, like an aged photograph. Touches pass through.
+/// Red Dead: dark vignette and a fixed print-grain speckle. Touches pass through.
 struct AgedOverlay: View {
     @Environment(\.accessibilityReduceTransparency) private var reduce
 
@@ -350,10 +359,10 @@ struct AgedOverlay: View {
                     for _ in 0..<500 {
                         let r = next() * 1.4 + 0.4
                         let rect = CGRect(x: next() * size.width, y: next() * size.height, width: r, height: r)
-                        ctx.fill(Path(ellipseIn: rect), with: .color(Color(hex: 0xD9C7A0).opacity(0.05 + Double(next()) * 0.05)))
+                        ctx.fill(Path(ellipseIn: rect), with: .color(Color(hex: 0xFFFFFF).opacity(0.03 + Double(next()) * 0.04)))
                     }
                 }
-                RadialGradient(colors: [Color.clear, Color(hex: 0x1A0C04).opacity(0.5)],
+                RadialGradient(colors: [Color.clear, Color.black.opacity(0.6)],
                                center: .center, startRadius: 180, endRadius: 600)
             }
             .ignoresSafeArea()
@@ -473,7 +482,7 @@ private struct ThemePreview: View {
             // title bar
             HStack {
                 if let t = theme.previewTitle {
-                    Text(t).font(theme.westernHeadings ? .custom(WesternFont.name, size: 10) : mono(9, .bold))
+                    Text(t).textCase(theme.westernHeadings ? .uppercase : nil).font(theme.westernHeadings ? .custom(WesternFont.condensed, size: 13) : mono(9, .bold))
                         .foregroundColor(Color(hex: p.accent))
                 } else {
                     Capsule().fill(Color(hex: p.txt)).frame(width: 46, height: 6)

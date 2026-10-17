@@ -199,9 +199,8 @@ struct CoursesView: View {
                         Text("Hello,").foregroundColor(Theme.muted)
                         Text(firstTwoNames).foregroundColor(Theme.accent).fontWeight(.semibold)
                     }
-                    .font(.title3)
                     .textGlow()
-                    .pixelHeading(16)
+                    .pixelHeading(16, normal: .title3)
                     Spacer()
                     MessagesButton()   // chat icon + unread badge (Messages.swift)
                 }
@@ -415,11 +414,10 @@ struct CourseCard: View {
             cover.frame(height: 110).frame(maxWidth: .infinity).clipped()
             VStack(alignment: .leading, spacing: 8) {
                 Text(course.prettyFull)
-                    .font(.subheadline.weight(.semibold))
                     .foregroundColor(Theme.txt)
                     .multilineTextAlignment(.leading)
                     .textGlow(radius: 3)
-                    .pixelHeading(12)
+                    .pixelHeading(12, normal: .subheadline.weight(.semibold))
                 if let p = course.progress {
                     ProgressView(value: min(max(p, 0), 100), total: 100).tint(Theme.accent)
                     Text("\(Int(p))% complete").font(.caption).foregroundColor(Theme.muted)
@@ -469,10 +467,9 @@ struct DefaultCover: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                 .padding(14)
             Text(course.prettyShort ?? "")
-                .font(.system(size: 22, weight: .bold))
-                .foregroundColor(Theme.accent.opacity(0.92))
+                .foregroundColor(themes.theme.westernHeadings ? Color.white : Theme.accent.opacity(0.92))
                 .textGlow()
-                .pixelHeading(16)
+                .pixelHeading(16, normal: .system(size: 22, weight: .bold))
                 .lineLimit(1).minimumScaleFactor(0.5)
                 .padding(14)
         }
