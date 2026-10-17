@@ -48,7 +48,7 @@ struct Palette {
     static let redDead = Palette(bg: 0x050505, surface: 0x0E0E0E, surface2: 0x171717, titleBar: 0x0A0A0A,
                                  line: 0x3A1511, txt: 0xF1ECE4, muted: 0x9C9590, accent: 0xD42B1F,
                                  onAccent: 0xFFFFFF,
-                                 green: 0x8FA35A, red: 0xFF5440, amber: 0xE0A030, blue: 0x7C9BB0,
+                                 green: 0x8FA35A, red: 0xFF5440, amber: 0xFF8040, blue: 0x7C9BB0,
                                  glow: 0x000000, card: .western)
 }
 

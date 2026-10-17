@@ -728,7 +728,7 @@ enum HTMLText {
         }
         func add(_ s: String) {
             var a = AttributedString(s)
-            var f = Font.subheadline
+            var f = Theme.font(.subheadline)
             if bold > 0 { f = f.bold() }
             if italic > 0 { f = f.italic() }
             a.font = f

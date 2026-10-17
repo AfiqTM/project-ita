@@ -565,7 +565,7 @@ struct AttendanceView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("MAXIMUM POSSIBLE ATTENDANCE").font(Theme.font(.caption)).foregroundColor(Theme.muted)
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(pct).font(Font.largeTitle.bold()).foregroundColor(Theme.accent)
+                    Text(pct).font(Theme.font(.largeTitle).bold()).foregroundColor(Theme.accent)
                     Text("if you attend every remaining session").font(Theme.font(.subheadline)).foregroundColor(Theme.txt)
                 }
                 if let p = Double(pct.replacingOccurrences(of: "%", with: "")) {
@@ -625,7 +625,7 @@ struct AttendanceView: View {
                 ForEach(Array(s.rows.enumerated()), id: \.offset) { i, r in
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            Text(r.1).font(i == 0 ? Font.largeTitle.bold() : Font.title3.bold()).foregroundColor(Theme.accent)
+                            Text(r.1).font(i == 0 ? Theme.font(.largeTitle).bold() : Theme.font(.title3).bold()).foregroundColor(Theme.accent)
                             Text(r.0).foregroundColor(Theme.txt)
                         }
                         if i == 0, let p = Double(r.1.replacingOccurrences(of: "%", with: "")) {
