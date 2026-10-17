@@ -34,7 +34,8 @@ Native client for iTa'leem (IIUM Moodle) using Moodle's mobile web-service API, 
 
 ### Themes
 - Others > Themes: pick the look of the app (AMOLED Dark, Light, Programmer); the whole app cross-fades to the new theme straight away, you stay on the same tab and screen, and the choice is remembered
-- Programmer: near-black with a green tint, neon green accent, monospaced font and a green glow around cards
+- Programmer: near-black with a green tint, neon green accent, monospaced font, a green glow around cards and prominent text, faint CRT scanlines over the app (off when Reduce Transparency is on) and green-tinted course covers
+- Course covers follow the theme: bright pastel default covers and undimmed photos in Light, dimmed photos in the dark themes
 - Each theme is a `Palette` in `Theme.swift` plus an entry in `Themes.swift`
 
 ### Website

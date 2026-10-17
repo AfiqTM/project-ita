@@ -228,7 +228,7 @@ struct AssignmentsTabView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                Text("Assignments").font(.title3.weight(.semibold)).foregroundColor(Theme.txt)
+                Text("Assignments").font(.title3.weight(.semibold)).foregroundColor(Theme.txt).textGlow(radius: 4)
                 filterBar
                 rangeBar
                 if let error = model.error { Text(error).font(.footnote).foregroundColor(Theme.muted) }

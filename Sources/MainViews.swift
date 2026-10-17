@@ -192,6 +192,7 @@ struct CoursesView: View {
                         Text(firstTwoNames).foregroundColor(Theme.accent).fontWeight(.semibold)
                     }
                     .font(.title3)
+                    .textGlow()
                     Spacer()
                     MessagesButton()   // chat icon + unread badge (Messages.swift)
                 }
@@ -222,7 +223,7 @@ struct CoursesView: View {
                             } else {
                                 Button { Task { await toggleStar(c) } } label: {
                                     Image(systemName: starred ? "star.fill" : "star")
-                                        .foregroundColor(starred ? Color(hex: Palette.amoledDark.accent) : Color.white.opacity(0.85))
+                                        .foregroundColor(starred ? Color(hex: ThemeStore.shared.theme.onCoverAccent) : Color.white.opacity(0.85))
                                         .padding(10)
                                         .background(Color.black.opacity(0.45))
                                         .clipShape(Circle())
@@ -397,6 +398,7 @@ struct CoursesView: View {
 
 struct CourseCard: View {
     let course: Course
+    @ObservedObject private var themes = ThemeStore.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -406,6 +408,7 @@ struct CourseCard: View {
                     .font(.subheadline.weight(.semibold))
                     .foregroundColor(Theme.txt)
                     .multilineTextAlignment(.leading)
+                    .textGlow(radius: 3)
                 if let p = course.progress {
                     ProgressView(value: min(max(p, 0), 100), total: 100).tint(Theme.accent)
                     Text("\(Int(p))% complete").font(.caption).foregroundColor(Theme.muted)
@@ -422,7 +425,13 @@ struct CourseCard: View {
            let u = MoodleAPI.shared.fileURL(str) {
             AsyncImage(url: u) { phase in
                 switch phase {
-                case .success(let img): img.resizable().scaledToFill().brightness(-0.2)
+                case .success(let img):
+                    img.resizable().scaledToFill()
+                        .saturation(themes.theme.coverSaturation)
+                        .brightness(themes.theme.coverBrightness)
+                        .overlay {
+                            if let t = themes.theme.coverTint { Color(hex: t).opacity(0.4).blendMode(.multiply) }
+                        }
                 default: DefaultCover(course: course)
                 }
             }
@@ -432,28 +441,26 @@ struct CourseCard: View {
     }
 }
 
-// Used when a course has no (usable) image: a dark tonal gradient picked per course
+// Used when a course has no (usable) image: a tonal gradient picked per course, in the colours of the theme
 struct DefaultCover: View {
     let course: Course
-    // The cover is dark in every theme, so it keeps the original tan (the light theme's accent is too deep for it)
-    private static let tan = Color(hex: Palette.amoledDark.accent)
-    private static let palettes: [(UInt32, UInt32)] = [
-        (0x1b1712, 0x3a2f22), (0x14181c, 0x2c3a46), (0x1a1417, 0x3d2a33),
-        (0x121a16, 0x263b2f), (0x181510, 0x4a3a22), (0x15151c, 0x302f4a)]
+    @ObservedObject private var themes = ThemeStore.shared
 
     var body: some View {
-        let p = Self.palettes[abs(course.id) % Self.palettes.count]
+        let covers = themes.theme.covers
+        let p = covers[abs(course.id) % covers.count]
         ZStack(alignment: .bottomLeading) {
             LinearGradient(colors: [Color(hex: p.0), Color(hex: p.1)],
                            startPoint: .topLeading, endPoint: .bottomTrailing)
             Image(systemName: "book.closed.fill")
                 .font(.system(size: 64))
-                .foregroundColor(Self.tan.opacity(0.14))
+                .foregroundColor(Theme.accent.opacity(0.16))
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                 .padding(14)
             Text(course.prettyShort ?? "")
                 .font(.system(size: 22, weight: .bold))
-                .foregroundColor(Self.tan.opacity(0.9))
+                .foregroundColor(Theme.accent.opacity(0.92))
+                .textGlow()
                 .lineLimit(1).minimumScaleFactor(0.5)
                 .padding(14)
         }
@@ -673,9 +680,9 @@ struct ProfileRow: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            Image(systemName: icon).foregroundColor(Theme.accent).frame(width: 26)
+            Image(systemName: icon).foregroundColor(Theme.accent).frame(width: 26).textGlow()
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).foregroundColor(Theme.txt).fontWeight(.semibold)
+                Text(title).foregroundColor(Theme.txt).fontWeight(.semibold).textGlow(radius: 3)
                 Text(subtitle).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
             }
             Spacer()

@@ -36,6 +36,7 @@ struct iTaleemApp: App {
             .preferredColorScheme(themes.theme.scheme)
             .tint(Theme.accent)
             .background(Theme.bg.ignoresSafeArea())
+            .overlay { if themes.theme.scanlines { ScanlineOverlay() } }   // Programmer: CRT scanlines
         }
     }
 }

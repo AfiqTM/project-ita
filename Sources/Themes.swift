@@ -45,6 +45,43 @@ enum AppTheme: String, CaseIterable, Identifiable {
         case .programmer: return .programmer
         }
     }
+
+    /// CRT scanlines and a vignette over the whole app
+    var scanlines: Bool { self == .programmer }
+
+    /// Soft glow around prominent text (see `textGlow()`)
+    var glowsText: Bool { self == .programmer }
+
+    // MARK: Course covers (My courses)
+
+    /// Gradients for courses without an image, picked per course
+    var covers: [(UInt32, UInt32)] {
+        switch self {
+        case .amoledDark:
+            return [(0x1b1712, 0x3a2f22), (0x14181c, 0x2c3a46), (0x1a1417, 0x3d2a33),
+                    (0x121a16, 0x263b2f), (0x181510, 0x4a3a22), (0x15151c, 0x302f4a)]
+        case .light:
+            return [(0xF1E8DA, 0xE0CFB4), (0xDFE8F0, 0xC3D4E2), (0xF0DFE5, 0xE0C3CF),
+                    (0xDDECE3, 0xBFD9C9), (0xF2E9CF, 0xE3CFA0), (0xE2E2F1, 0xC9C8E6)]
+        case .programmer:
+            return [(0x03120A, 0x0B3A1C), (0x021512, 0x0A3A35), (0x0A1204, 0x2A3F0A),
+                    (0x041208, 0x0F4A24), (0x02130F, 0x0C4040), (0x0A1005, 0x1E3A12)]
+        }
+    }
+
+    /// Photo covers: dimmed on the dark themes so they sit in the page, left as they are on the light one
+    var coverBrightness: Double {
+        switch self {
+        case .amoledDark: return -0.2
+        case .light: return 0
+        case .programmer: return -0.25
+        }
+    }
+    var coverSaturation: Double { self == .programmer ? 0.6 : 1 }
+    /// Programmer: photos get a green monitor tint
+    var coverTint: UInt32? { self == .programmer ? 0x1FBF55 : nil }
+    /// The star on a cover sits on a dark circle, so it needs a bright accent in every theme
+    var onCoverAccent: UInt32 { self == .programmer ? Palette.programmer.accent : Palette.amoledDark.accent }
 }
 
 /// The chosen theme, remembered across launches.
@@ -89,6 +126,47 @@ final class ThemeStore: ObservableObject {
             } completion: { _ in
                 cover.removeFromSuperview()
             }
+        }
+    }
+}
+
+/// A soft glow in the theme's accent colour behind text or an icon. Only the Programmer theme has it; in the
+/// others this changes nothing. Used on prominent texts only (a glow on a whole screen would slow scrolling).
+struct TextGlow: ViewModifier {
+    var radius: CGFloat
+    @ObservedObject private var themes = ThemeStore.shared
+    func body(content: Content) -> some View {
+        let on = themes.theme.glowsText
+        return content.shadow(color: on ? Color(hex: themes.palette.accent).opacity(0.55) : Color.clear,
+                              radius: on ? radius : 0)
+    }
+}
+extension View {
+    func textGlow(radius: CGFloat = 5) -> some View { modifier(TextGlow(radius: radius)) }
+}
+
+/// Faint CRT scanlines (a dark line every 3 points) and darker screen corners over the whole app.
+/// Touches pass through it; it is hidden when Reduce Transparency is on.
+struct ScanlineOverlay: View {
+    @Environment(\.accessibilityReduceTransparency) private var reduce
+
+    var body: some View {
+        if !reduce {
+            ZStack {
+                Canvas { ctx, size in
+                    var y: CGFloat = 0
+                    while y < size.height {
+                        ctx.fill(Path(CGRect(x: 0, y: y, width: size.width, height: 1)),
+                                 with: .color(Color.black.opacity(0.16)))
+                        y += 3
+                    }
+                }
+                RadialGradient(colors: [Color.clear, Color.black.opacity(0.35)],
+                               center: .center, startRadius: 160, endRadius: 560)
+            }
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
         }
     }
 }
@@ -144,7 +222,7 @@ private struct ThemeCard: View {
 
             HStack(spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(theme.name).foregroundColor(Theme.txt).fontWeight(.semibold)
+                    Text(theme.name).foregroundColor(Theme.txt).fontWeight(.semibold).textGlow(radius: 3)
                     Text(theme.detail).font(.caption).foregroundColor(Theme.muted)
                         .fixedSize(horizontal: false, vertical: true)
                 }

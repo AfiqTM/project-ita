@@ -71,6 +71,12 @@ enum Theme {
         if mono {
             title[.font] = UIFont.monospacedSystemFont(ofSize: 17, weight: .semibold)
             large[.font] = UIFont.monospacedSystemFont(ofSize: 34, weight: .bold)
+            let glow = NSShadow()
+            glow.shadowColor = uiAccent.withAlphaComponent(0.6)
+            glow.shadowBlurRadius = 6
+            glow.shadowOffset = .zero
+            title[.shadow] = glow
+            large[.shadow] = glow
         }
         nav.titleTextAttributes = title
         nav.largeTitleTextAttributes = large
