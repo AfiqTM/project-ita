@@ -1,23 +1,23 @@
 import SwiftUI
 import UIKit
 
-// The colours of one theme, as 0xRRGGBB values. The Dark one is taken 1:1 from the "iTa'leem AMOLED Dark" userscript.
+// The colours of one theme, as 0xRRGGBB values. The AMOLED one is taken 1:1 from the "iTa'leem AMOLED Dark" userscript.
 // Themes.swift lists the themes the user can pick; each one needs a palette here.
 struct Palette {
     /// How cards are lifted off the page: a soft glow (dark), a drop shadow + outline (light),
-    /// a glow + outline like a terminal window, or a hard pixel-style offset shadow + outline (retro)
-    enum Card { case glow, soft, terminal, pixel }
+    /// or a glow + outline like a terminal window
+    enum Card { case glow, soft, terminal }
 
     let bg, surface, surface2, titleBar, line, txt, muted, accent, onAccent: UInt32
     let green, red, amber, blue: UInt32     // status colours (present / absent / late / info)
-    let glow: UInt32                        // colour of the glow behind cards (the hard shadow in the retro look)
+    let glow: UInt32                        // colour of the glow behind cards
     let card: Card
 
-    static let dark = Palette(bg: 0x000000, surface: 0x060606, surface2: 0x0b0b0b, titleBar: 0x0a0a0a,
-                              line: 0x1c1c1c, txt: 0xe6e6e6, muted: 0x9a9a9a, accent: 0xD2B48C,
-                              onAccent: 0x000000,
-                              green: 0x5fbf7f, red: 0xe0605a, amber: 0xe0b050, blue: 0x5a9be0,
-                              glow: 0x1c1c1c, card: .glow)
+    static let amoledDark = Palette(bg: 0x000000, surface: 0x060606, surface2: 0x0b0b0b, titleBar: 0x0a0a0a,
+                                    line: 0x1c1c1c, txt: 0xe6e6e6, muted: 0x9a9a9a, accent: 0xD2B48C,
+                                    onAccent: 0x000000,
+                                    green: 0x5fbf7f, red: 0xe0605a, amber: 0xe0b050, blue: 0x5a9be0,
+                                    glow: 0x1c1c1c, card: .glow)
 
     // Warm off-white page with white cards. The accent is a deeper tan so it stays readable on light
     // backgrounds (about 5:1 against white), and text on accent buttons is white.
@@ -28,20 +28,11 @@ struct Palette {
                                glow: 0x000000, card: .soft)
 
     // Terminal look: near-black with a green tint, mint text, neon green accent, green glow around cards
-    static let terminal = Palette(bg: 0x020805, surface: 0x06120B, surface2: 0x0A1B11, titleBar: 0x08160E,
-                                  line: 0x15402A, txt: 0xA9F5BC, muted: 0x5FA777, accent: 0x39FF6E,
-                                  onAccent: 0x02140A,
-                                  green: 0x39FF6E, red: 0xFF5C5C, amber: 0xFFC83D, blue: 0x4FB3FF,
-                                  glow: 0x0C3D20, card: .terminal)
-
-    // Retro look (old arcade / 8-bit): black with a warm tint, bright yellow accent with black text on it, dark
-    // olive cards with stair-stepped corners, a chunky outline and a hard, un-blurred shadow like a sprite.
-    // Amber is orange on purpose, so "late" stays different from the yellow accent.
-    static let retro = Palette(bg: 0x070700, surface: 0x131100, surface2: 0x1E1B00, titleBar: 0x0E0D00,
-                               line: 0x4F4800, txt: 0xF5F2DC, muted: 0x9C975F, accent: 0xFFE433,
-                               onAccent: 0x000000,
-                               green: 0x6BE06B, red: 0xFF5A4F, amber: 0xFF9F1C, blue: 0x5CB8FF,
-                               glow: 0x332E00, card: .pixel)
+    static let programmer = Palette(bg: 0x020805, surface: 0x06120B, surface2: 0x0A1B11, titleBar: 0x08160E,
+                                    line: 0x15402A, txt: 0xA9F5BC, muted: 0x5FA777, accent: 0x39FF6E,
+                                    onAccent: 0x02140A,
+                                    green: 0x39FF6E, red: 0xFF5C5C, amber: 0xFFC83D, blue: 0x4FB3FF,
+                                    glow: 0x0C3D20, card: .terminal)
 }
 
 // Every colour reads from the palette of the chosen theme (Themes.swift). Screens pick the new colours up
@@ -80,15 +71,12 @@ enum Theme {
         if mono {
             title[.font] = UIFont.monospacedSystemFont(ofSize: 17, weight: .semibold)
             large[.font] = UIFont.monospacedSystemFont(ofSize: 34, weight: .bold)
-            // only the Terminal theme glows; Retro keeps flat, crisp titles
-            if ThemeStore.shared.theme.glowsText {
-                let glow = NSShadow()
-                glow.shadowColor = uiAccent.withAlphaComponent(0.6)
-                glow.shadowBlurRadius = 6
-                glow.shadowOffset = .zero
-                title[.shadow] = glow
-                large[.shadow] = glow
-            }
+            let glow = NSShadow()
+            glow.shadowColor = uiAccent.withAlphaComponent(0.6)
+            glow.shadowBlurRadius = 6
+            glow.shadowOffset = .zero
+            title[.shadow] = glow
+            large[.shadow] = glow
         }
         nav.titleTextAttributes = title
         nav.largeTitleTextAttributes = large
@@ -136,49 +124,9 @@ extension UIColor {
     }
 }
 
-// Card background. Dark: soft glow (the 10/30/64px rgba(28,28,28) shadows from the userscript).
+// Card background. AMOLED: soft glow (the 10/30/64px rgba(28,28,28) shadows from the userscript).
 // Light: a gentle drop shadow and a thin outline, since a glow doesn't show on a light page.
-// Terminal: a green glow and a thin green outline, like a terminal window.
-// Retro: stair-stepped corners, a 3 pt outline and a hard shadow offset down and to the right with no blur,
-// like an 8-bit sprite.
-
-/// A rectangle with stair-stepped (two-step) corners instead of rounded ones, for the Retro theme
-struct PixelRect: Shape {
-    var step: CGFloat = 3
-    func path(in r: CGRect) -> Path {
-        let s = step
-        var p = Path()
-        p.move(to: CGPoint(x: r.minX + 2 * s, y: r.minY))
-        p.addLine(to: CGPoint(x: r.maxX - 2 * s, y: r.minY))
-        p.addLine(to: CGPoint(x: r.maxX - 2 * s, y: r.minY + s))
-        p.addLine(to: CGPoint(x: r.maxX - s, y: r.minY + s))
-        p.addLine(to: CGPoint(x: r.maxX - s, y: r.minY + 2 * s))
-        p.addLine(to: CGPoint(x: r.maxX, y: r.minY + 2 * s))
-        p.addLine(to: CGPoint(x: r.maxX, y: r.maxY - 2 * s))
-        p.addLine(to: CGPoint(x: r.maxX - s, y: r.maxY - 2 * s))
-        p.addLine(to: CGPoint(x: r.maxX - s, y: r.maxY - s))
-        p.addLine(to: CGPoint(x: r.maxX - 2 * s, y: r.maxY - s))
-        p.addLine(to: CGPoint(x: r.maxX - 2 * s, y: r.maxY))
-        p.addLine(to: CGPoint(x: r.minX + 2 * s, y: r.maxY))
-        p.addLine(to: CGPoint(x: r.minX + 2 * s, y: r.maxY - s))
-        p.addLine(to: CGPoint(x: r.minX + s, y: r.maxY - s))
-        p.addLine(to: CGPoint(x: r.minX + s, y: r.maxY - 2 * s))
-        p.addLine(to: CGPoint(x: r.minX, y: r.maxY - 2 * s))
-        p.addLine(to: CGPoint(x: r.minX, y: r.minY + 2 * s))
-        p.addLine(to: CGPoint(x: r.minX + s, y: r.minY + 2 * s))
-        p.addLine(to: CGPoint(x: r.minX + s, y: r.minY + s))
-        p.addLine(to: CGPoint(x: r.minX + 2 * s, y: r.minY + s))
-        p.closeSubpath()
-        return p
-    }
-}
-
-/// The outline shape of a card in the current theme: stair-stepped for Retro, rounded for the others
-func cardShape(radius: CGFloat = 14) -> AnyShape {
-    if ThemeStore.shared.palette.card == .pixel { return AnyShape(PixelRect(step: 3)) }
-    return AnyShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
-}
-
+// Programmer: a green glow and a thin green outline, like a terminal window.
 struct GlowCard: ViewModifier {
     var radius: CGFloat = 14
     @ObservedObject private var themes = ThemeStore.shared
@@ -186,24 +134,15 @@ struct GlowCard: ViewModifier {
         // One fixed structure (only the values change), so switching theme never rebuilds what is inside the card
         let p = themes.theme.palette
         let soft = p.card == .soft
-        let pixel = p.card == .pixel
-        let shape: AnyShape = pixel ? AnyShape(PixelRect(step: 3))
-                                    : AnyShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
         let g = Color(hex: p.glow)
-        let outline: CGFloat = p.card == .glow ? 0 : (pixel ? 3 : 1)
-        let s1Color: Color = pixel ? g : (soft ? Color.black.opacity(0.06) : g.opacity(0.85))
-        let s1Radius: CGFloat = pixel ? 0 : (soft ? 6 : 5)
-        let s1X: CGFloat = pixel ? 4 : 0
-        let s1Y: CGFloat = pixel ? 4 : (soft ? 2 : 0)
-        let s2Color: Color = pixel ? Color.clear : (soft ? Color.black.opacity(0.04) : g.opacity(0.5))
-        let s3Color: Color = (soft || pixel) ? Color.clear : g.opacity(0.25)
         return content
             .background(Color(hex: p.surface))
             .clipShape(shape)
-            .overlay(shape.stroke(Color(hex: p.line), lineWidth: outline))
-            .shadow(color: s1Color, radius: s1Radius, x: s1X, y: s1Y)
-            .shadow(color: s2Color, radius: soft ? 18 : 15, y: soft ? 6 : 0)
-            .shadow(color: s3Color, radius: 32)
+            .overlay(shape.stroke(Color(hex: p.line), lineWidth: p.card == .glow ? 0 : 1))
+            .shadow(color: soft ? Color.black.opacity(0.06) : g.opacity(0.85), radius: soft ? 6 : 5, y: soft ? 2 : 0)
+            .shadow(color: soft ? Color.black.opacity(0.04) : g.opacity(0.5), radius: soft ? 18 : 15, y: soft ? 6 : 0)
+            .shadow(color: soft ? Color.clear : g.opacity(0.25), radius: 32)
     }
 }
 extension View {
