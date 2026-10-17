@@ -1,52 +1,79 @@
 import SwiftUI
 import UIKit
 
-// The colours of one theme, as 0xRRGGBB values. The dark one is taken 1:1 from the "iTa'leem AMOLED Dark" userscript.
+// The colours of one theme, as 0xRRGGBB values. The AMOLED one is taken 1:1 from the "iTa'leem AMOLED Dark" userscript.
 // Themes.swift lists the themes the user can pick; each one needs a palette here.
 struct Palette {
+    /// How cards are lifted off the page: a soft glow (dark), a drop shadow + outline (light),
+    /// or a glow + outline like a terminal window
+    enum Card { case glow, soft, terminal }
+
     let bg, surface, surface2, titleBar, line, txt, muted, accent, onAccent: UInt32
+    let green, red, amber, blue: UInt32     // status colours (present / absent / late / info)
+    let glow: UInt32                        // colour of the glow behind cards
+    let card: Card
 
     static let amoledDark = Palette(bg: 0x000000, surface: 0x060606, surface2: 0x0b0b0b, titleBar: 0x0a0a0a,
                                     line: 0x1c1c1c, txt: 0xe6e6e6, muted: 0x9a9a9a, accent: 0xD2B48C,
-                                    onAccent: 0x000000)
+                                    onAccent: 0x000000,
+                                    green: 0x5fbf7f, red: 0xe0605a, amber: 0xe0b050, blue: 0x5a9be0,
+                                    glow: 0x1c1c1c, card: .glow)
+
     // Warm off-white page with white cards. The accent is a deeper tan so it stays readable on light
     // backgrounds (about 5:1 against white), and text on accent buttons is white.
     static let light = Palette(bg: 0xF7F4EF, surface: 0xFFFFFF, surface2: 0xF1EDE6, titleBar: 0xEEE9E0,
                                line: 0xE3DDD2, txt: 0x1F1B16, muted: 0x6B6458, accent: 0x8A6A3B,
-                               onAccent: 0xFFFFFF)
+                               onAccent: 0xFFFFFF,
+                               green: 0x2C8A4B, red: 0xC23B35, amber: 0x9A6A00, blue: 0x2B6CB0,
+                               glow: 0x000000, card: .soft)
+
+    // Terminal look: near-black with a green tint, mint text, neon green accent, green glow around cards
+    static let programmer = Palette(bg: 0x020805, surface: 0x06120B, surface2: 0x0A1B11, titleBar: 0x08160E,
+                                    line: 0x15402A, txt: 0xA9F5BC, muted: 0x5FA777, accent: 0x39FF6E,
+                                    onAccent: 0x02140A,
+                                    green: 0x39FF6E, red: 0xFF5C5C, amber: 0xFFC83D, blue: 0x4FB3FF,
+                                    glow: 0x0C3D20, card: .terminal)
 }
 
-// Every colour resolves by itself for the current look (light / dark), so switching theme re-colours
-// the whole app without rebuilding any screen. (Dark is also what an unspecified style means.)
+// Every colour reads from the palette of the chosen theme (Themes.swift). Screens pick the new colours up
+// when the theme is switched because RootView rebuilds its tabs for the new theme (see MainViews.swift).
 enum Theme {
-    static func dyn(_ dark: UInt32, _ light: UInt32) -> UIColor {
-        UIColor { $0.userInterfaceStyle == .light ? UIColor(hex: light) : UIColor(hex: dark) }
-    }
+    private static var p: Palette { ThemeStore.shared.palette }
+
+    static var bg: Color       { Color(hex: p.bg) }
+    static var surface: Color  { Color(hex: p.surface) }
+    static var surface2: Color { Color(hex: p.surface2) }
+    static var titleBar: Color { Color(hex: p.titleBar) }   // "General" title bar / table headers
+    static var line: Color     { Color(hex: p.line) }
+    static var txt: Color      { Color(hex: p.txt) }
+    static var muted: Color    { Color(hex: p.muted) }
+    static var accent: Color   { Color(hex: p.accent) }
+    /// Text / icons drawn on top of an accent-coloured background (black on the tan, white on the deeper tan, ...)
+    static var onAccent: Color { Color(hex: p.onAccent) }
 
     // UIKit versions (navigation bar, tab bar, tab badges)
-    static let uiBg       = dyn(Palette.amoledDark.bg, Palette.light.bg)
-    static let uiTxt      = dyn(Palette.amoledDark.txt, Palette.light.txt)
-    static let uiAccent   = dyn(Palette.amoledDark.accent, Palette.light.accent)
-    static let uiOnAccent = dyn(Palette.amoledDark.onAccent, Palette.light.onAccent)
+    static var uiBg: UIColor       { UIColor(hex: p.bg) }
+    static var uiTxt: UIColor      { UIColor(hex: p.txt) }
+    static var uiAccent: UIColor   { UIColor(hex: p.accent) }
+    static var uiOnAccent: UIColor { UIColor(hex: p.onAccent) }
 
-    static let bg       = Color(uiColor: uiBg)
-    static let surface  = Color(uiColor: dyn(Palette.amoledDark.surface, Palette.light.surface))
-    static let surface2 = Color(uiColor: dyn(Palette.amoledDark.surface2, Palette.light.surface2))
-    static let titleBar = Color(uiColor: dyn(Palette.amoledDark.titleBar, Palette.light.titleBar))   // "General" title bar / table headers
-    static let line     = Color(uiColor: dyn(Palette.amoledDark.line, Palette.light.line))
-    static let txt      = Color(uiColor: uiTxt)
-    static let muted    = Color(uiColor: dyn(Palette.amoledDark.muted, Palette.light.muted))
-    static let accent   = Color(uiColor: uiAccent)
-    /// Text / icons drawn on top of an accent-coloured background (black on the tan, white on the deeper tan)
-    static let onAccent = Color(uiColor: uiOnAccent)
-
+    /// Navigation bar, tab bar and tab badges. Bars that already exist keep the old look, so call this
+    /// before the screens are rebuilt for a new theme (ThemeStore.select does).
     static func applyAppearance() {
+        let mono = ThemeStore.shared.theme.mono
+
         let nav = UINavigationBarAppearance()
         nav.configureWithOpaqueBackground()
         nav.backgroundColor = uiBg
         nav.shadowColor = .clear
-        nav.titleTextAttributes = [.foregroundColor: uiTxt]
-        nav.largeTitleTextAttributes = [.foregroundColor: uiTxt]
+        var title: [NSAttributedString.Key: Any] = [.foregroundColor: uiTxt]
+        var large: [NSAttributedString.Key: Any] = [.foregroundColor: uiTxt]
+        if mono {
+            title[.font] = UIFont.monospacedSystemFont(ofSize: 17, weight: .semibold)
+            large[.font] = UIFont.monospacedSystemFont(ofSize: 34, weight: .bold)
+        }
+        nav.titleTextAttributes = title
+        nav.largeTitleTextAttributes = large
         UINavigationBar.appearance().standardAppearance = nav
         UINavigationBar.appearance().scrollEdgeAppearance = nav
         UINavigationBar.appearance().compactAppearance = nav
@@ -55,6 +82,20 @@ enum Theme {
         tab.configureWithOpaqueBackground()
         tab.backgroundColor = uiBg
         tab.shadowColor = .clear
+        // Tab badges in the app's accent colour with contrasting text. SwiftUI's .badge ignores
+        // UITabBarItem.appearance().badgeColor, so it is set through UITabBarAppearance instead.
+        let badgeText: [NSAttributedString.Key: Any] = [.foregroundColor: uiOnAccent]
+        for item in [tab.stackedLayoutAppearance, tab.inlineLayoutAppearance, tab.compactInlineLayoutAppearance] {
+            for state in [item.normal, item.selected] {
+                state.badgeBackgroundColor = uiAccent
+                state.badgeTextAttributes = badgeText
+            }
+            if mono {
+                let f = UIFont.monospacedSystemFont(ofSize: 10, weight: .medium)
+                item.normal.titleTextAttributes = [.font: f, .foregroundColor: UIColor(hex: p.muted)]
+                item.selected.titleTextAttributes = [.font: f, .foregroundColor: uiAccent]
+            }
+        }
         UITabBar.appearance().standardAppearance = tab
         UITabBar.appearance().scrollEdgeAppearance = tab
     }
@@ -77,23 +118,25 @@ extension UIColor {
     }
 }
 
-// Dark: soft glow behind cards (the 10/30/64px rgba(28,28,28) shadows from the userscript).
-// Light: a gentle drop shadow and a thin outline instead, since a glow doesn't show on a light page.
+// Card background. AMOLED: soft glow (the 10/30/64px rgba(28,28,28) shadows from the userscript).
+// Light: a gentle drop shadow and a thin outline, since a glow doesn't show on a light page.
+// Programmer: a green glow and a thin green outline, like a terminal window.
 struct GlowCard: ViewModifier {
     var radius: CGFloat = 14
-    @Environment(\.colorScheme) private var scheme
+    @ObservedObject private var themes = ThemeStore.shared
     func body(content: Content) -> some View {
         // One fixed structure (only the values change), so switching theme never rebuilds what is inside the card
-        let light = scheme == .light
+        let p = themes.theme.palette
+        let soft = p.card == .soft
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
-        let g = Color(white: 28.0 / 255.0)
+        let g = Color(hex: p.glow)
         return content
-            .background(Theme.surface)
+            .background(Color(hex: p.surface))
             .clipShape(shape)
-            .overlay(shape.stroke(Theme.line, lineWidth: light ? 1 : 0))
-            .shadow(color: light ? Color.black.opacity(0.06) : g.opacity(0.85), radius: light ? 6 : 5, y: light ? 2 : 0)
-            .shadow(color: light ? Color.black.opacity(0.04) : g.opacity(0.5), radius: light ? 18 : 15, y: light ? 6 : 0)
-            .shadow(color: light ? Color.clear : g.opacity(0.25), radius: 32)
+            .overlay(shape.stroke(Color(hex: p.line), lineWidth: p.card == .glow ? 0 : 1))
+            .shadow(color: soft ? Color.black.opacity(0.06) : g.opacity(0.85), radius: soft ? 6 : 5, y: soft ? 2 : 0)
+            .shadow(color: soft ? Color.black.opacity(0.04) : g.opacity(0.5), radius: soft ? 18 : 15, y: soft ? 6 : 0)
+            .shadow(color: soft ? Color.clear : g.opacity(0.25), radius: 32)
     }
 }
 extension View {

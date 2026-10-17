@@ -33,7 +33,8 @@ Native client for iTa'leem (IIUM Moodle) using Moodle's mobile web-service API, 
 - Sync with the iTa'leem userscript through one file in your Google Drive (`iTaleem-sync.json`): to-dos, CAMS marks, pins and saved files merge both ways, newest change wins
 
 ### Themes
-- Others > Themes: pick the look of the app (AMOLED Dark, Light); the whole app cross-fades to the new theme straight away and the choice is remembered
+- Others > Themes: pick the look of the app (AMOLED Dark, Light, Programmer); the whole app cross-fades to the new theme straight away, you stay on the same tab and screen, and the choice is remembered
+- Programmer: near-black with a green tint, neon green accent, monospaced font and a green glow around cards
 - Each theme is a `Palette` in `Theme.swift` plus an entry in `Themes.swift`
 
 ### Website

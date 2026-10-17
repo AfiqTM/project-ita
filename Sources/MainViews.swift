@@ -9,42 +9,42 @@ struct RootView: View {
     @StateObject private var browser = SiteBrowser()
     @ObservedObject private var chat = ChatStore.shared   // unread chats, for the app-icon badge
 
-    init() {
-        // Tab badges in the app's accent colour with dark text. SwiftUI's .badge ignores
-        // UITabBarItem.appearance().badgeColor, so it is set through UITabBarAppearance instead.
-        // Starts from the tab bar appearance already set elsewhere (if any) so its look is kept.
-        let std = (UITabBar.appearance().standardAppearance.copy() as? UITabBarAppearance) ?? UITabBarAppearance()
-        let edge = (UITabBar.appearance().scrollEdgeAppearance?.copy() as? UITabBarAppearance) ?? std
-        let color = Theme.uiAccent
-        let attrs: [NSAttributedString.Key: Any] = [.foregroundColor: Theme.uiOnAccent]
-        for ap in [std, edge] {
-            for item in [ap.stackedLayoutAppearance, ap.inlineLayoutAppearance, ap.compactInlineLayoutAppearance] {
-                item.normal.badgeBackgroundColor = color
-                item.normal.badgeTextAttributes = attrs
-                item.selected.badgeBackgroundColor = color
-                item.selected.badgeTextAttributes = attrs
-            }
-        }
-        UITabBar.appearance().standardAppearance = std
-        UITabBar.appearance().scrollEdgeAppearance = edge
-    }
+    // Kept here (not inside the tabs) so they survive when the tabs are rebuilt for a new theme:
+    // the selected tab and, in Others, the screen that is open (Others > Themes)
+    @ObservedObject private var themes = ThemeStore.shared
+    @State private var tab = 0
+    @State private var othersPath: [OthersRoute] = []
 
     var body: some View {
-        TabView {
+        TabView(selection: $tab) {
             NavigationStack { CoursesView() }
                 .tabItem { Label("My courses", systemImage: "books.vertical") }
+                .tag(0)
             NavigationStack { AssignmentsTabView(model: assignments) }
                 .tabItem { Label("Assignments", systemImage: "checklist") }
                 .badge(assignments.badgeCount)   // to-do items due inside the range chosen in the tab
+                .tag(1)
             NavigationStack { AlertsView(badge: notifs) }
                 .tabItem { Label("Alerts", systemImage: "bell") }
                 .badge(notifs.count)   // unread notifications
+                .tag(2)
             NavigationStack { SiteBrowserView(browser: browser) }
                 .tabItem { Label("Website", systemImage: "globe") }
-            NavigationStack { ProfileView() }
-                .tabItem { Label("Others", systemImage: "ellipsis.circle") }
+                .tag(3)
+            NavigationStack(path: $othersPath) {
+                ProfileView()
+                    .navigationDestination(for: OthersRoute.self) { route in
+                        switch route {
+                        case .themes: ThemesView()
+                        }
+                    }
+            }
+            .tabItem { Label("Others", systemImage: "ellipsis.circle") }
+            .tag(4)
         }
-        .safeAreaInset(edge: .top, spacing: 0) { OfflineBanner() }   // small "Offline" pill, only while saved data is shown
+        // A new identity per theme: every screen is rebuilt, so all colours are read again
+        .id(themes.theme)
+        .safeAreaInset(edge: .top, spacing: 0) { OfflineBanner().id(themes.theme) }   // small "Offline" pill, only while saved data is shown
         .overlay { MessagesOverlay() }   // Messages: full-screen, above the tab bar (Messages.swift)
         // Load at launch so the badges are right before either tab is opened
         .task(id: app.site?.userid) {
@@ -612,6 +612,9 @@ struct AlertsView: View {
 
 // MARK: - Profile
 
+/// Screens in Others that are opened by value, so the open one can be kept when the tabs are rebuilt for a new theme
+enum OthersRoute: Hashable { case themes }
+
 struct ProfileView: View {
     @EnvironmentObject var app: AppState
     @EnvironmentObject var todos: TodoStore
@@ -643,7 +646,7 @@ struct ProfileView: View {
                         ProfileRow(icon: "externaldrive", title: "My Drive",
                                    subtitle: driveAuth.email ?? "Browse your Google Drive", showLine: true)
                     }
-                    NavigationLink { ThemesView() } label: {
+                    NavigationLink(value: OthersRoute.themes) {
                         ProfileRow(icon: "paintpalette", title: "Themes",
                                    subtitle: themes.theme.name, showLine: true)
                     }

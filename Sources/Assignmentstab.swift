@@ -2,12 +2,12 @@ import SwiftUI
 
 // MARK: - Shared colours / pill
 
-// Status colours: the bright ones suit the dark theme; the light theme gets deeper shades that stay readable on white
+// Status colours of the chosen theme (bright on the dark themes, deeper shades on the light one)
 enum Tone {
-    static let green = Color(uiColor: Theme.dyn(0x5fbf7f, 0x2C8A4B))
-    static let red = Color(uiColor: Theme.dyn(0xe0605a, 0xC23B35))
-    static let amber = Color(uiColor: Theme.dyn(0xe0b050, 0x9A6A00))
-    static let blue = Color(uiColor: Theme.dyn(0x5a9be0, 0x2B6CB0))
+    static var green: Color { Color(hex: ThemeStore.shared.palette.green) }
+    static var red: Color { Color(hex: ThemeStore.shared.palette.red) }
+    static var amber: Color { Color(hex: ThemeStore.shared.palette.amber) }
+    static var blue: Color { Color(hex: ThemeStore.shared.palette.blue) }
 }
 
 struct StatusPill: View {

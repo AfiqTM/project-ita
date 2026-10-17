@@ -3,13 +3,16 @@ import UIKit
 
 // MARK: - Themes (Others > Themes)
 //
-// To add a theme: add a case here with its name, description and palette (a `Palette` in Theme.swift).
-// Today a theme is either a dark or a light look: Theme's colours resolve by the current look, so
-// choosing one just sets the app's colour scheme. A theme with its own colours on top of dark or
-// light would need Theme's colours to read from the chosen palette instead.
+// To add a theme: add a case to AppTheme with its name, description, colour scheme and palette (a `Palette`
+// in Theme.swift). Everything else (the Themes screen, the preview card, the colours, the switch) follows.
+//
+// How a switch works: Theme's colours read the chosen palette. RootView gives its tabs a new identity per
+// theme, so every screen is rebuilt and reads the new colours; the selected tab and the open Others screen
+// are kept. To hide the rebuild, the current screen is frozen as a picture on top of the window while it
+// happens and then faded out.
 
 enum AppTheme: String, CaseIterable, Identifiable {
-    case amoledDark, light
+    case amoledDark, light, programmer
 
     var id: String { rawValue }
 
@@ -17,6 +20,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
         switch self {
         case .amoledDark: return "AMOLED Dark"
         case .light: return "Light"
+        case .programmer: return "Programmer"
         }
     }
 
@@ -24,20 +28,33 @@ enum AppTheme: String, CaseIterable, Identifiable {
         switch self {
         case .amoledDark: return "True black with the tan accent. Easy on the eyes at night."
         case .light: return "Warm off-white with a deeper tan accent. Easier to read in bright light."
+        case .programmer: return "Terminal look: near-black, neon green, a monospaced font and a green glow."
         }
     }
 
+    /// Light themes use the light look for system parts (keyboard, pickers, status bar); the others use dark
     var scheme: ColorScheme { self == .light ? .light : .dark }
 
-    var palette: Palette { self == .light ? .light : .amoledDark }
+    /// Monospaced font everywhere
+    var mono: Bool { self == .programmer }
+
+    var palette: Palette {
+        switch self {
+        case .amoledDark: return .amoledDark
+        case .light: return .light
+        case .programmer: return .programmer
+        }
+    }
 }
 
-/// The chosen theme, remembered across launches. Not tied to the main actor so views can read it freely.
+/// The chosen theme, remembered across launches.
 final class ThemeStore: ObservableObject {
     static let shared = ThemeStore()
     private static let key = "app.theme"
 
     @Published private(set) var theme: AppTheme
+
+    var palette: Palette { theme.palette }
 
     private init() {
         theme = AppTheme(rawValue: UserDefaults.standard.string(forKey: Self.key) ?? "") ?? .amoledDark
@@ -62,15 +79,28 @@ final class ThemeStore: ObservableObject {
 
         theme = new
         UserDefaults.standard.set(new.rawValue, forKey: Self.key)
+        Theme.applyAppearance()   // new navigation / tab bars (created when the screens are rebuilt) get the new look
 
         guard let cover else { return }
-        // a moment for the new colours to render underneath, then fade the old picture out
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+        // a moment for the rebuilt screens to render underneath, then fade the old picture out
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
             UIView.animate(withDuration: 0.45, delay: 0, options: [.curveEaseInOut, .allowUserInteraction]) {
                 cover.alpha = 0
             } completion: { _ in
                 cover.removeFromSuperview()
             }
+        }
+    }
+}
+
+/// Monospaced font for a whole screen tree (iOS 16.1 and later; older versions keep the normal font)
+struct ThemeFont: ViewModifier {
+    let mono: Bool
+    func body(content: Content) -> some View {
+        if #available(iOS 16.1, *) {
+            content.fontDesign(mono ? Font.Design.monospaced : nil)
+        } else {
+            content
         }
     }
 }
@@ -109,7 +139,7 @@ private struct ThemeCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            ThemePreview(p: theme.palette)
+            ThemePreview(theme: theme)
                 .frame(height: 120)
 
             HStack(spacing: 10) {
@@ -138,13 +168,21 @@ private struct ThemeCard: View {
 
 /// A small picture of the app in a theme, drawn from that theme's own palette (not the current one)
 private struct ThemePreview: View {
-    let p: Palette
+    let theme: AppTheme
+    private var p: Palette { theme.palette }
+    private func mono(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
+        .system(size: size, weight: weight, design: theme.mono ? .monospaced : .default)
+    }
 
     var body: some View {
         VStack(spacing: 8) {
             // title bar
             HStack {
-                Capsule().fill(Color(hex: p.txt)).frame(width: 46, height: 6)
+                if theme.mono {
+                    Text("> italeem_").font(mono(9, .bold)).foregroundColor(Color(hex: p.accent))
+                } else {
+                    Capsule().fill(Color(hex: p.txt)).frame(width: 46, height: 6)
+                }
                 Spacer()
                 Circle().fill(Color(hex: p.accent)).frame(width: 8, height: 8)
             }
@@ -171,11 +209,16 @@ private struct ThemePreview: View {
 
     private var card: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Capsule().fill(Color(hex: p.txt)).frame(width: 52, height: 6)
-            Capsule().fill(Color(hex: p.muted)).frame(width: 36, height: 5)
+            if theme.mono {
+                Text("$ cs101").font(mono(9, .bold)).foregroundColor(Color(hex: p.txt))
+                Text("> 85% ok").font(mono(8)).foregroundColor(Color(hex: p.muted))
+            } else {
+                Capsule().fill(Color(hex: p.txt)).frame(width: 52, height: 6)
+                Capsule().fill(Color(hex: p.muted)).frame(width: 36, height: 5)
+            }
             Spacer(minLength: 0)
             Text("Open")
-                .font(.system(size: 9, weight: .bold))
+                .font(mono(9, .bold))
                 .foregroundColor(Color(hex: p.onAccent))
                 .padding(.horizontal, 8).padding(.vertical, 3)
                 .background(Color(hex: p.accent))
@@ -188,5 +231,6 @@ private struct ThemePreview: View {
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
             .stroke(Color(hex: p.line), lineWidth: 1))
+        .shadow(color: p.card == .terminal ? Color(hex: p.glow).opacity(0.9) : .clear, radius: 6)
     }
 }
