@@ -154,6 +154,20 @@ enum Theme {
                 item.selected.titleTextAttributes = [.font: f, .foregroundColor: uiAccent]
             }
         }
+        // UIKit controls that SwiftUI wraps (segmented pickers, bar buttons) need the font set here as well
+        let seg = UISegmentedControl.appearance()
+        let barButton = UIBarButtonItem.appearance()
+        if theme.westernHeadings, let f = UIFont(name: WesternFont.name, size: 15) {
+            seg.setTitleTextAttributes([.font: f], for: .normal)
+            seg.setTitleTextAttributes([.font: f], for: .selected)
+            barButton.setTitleTextAttributes([.font: f], for: .normal)
+            barButton.setTitleTextAttributes([.font: f], for: .highlighted)
+        } else {
+            seg.setTitleTextAttributes(nil, for: .normal)
+            seg.setTitleTextAttributes(nil, for: .selected)
+            barButton.setTitleTextAttributes(nil, for: .normal)
+            barButton.setTitleTextAttributes(nil, for: .highlighted)
+        }
         if theme.westernHeadings, let f = UIFont(name: WesternFont.name, size: 13) {
             for item in [tab.stackedLayoutAppearance, tab.inlineLayoutAppearance, tab.compactInlineLayoutAppearance] {
                 item.normal.titleTextAttributes = [.font: f, .foregroundColor: UIColor(hex: p.muted)]

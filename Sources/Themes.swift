@@ -251,11 +251,13 @@ enum PixelFont {
     static var available: Bool { UIFont(name: bold, size: 8) != nil }
 }
 
-/// The Red Dead Redemption 2 theme's font: Chinese Rocks (Fonts/ChineseRocksRg-Regular.ttf, by Typodermic Fonts, the
-/// lettering of the game's logo and website). It is a single all-caps face, so the "smaller font" is the same face at
-/// the smaller size of the text it replaces. Check Typodermic's licence before publishing the app.
+/// The Red Dead Redemption 2 theme's font: Chinese Rocks (by Typodermic Fonts, the lettering of the game's logo and
+/// website), patched by Tools/make_rdr_font.py into Fonts/ChineseRocksPlus-Regular.ttf: "&", brackets and braces
+/// redrawn properly and check marks, bullets, arrows and shapes added, so no symbol falls back to the system font.
+/// It is a single all-caps face, so the "smaller font" is the same face at the smaller size of the text it replaces.
+/// Check Typodermic's licence (it allows or forbids modified copies) before publishing the app.
 enum WesternFont {
-    static let name = "ChineseRocksRg-Regular"
+    static let name = "ChineseRocksPlus-Regular"
 
     static func register() {
         guard let url = Bundle.main.url(forResource: name, withExtension: "ttf") else { return }
