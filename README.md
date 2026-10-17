@@ -35,8 +35,8 @@ Native client for iTa'leem (IIUM Moodle) using Moodle's mobile web-service API, 
 ### Themes
 - Others > Themes: pick the look of the app (Dark, Light, Terminal, Retro); the whole app cross-fades to the new theme straight away, you stay on the same tab and screen, and the choice is remembered
 - The home-screen icon follows the theme (Dark, Light and Terminal each have their own). iOS shows its own "You have changed the icon" notice when it changes; apps can't hide it
-- Terminal: near-black with a green tint, neon green accent, monospaced font, a green glow around cards and prominent text, faint CRT scanlines over the app (off when Reduce Transparency is on) and green-tinted course covers
-- Retro: old arcade look. Black with dark olive tiles, yellow accent, almost square cards with a thick outline and a hard offset block shadow, monospaced font, yellow-tinted course covers and a pixel-art yellow app icon. Headings and navigation titles use the built-in "iTaleem Pixel" font (`Fonts/`, regenerated with `Tools/make_pixel_font.py`, which needs `pip install fonttools`)
+- Terminal: near-black with a green tint, neon green accent, monospaced font, a green glow around cards and prominent text, faint CRT scanlines over the app (off when Reduce Transparency is on), and an occasional glitch (text jumps and splits into red and cyan ghosts for about 0.3 s every few seconds; off when Reduce Motion is on) and green-tinted course covers
+- Retro: old arcade look. Black with dark olive tiles, yellow accent, almost square cards with a thick outline and a hard offset block shadow, monospaced font, yellow-tinted course covers and a chunky 64x64 pixel-art yellow app icon. Headings and navigation titles use the built-in "iTaleem Pixel" font (`Fonts/`, regenerated with `Tools/make_pixel_font.py`, which needs `pip install fonttools`)
 - Course covers follow the theme: bright pastel default covers and undimmed photos in Light, dimmed photos in the dark themes
 - Each theme is a `Palette` in `Theme.swift` plus an entry in `Themes.swift`, and an icon set in `Sources/Assets.xcassets` (`AppIcon-<Name>`, listed in `project.yml`)
 

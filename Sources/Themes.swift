@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import UIKit
 import CoreText
 
@@ -250,20 +251,69 @@ extension View {
 struct TextGlow: ViewModifier {
     var radius: CGFloat
     @ObservedObject private var themes = ThemeStore.shared
+    @ObservedObject private var glitch = GlitchClock.shared
     func body(content: Content) -> some View {
         let on = themes.theme.glowsText
-        return content.shadow(color: on ? Color(hex: themes.palette.accent).opacity(0.55) : Color.clear,
-                              radius: on ? radius : 0)
+        let dx = on ? glitch.shift : 0
+        // Terminal glitch: during a burst the text jumps sideways and splits into a red and a cyan ghost
+        return content
+            .shadow(color: on ? Color(hex: themes.palette.accent).opacity(0.55) : Color.clear, radius: on ? radius : 0)
+            .shadow(color: dx == 0 ? .clear : Color(red: 1, green: 0.1, blue: 0.25).opacity(0.85), radius: 0, x: dx * 1.6, y: 0)
+            .shadow(color: dx == 0 ? .clear : Color(red: 0, green: 0.9, blue: 1).opacity(0.85), radius: 0, x: -dx * 1.6, y: 0)
+            .offset(x: dx * 0.5)
     }
 }
 extension View {
     func textGlow(radius: CGFloat = 5) -> some View { modifier(TextGlow(radius: radius)) }
 }
 
+/// Drives the Terminal theme's glitch: every 3-7 seconds a burst of about 0.3 s. It only publishes while a burst
+/// is running (idle = no redraws). Off when the Terminal theme isn't active or Reduce Motion is on.
+@MainActor
+final class GlitchClock: ObservableObject {
+    static let shared = GlitchClock()
+    @Published private(set) var shift: CGFloat = 0        // sideways jump / colour split, 0 when idle
+    @Published private(set) var band: CGFloat? = nil      // 0...1 vertical position of a tearing bar, nil when idle
+    private var running = false
+    private var themeSub: AnyCancellable?
+
+    private init() {
+        // $theme publishes before the value is stored, so look again on the next run-loop turn
+        themeSub = ThemeStore.shared.$theme.sink { [weak self] _ in
+            DispatchQueue.main.async { self?.update() }
+        }
+        update()
+    }
+
+    private func update() {
+        let wanted = ThemeStore.shared.theme.glowsText && !UIAccessibility.isReduceMotionEnabled
+        if wanted, !running { running = true; schedule() }
+        if !wanted { running = false; shift = 0; band = nil }
+    }
+
+    private func schedule() {
+        let wait = Double.random(in: 3...7)
+        DispatchQueue.main.asyncAfter(deadline: .now() + wait) { [weak self] in self?.burst(ticks: Int.random(in: 4...7)) }
+    }
+
+    private func burst(ticks: Int) {
+        guard running else { return }
+        if ticks == 0 {
+            shift = 0; band = nil
+            schedule()
+            return
+        }
+        shift = CGFloat([-2, -1, 1, 2, 3].randomElement()!)
+        band = CGFloat.random(in: 0.05...0.95)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in self?.burst(ticks: ticks - 1) }
+    }
+}
+
 /// Faint CRT scanlines (a dark line every 3 points) and darker screen corners over the whole app.
 /// Touches pass through it; it is hidden when Reduce Transparency is on.
 struct ScanlineOverlay: View {
     @Environment(\.accessibilityReduceTransparency) private var reduce
+    @ObservedObject private var glitch = GlitchClock.shared
 
     var body: some View {
         if !reduce {
@@ -278,6 +328,13 @@ struct ScanlineOverlay: View {
                 }
                 RadialGradient(colors: [Color.clear, Color.black.opacity(0.35)],
                                center: .center, startRadius: 160, endRadius: 560)
+                if let band = glitch.band {   // glitch burst: a bright tearing bar crosses the screen
+                    GeometryReader { geo in
+                        Rectangle().fill(Color(hex: ThemeStore.shared.palette.accent).opacity(0.10))
+                            .frame(height: 10)
+                            .offset(x: glitch.shift * 4, y: geo.size.height * band)
+                    }
+                }
             }
             .ignoresSafeArea()
             .allowsHitTesting(false)
