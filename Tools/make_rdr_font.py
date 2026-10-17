@@ -5,7 +5,9 @@ Chinese Rocks (the game's lettering) draws "&" like a plus, "(" ")" "{" "}" like
 marks, bullets, arrows or shapes. This script copies the font and
   1. redraws & ( ) { } with the matching glyphs of Staatliches (SIL OFL), scaled to Chinese Rocks' cap height and
      widened a little to match its heavier strokes,
-  2. adds simple geometric symbols (check marks, circles, squares, triangles, arrows, chevrons, cross) drawn with
+  2. replaces every lowercase letter with the matching one from Tavern (Oleg Voznyy), scaled so its capital letters
+     are as tall as Chinese Rocks' capitals: capitals stay Chinese Rocks, small letters become Tavern,
+  3. adds simple geometric symbols (check marks, circles, squares, triangles, arrows, chevrons, cross) drawn with
      the same stroke weight,
 so those characters look like the rest of the text instead of falling back to the system font.
 
@@ -20,6 +22,7 @@ from fontTools.pens.transformPen import TransformPen
 HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.join(HERE, "source", "ChineseRocksRg-Regular.ttf")
 DONOR = os.path.join(HERE, "source", "Staatliches-Regular.ttf")
+TAVERN = os.path.join(HERE, "source", "Tavern-Full.otf")
 OUT = os.path.join(HERE, "..", "Fonts", "ChineseRocksPlus-Regular.ttf")
 FAMILY, PSNAME = "Chinese Rocks Plus", "ChineseRocksPlus-Regular"
 
@@ -50,7 +53,33 @@ def borrow(ch):
 for ch in "&(){}":
     borrow(ch)
 
-# ---- 2. new geometric glyphs
+# ---- 2. lowercase letters from Tavern
+tav = TTFont(TAVERN)
+tcmap, tset = tav.getBestCmap(), tav.getGlyphSet()
+TS = CAP / 1438.0               # Tavern's capital "H" is 1438 units tall (2048 per em)
+done = 0
+for code, name in list(cmap_main.items()):
+    ch = chr(code)
+    if not ch.islower() or code not in tcmap or code < 0x61:
+        continue
+    # Chinese Rocks is all caps: its lowercase codes share the capitals' glyphs, so give the lowercase new glyphs
+    new = "tav%04X" % code
+    pen = TTGlyphPen(None)
+    tset[tcmap[code]].draw(TransformPen(pen, (TS, 0, 0, TS, 0, BASE)))
+    g = pen.glyph()
+    glyf[new] = g
+    g.recalcBounds(glyf)
+    hmtx[new] = (round(tav["hmtx"][tcmap[code]][0] * TS), getattr(g, "xMin", 0))
+    order = font.getGlyphOrder()
+    if new not in order:
+        order.append(new); font.setGlyphOrder(order)
+    for t in font["cmap"].tables:
+        if t.isUnicode() and code in t.cmap:
+            t.cmap[code] = new
+    done += 1
+print("lowercase letters from Tavern:", done)
+
+# ---- 3. new geometric glyphs
 def poly(pen, pts, ccw=False):
     # TrueType: outer contours clockwise, holes counter-clockwise
     area = sum(pts[i][0] * pts[(i + 1) % len(pts)][1] - pts[(i + 1) % len(pts)][0] * pts[i][1] for i in range(len(pts)))
@@ -122,7 +151,8 @@ for rec in font["name"].names:
         rec.string = PSNAME
     elif rec.nameID == 3:
         rec.string = PSNAME + "-patched"
-if "VDMX" in font:      # per-size height table: could clip the new glyphs
-    del font["VDMX"]
+for tag in ("VDMX", "kern", "GPOS"):   # height table could clip; the old kerning was made for the old lowercase
+    if tag in font:
+        del font[tag]
 font.save(OUT)
 print("wrote", os.path.normpath(OUT))

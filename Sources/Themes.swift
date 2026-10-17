@@ -251,13 +251,15 @@ enum PixelFont {
     static var available: Bool { UIFont(name: bold, size: 8) != nil }
 }
 
-/// The Red Dead Redemption 2 theme's font: Chinese Rocks (by Typodermic Fonts, the lettering of the game's logo and
-/// website), patched by Tools/make_rdr_font.py into Fonts/ChineseRocksPlus-Regular.ttf: "&", brackets and braces
-/// redrawn properly and check marks, bullets, arrows and shapes added, so no symbol falls back to the system font.
-/// It is a single all-caps face, so the "smaller font" is the same face at the smaller size of the text it replaces.
-/// Check Typodermic's licence (it allows or forbids modified copies) before publishing the app.
+/// The Red Dead Redemption 2 theme's font, built by Tools/make_rdr_font.py into Fonts/ChineseRocksPlus-Regular.ttf:
+/// capitals are Chinese Rocks (Typodermic Fonts, the lettering of the game's logo and website), small letters are
+/// Tavern (Oleg Voznyy), "&", brackets and braces are redrawn and check marks, bullets, arrows and shapes are added,
+/// so no symbol falls back to the system font. Check both licences (and whether they allow modified copies) before
+/// publishing the app.
 enum WesternFont {
     static let name = "ChineseRocksPlus-Regular"
+    /// The letters are narrow, so every size is this much bigger than in the other themes to look as large as them
+    static let scale: CGFloat = 1.2
 
     static func register() {
         guard let url = Bundle.main.url(forResource: name, withExtension: "ttf") else { return }
@@ -287,7 +289,7 @@ struct PixelHeading: ViewModifier {
         } else if themes.theme.westernHeadings {
             // same point size as the text has in the other themes, so nothing gets smaller or bigger
             content
-                .font(WesternFont.available ? Font.custom(WesternFont.name, size: pt ?? size)
+                .font(WesternFont.available ? Font.custom(WesternFont.name, size: (pt ?? size) * WesternFont.scale)
                                             : (normal ?? Font.system(size: pt ?? size, weight: .heavy)))
                 .tracking(0.6)
         } else if let normal {

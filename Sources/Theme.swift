@@ -83,7 +83,7 @@ enum Theme {
             (.headline, 17, .headline), (.body, 17, .body), (.subheadline, 15, .subheadline),
             (.footnote, 13, .footnote), (.caption, 12, .caption), (.caption2, 11, .caption2)]
         guard let m = sizes.first(where: { $0.0 == style }) else { return style }
-        return .custom(WesternFont.name, size: m.1, relativeTo: m.2)
+        return .custom(WesternFont.name, size: m.1 * WesternFont.scale, relativeTo: m.2)
     }
 
     /// Corner radius for cards: the Retro theme has (almost) square, pixel-like corners; the others keep the radius
@@ -127,8 +127,8 @@ enum Theme {
         }
         if theme.westernHeadings {
             // the game's lettering, a little bigger than the system sizes (17 / 34) since the letters are narrow
-            if let f = UIFont(name: WesternFont.name, size: 22) { title[.font] = f }
-            if let f = UIFont(name: WesternFont.name, size: 38) { large[.font] = f }
+            if let f = UIFont(name: WesternFont.name, size: 26) { title[.font] = f }
+            if let f = UIFont(name: WesternFont.name, size: 44) { large[.font] = f }
         }
         nav.titleTextAttributes = title
         nav.largeTitleTextAttributes = large
@@ -157,7 +157,7 @@ enum Theme {
         // UIKit controls that SwiftUI wraps (segmented pickers, bar buttons) need the font set here as well
         let seg = UISegmentedControl.appearance()
         let barButton = UIBarButtonItem.appearance()
-        if theme.westernHeadings, let f = UIFont(name: WesternFont.name, size: 15) {
+        if theme.westernHeadings, let f = UIFont(name: WesternFont.name, size: 18) {
             seg.setTitleTextAttributes([.font: f], for: .normal)
             seg.setTitleTextAttributes([.font: f], for: .selected)
             barButton.setTitleTextAttributes([.font: f], for: .normal)
@@ -168,7 +168,7 @@ enum Theme {
             barButton.setTitleTextAttributes(nil, for: .normal)
             barButton.setTitleTextAttributes(nil, for: .highlighted)
         }
-        if theme.westernHeadings, let f = UIFont(name: WesternFont.name, size: 13) {
+        if theme.westernHeadings, let f = UIFont(name: WesternFont.name, size: 15) {
             for item in [tab.stackedLayoutAppearance, tab.inlineLayoutAppearance, tab.compactInlineLayoutAppearance] {
                 item.normal.titleTextAttributes = [.font: f, .foregroundColor: UIColor(hex: p.muted)]
                 item.selected.titleTextAttributes = [.font: f, .foregroundColor: uiAccent]
