@@ -251,21 +251,18 @@ enum PixelFont {
     static var available: Bool { UIFont(name: bold, size: 8) != nil }
 }
 
-/// The Red Dead Redemption 2 theme's fonts (Fonts/): Chinese Rocks (Typodermic Fonts), the game's all-caps lettering,
-/// for headings, titles and bars; and Tavern (Oleg Voznyy) for ordinary mixed-case text. Check both licences before
-/// publishing the app. Tavern's letters are smaller than the system font's, so it is drawn a bit larger.
+/// The Red Dead Redemption 2 theme's font: Chinese Rocks (Fonts/ChineseRocksRg-Regular.ttf, by Typodermic Fonts, the
+/// lettering of the game's logo and website). It is a single all-caps face, so the "smaller font" is the same face at
+/// the smaller size of the text it replaces. Check Typodermic's licence before publishing the app.
 enum WesternFont {
     static let name = "ChineseRocksRg-Regular"
-    static let body = "Tavern-Full"
 
     static func register() {
-        for (file, ext) in [(name, "ttf"), ("Tavern-Full", "otf")] {
-            guard let url = Bundle.main.url(forResource: file, withExtension: ext) else { continue }
-            CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
-        }
+        guard let url = Bundle.main.url(forResource: name, withExtension: "ttf") else { return }
+        CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
     }
 
-    static var available: Bool { UIFont(name: name, size: 12) != nil && UIFont(name: body, size: 12) != nil }
+    static var available: Bool { UIFont(name: name, size: 12) != nil }
 }
 
 /// Arcade heading: the bold pixel font (or a heavy monospaced one) plus a hard block shadow. Retro only; in the
