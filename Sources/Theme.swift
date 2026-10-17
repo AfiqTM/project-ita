@@ -74,16 +74,21 @@ enum Theme {
     static var uiAccent: UIColor   { UIColor(hex: p.accent) }
     static var uiOnAccent: UIColor { UIColor(hex: p.onAccent) }
 
-    /// A text style in the current theme: the system one, or Chinese Rocks at the same size in Red Dead.
-    /// (`.weight()` and `.bold()` can still be chained on the result; the font has a single weight.)
+    /// A text style in the current theme: the system one, or in Red Dead Redemption 2 the game's lettering for
+    /// titles and headings (Chinese Rocks) and Tavern for ordinary text, at about the same size.
+    /// (`.weight()` and `.bold()` can still be chained on the result; both fonts have a single weight.)
     static func font(_ style: Font) -> Font {
         guard ThemeStore.shared.theme.westernHeadings, WesternFont.available else { return style }
-        let sizes: [(Font, CGFloat, Font.TextStyle)] = [
-            (.largeTitle, 34, .largeTitle), (.title, 28, .title), (.title2, 22, .title2), (.title3, 20, .title3),
-            (.headline, 17, .headline), (.body, 17, .body), (.subheadline, 15, .subheadline),
-            (.footnote, 13, .footnote), (.caption, 12, .caption), (.caption2, 11, .caption2)]
-        guard let m = sizes.first(where: { $0.0 == style }) else { return style }
-        return .custom(WesternFont.name, size: m.1, relativeTo: m.2)
+        // font, size, text style it scales with
+        let map: [(Font, String, CGFloat, Font.TextStyle)] = [
+            (.largeTitle, WesternFont.name, 34, .largeTitle), (.title, WesternFont.name, 28, .title),
+            (.title2, WesternFont.name, 22, .title2), (.title3, WesternFont.name, 20, .title3),
+            (.headline, WesternFont.name, 17, .headline),
+            (.body, WesternFont.body, 19, .body), (.subheadline, WesternFont.body, 17, .subheadline),
+            (.footnote, WesternFont.body, 15, .footnote), (.caption, WesternFont.body, 14, .caption),
+            (.caption2, WesternFont.body, 12.5, .caption2)]
+        guard let m = map.first(where: { $0.0 == style }) else { return style }
+        return .custom(m.1, size: m.2, relativeTo: m.3)
     }
 
     /// Corner radius for cards: the Retro theme has (almost) square, pixel-like corners; the others keep the radius
