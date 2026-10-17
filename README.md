@@ -33,10 +33,11 @@ Native client for iTa'leem (IIUM Moodle) using Moodle's mobile web-service API, 
 - Sync with the iTa'leem userscript through one file in your Google Drive (`iTaleem-sync.json`): to-dos, CAMS marks, pins and saved files merge both ways, newest change wins
 
 ### Themes
-- Others > Themes: pick the look of the app (Dark, Light, Terminal, Retro); the whole app cross-fades to the new theme straight away, you stay on the same tab and screen, and the choice is remembered
+- Others > Themes: pick the look of the app (Dark, Light, Terminal, Retro, Red Dead); the whole app cross-fades to the new theme straight away, you stay on the same tab and screen, and the choice is remembered
 - The home-screen icon follows the theme (Dark, Light and Terminal each have their own). iOS shows its own "You have changed the icon" notice when it changes; apps can't hide it
 - Terminal: near-black with a green tint, neon green accent, monospaced font, a green glow around cards and prominent text, faint CRT scanlines over the app (off when Reduce Transparency is on), and an occasional glitch (text jumps and splits into red and cyan ghosts for about 0.3 s every few seconds; off when Reduce Motion is on) and green-tinted course covers
 - Retro: old arcade look. Black with dark olive tiles, yellow accent, almost square cards with a thick outline and a hard offset block shadow, monospaced font, yellow-tinted course covers and a chunky 64x64 pixel-art yellow app icon. Headings and navigation titles use the built-in "iTaleem Pixel" font (`Fonts/`, regenerated with `Tools/make_pixel_font.py`, which needs `pip install fonttools`)
+- Red Dead: Old West look. Sooty brown-black, parchment text, blood-red accent, brass details, framed cards (small corners, double border, dark shadow), Western wood-type headings in Rye (`Fonts/Rye-Regular.ttf`, SIL OFL licence in `Fonts/Rye-OFL.txt`; Rockstar's own typeface is proprietary so it is not included), a faint aged-photo vignette and grain, sepia course covers and a red icon
 - Course covers follow the theme: bright pastel default covers and undimmed photos in Light, dimmed photos in the dark themes
 - Each theme is a `Palette` in `Theme.swift` plus an entry in `Themes.swift`, and an icon set in `Sources/Assets.xcassets` (`AppIcon-<Name>`, listed in `project.yml`)
 

@@ -5,8 +5,9 @@ import UIKit
 // Themes.swift lists the themes the user can pick; each one needs a palette here.
 struct Palette {
     /// How cards are lifted off the page: a soft glow (dark), a drop shadow + outline (light),
-    /// a glow + outline like a terminal window, or hard pixel edges with an offset block shadow (8-bit)
-    enum Card { case glow, soft, terminal, pixel }
+    /// a glow + outline like a terminal window, hard pixel edges with an offset block shadow (8-bit),
+    /// or an aged-paper look: small corners, a double border and a dark drop shadow (western)
+    enum Card { case glow, soft, terminal, pixel, western }
 
     let bg, surface, surface2, titleBar, line, txt, muted, accent, onAccent: UInt32
     let green, red, amber, blue: UInt32     // status colours (present / absent / late / info)
@@ -41,6 +42,14 @@ struct Palette {
                                onAccent: 0x000000,
                                green: 0x7CFF6B, red: 0xFF5A4F, amber: 0xFFA928, blue: 0x58B4FF,
                                glow: 0x4A4300, card: .pixel)
+
+    // Red Dead: sooty brown-black, parchment text, blood-red accent, brass for the details. Cards are dark leather
+    // with a thin double border, like the frames on an old wanted poster (card: .western).
+    static let redDead = Palette(bg: 0x0B0806, surface: 0x16100C, surface2: 0x1F1711, titleBar: 0x110B08,
+                                 line: 0x5A4128, txt: 0xEADFC4, muted: 0xA09078, accent: 0xC4281C,
+                                 onAccent: 0xF6ECD2,
+                                 green: 0x8FA35A, red: 0xE0553F, amber: 0xD9A441, blue: 0x7C9BB0,
+                                 glow: 0x000000, card: .western)
 }
 
 // Every colour reads from the palette of the chosen theme (Themes.swift). Screens pick the new colours up
@@ -66,7 +75,9 @@ enum Theme {
     static var uiOnAccent: UIColor { UIColor(hex: p.onAccent) }
 
     /// Corner radius for cards: the Retro theme has (almost) square, pixel-like corners
-    static func cardRadius(_ r: CGFloat) -> CGFloat { p.card == .pixel ? min(r, 3) : r }
+    static func cardRadius(_ r: CGFloat) -> CGFloat {
+        switch p.card { case .pixel: return min(r, 3); case .western: return min(r, 5); default: return r }
+    }
 
     /// Navigation bar, tab bar and tab badges. Bars that already exist keep the old look, so call this
     /// before the screens are rebuilt for a new theme (ThemeStore.select does).
@@ -101,6 +112,11 @@ enum Theme {
                 if let f = UIFont(name: PixelFont.bold, size: 12) { title[.font] = f }
                 if let f = UIFont(name: PixelFont.bold, size: 24) { large[.font] = f }
             }
+        }
+        if theme.westernHeadings {
+            // Rye (Western wood type) for the bar titles; Terminal and Retro have their own fonts above
+            if let f = UIFont(name: WesternFont.name, size: 17) { title[.font] = f }
+            if let f = UIFont(name: WesternFont.name, size: 30) { large[.font] = f }
         }
         nav.titleTextAttributes = title
         nav.largeTitleTextAttributes = large
@@ -151,6 +167,7 @@ extension UIColor {
 // Card background. Dark: soft glow (the 10/30/64px rgba(28,28,28) shadows from the userscript).
 // Light: a gentle drop shadow and a thin outline, since a glow doesn't show on a light page.
 // Terminal: a green glow and a thin green outline, like a terminal window.
+// Red Dead: small corners, a double border and a dark drop shadow, like a framed poster.
 // Retro: almost square corners, a thick outline and a hard offset block shadow, like an 8-bit window.
 struct GlowCard: ViewModifier {
     var radius: CGFloat = 14
@@ -159,7 +176,8 @@ struct GlowCard: ViewModifier {
         // One fixed structure (only the values change), so switching theme never rebuilds what is inside the card
         let p = themes.theme.palette
         let pixel = p.card == .pixel
-        let shape = RoundedRectangle(cornerRadius: pixel ? min(radius, 3) : radius, style: .continuous)
+        let western = p.card == .western
+        let shape = RoundedRectangle(cornerRadius: Theme.cardRadius(radius), style: .continuous)
         let g = Color(hex: p.glow)
         // three shadow layers: colour, blur, x offset, y offset
         let layers: [(Color, CGFloat, CGFloat, CGFloat)]
@@ -170,11 +188,15 @@ struct GlowCard: ViewModifier {
             layers = [(Color.black.opacity(0.06), 6, 0, 2), (Color.black.opacity(0.04), 18, 0, 6), (Color.clear, 0, 0, 0)]
         case .pixel:
             layers = [(g, 0, 3, 3), (Color.clear, 0, 0, 0), (Color.clear, 0, 0, 0)]
+        case .western:
+            layers = [(Color.black.opacity(0.7), 6, 0, 3), (Color.black.opacity(0.45), 18, 0, 8), (Color.clear, 0, 0, 0)]
         }
         return content
             .background(Color(hex: p.surface))
             .clipShape(shape)
-            .overlay(shape.stroke(Color(hex: p.line), lineWidth: p.card == .glow ? 0 : (pixel ? 2 : 1)))
+            .overlay(shape.stroke(Color(hex: p.line), lineWidth: p.card == .glow ? 0 : (pixel ? 2 : (western ? 1.5 : 1))))
+            // western: a second, thinner border just inside the first (double frame)
+            .overlay(shape.inset(by: 4).stroke(Color(hex: p.line).opacity(western ? 0.55 : 0), lineWidth: 0.6))
             .shadow(color: layers[0].0, radius: layers[0].1, x: layers[0].2, y: layers[0].3)
             .shadow(color: layers[1].0, radius: layers[1].1, x: layers[1].2, y: layers[1].3)
             .shadow(color: layers[2].0, radius: layers[2].1, x: layers[2].2, y: layers[2].3)

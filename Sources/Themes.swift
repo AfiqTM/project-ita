@@ -14,7 +14,7 @@ import CoreText
 // happens and then faded out.
 
 enum AppTheme: String, CaseIterable, Identifiable {
-    case dark, light, terminal, retro
+    case dark, light, terminal, retro, redDead
 
     var id: String { rawValue }
 
@@ -24,6 +24,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
         case .light: return "Light"
         case .terminal: return "Terminal"
         case .retro: return "Retro"
+        case .redDead: return "Red Dead"
         }
     }
 
@@ -33,6 +34,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
         case .light: return "Warm off-white with a deeper tan accent. Easier to read in bright light."
         case .terminal: return "Terminal look: near-black, neon green, a monospaced font and a green glow."
         case .retro: return "Old-school arcade: black and olive tiles, yellow accent, hard pixel edges and a pixel-style font."
+        case .redDead: return "Old West: sooty brown, parchment text, blood-red accent, Western wood-type headings and framed cards."
         }
     }
 
@@ -45,12 +47,19 @@ enum AppTheme: String, CaseIterable, Identifiable {
     /// Arcade headings: the pixel font (when bundled, see PixelFont) with a hard block shadow
     var pixelHeadings: Bool { self == .retro }
 
+    /// Western wood-type headings (Rye) with a soft dark shadow
+    var westernHeadings: Bool { self == .redDead }
+
+    /// Aged-photograph vignette and film grain over the whole app
+    var aged: Bool { self == .redDead }
+
     var palette: Palette {
         switch self {
         case .dark: return .dark
         case .light: return .light
         case .terminal: return .terminal
         case .retro: return .retro
+        case .redDead: return .redDead
         }
     }
 
@@ -77,6 +86,9 @@ enum AppTheme: String, CaseIterable, Identifiable {
         case .retro:
             return [(0x0E0D00, 0x2B2700), (0x0A0A0A, 0x2A2A18), (0x140A00, 0x3D2600),
                     (0x081000, 0x24330A), (0x100012, 0x2E1A36), (0x00101A, 0x0A2E44)]
+        case .redDead:
+            return [(0x1A0D08, 0x4A2214), (0x17120A, 0x4A3A1E), (0x120C0A, 0x3A1A1A),
+                    (0x0F140C, 0x2E3A1E), (0x1A140C, 0x5A4426), (0x0E1114, 0x2A3640)]
         }
     }
 
@@ -87,12 +99,14 @@ enum AppTheme: String, CaseIterable, Identifiable {
         case .light: return 0
         case .terminal: return -0.25
         case .retro: return -0.15
+        case .redDead: return -0.12
         }
     }
     var coverSaturation: Double {
         switch self {
         case .terminal: return 0.6
         case .retro: return 0.9
+        case .redDead: return 0.55
         default: return 1
         }
     }
@@ -101,6 +115,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
         switch self {
         case .terminal: return 0x1FBF55
         case .retro: return 0xFFE628
+        case .redDead: return 0xB5844A   // sepia, like an old photograph
         default: return nil
         }
     }
@@ -109,6 +124,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
         switch self {
         case .terminal: return Palette.terminal.accent
         case .retro: return Palette.retro.accent
+        case .redDead: return 0xD9A441   // brass: a red star would vanish on the dark circle
         default: return Palette.dark.accent
         }
     }
@@ -120,6 +136,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
         switch self {
         case .terminal: return "> italeem_"
         case .retro: return "ITA'LEEM  1UP"
+        case .redDead: return "WANTED"
         default: return nil
         }
     }
@@ -128,13 +145,14 @@ enum AppTheme: String, CaseIterable, Identifiable {
         switch self {
         case .terminal: return ("$ cs101", "> 85% ok")
         case .retro: return ("CS101", "SCORE 85")
+        case .redDead: return ("CS101", "$85 REWARD")
         default: return nil
         }
     }
 }
 
 /// The home-screen icon that goes with each theme. Each one is an alternate icon set in the asset catalog
-/// (Assets.xcassets/AppIcon-Dark, AppIcon-Light, AppIcon-Terminal, AppIcon-Retro) and listed in project.yml under
+/// (Assets.xcassets/AppIcon-Dark, AppIcon-Light, AppIcon-Terminal, AppIcon-Retro, AppIcon-RedDead) and listed in project.yml under
 /// ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES.
 /// iOS shows its own "You have changed the icon" notice every time the icon changes; apps can't hide it.
 /// The icon only follows the theme while the switch on the Themes screen is on.
@@ -151,6 +169,7 @@ enum AppIcon {
         case .light: return "AppIcon-Light"
         case .terminal: return "AppIcon-Terminal"
         case .retro: return "AppIcon-Retro"
+        case .redDead: return "AppIcon-RedDead"
         }
     }
 
@@ -232,6 +251,20 @@ enum PixelFont {
     static var available: Bool { UIFont(name: bold, size: 8) != nil }
 }
 
+/// Western wood-type font of the Red Dead theme: Rye (Fonts/Rye-Regular.ttf, SIL Open Font License, see
+/// Fonts/Rye-OFL.txt). Rockstar's own typeface is proprietary and can't be bundled, so Rye stands in for it.
+/// To use another font, drop the .ttf into Fonts/ and change `name` to its PostScript name.
+enum WesternFont {
+    static let name = "Rye-Regular"
+
+    static func register() {
+        guard let url = Bundle.main.url(forResource: name, withExtension: "ttf") else { return }
+        CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+    }
+
+    static var available: Bool { UIFont(name: name, size: 12) != nil }
+}
+
 /// Arcade heading: the bold pixel font (or a heavy monospaced one) plus a hard block shadow. Retro only; in the
 /// other themes this changes nothing, so the text keeps whatever font it already had.
 struct PixelHeading: ViewModifier {
@@ -244,6 +277,13 @@ struct PixelHeading: ViewModifier {
                       ? Font.custom(PixelFont.bold, size: size)
                       : Font.system(size: size + 3, weight: .heavy, design: .monospaced))
                 .shadow(color: Color(hex: themes.palette.glow), radius: 0, x: 2, y: 2)
+        } else if themes.theme.westernHeadings {
+            // sizes are tuned for the pixel font (wide, tall letters); Rye is a little smaller for the same look
+            content
+                .font(WesternFont.available
+                      ? Font.custom(WesternFont.name, size: size * 0.95)
+                      : Font.system(size: size, weight: .heavy, design: .serif))
+                .shadow(color: .black.opacity(0.8), radius: 0, x: 1, y: 1.5)
         } else {
             content
         }
@@ -286,6 +326,35 @@ struct ScanlineOverlay: View {
                 }
                 RadialGradient(colors: [Color.clear, Color.black.opacity(0.35)],
                                center: .center, startRadius: 160, endRadius: 560)
+            }
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
+    }
+}
+
+/// Red Dead: warm dark vignette and a fixed film-grain speckle, like an aged photograph. Touches pass through.
+struct AgedOverlay: View {
+    @Environment(\.accessibilityReduceTransparency) private var reduce
+
+    var body: some View {
+        if !reduce {
+            ZStack {
+                Canvas { ctx, size in
+                    var seed: UInt64 = 0x9E3779B97F4A7C15
+                    func next() -> CGFloat {   // fixed pseudo-random sequence, so the grain doesn't change
+                        seed = seed &* 6364136223846793005 &+ 1442695040888963407
+                        return CGFloat(seed >> 40) / CGFloat(1 << 24)
+                    }
+                    for _ in 0..<500 {
+                        let r = next() * 1.4 + 0.4
+                        let rect = CGRect(x: next() * size.width, y: next() * size.height, width: r, height: r)
+                        ctx.fill(Path(ellipseIn: rect), with: .color(Color(hex: 0xD9C7A0).opacity(0.05 + Double(next()) * 0.05)))
+                    }
+                }
+                RadialGradient(colors: [Color.clear, Color(hex: 0x1A0C04).opacity(0.5)],
+                               center: .center, startRadius: 180, endRadius: 600)
             }
             .ignoresSafeArea()
             .allowsHitTesting(false)
@@ -394,6 +463,7 @@ private struct ThemePreview: View {
     let theme: AppTheme
     private var p: Palette { theme.palette }
     private var pixel: Bool { p.card == .pixel }
+    private var western: Bool { p.card == .western }
     private func mono(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
         .system(size: size, weight: weight, design: theme.mono ? .monospaced : .default)
     }
@@ -403,7 +473,8 @@ private struct ThemePreview: View {
             // title bar
             HStack {
                 if let t = theme.previewTitle {
-                    Text(t).font(mono(9, .bold)).foregroundColor(Color(hex: p.accent))
+                    Text(t).font(theme.westernHeadings ? .custom(WesternFont.name, size: 10) : mono(9, .bold))
+                        .foregroundColor(Color(hex: p.accent))
                 } else {
                     Capsule().fill(Color(hex: p.txt)).frame(width: 46, height: 6)
                 }
@@ -452,9 +523,9 @@ private struct ThemePreview: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: 70)
         .background(Color(hex: p.surface))
-        .clipShape(RoundedRectangle(cornerRadius: pixel ? 2 : 8, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: pixel ? 2 : 8, style: .continuous)
-            .stroke(Color(hex: p.line), lineWidth: pixel ? 2 : 1))
+        .clipShape(RoundedRectangle(cornerRadius: pixel ? 2 : (western ? 3 : 8), style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: pixel ? 2 : (western ? 3 : 8), style: .continuous)
+            .stroke(Color(hex: p.line), lineWidth: pixel ? 2 : (western ? 1.5 : 1)))
         .shadow(color: p.card == .terminal ? Color(hex: p.glow).opacity(0.9) : .clear, radius: 6)
         .shadow(color: pixel ? Color(hex: p.glow) : .clear, radius: 0, x: 2, y: 2)
     }
