@@ -454,7 +454,7 @@ struct ThemesView: View {
                         Text("Change app icon based on theme")
                             .foregroundColor(Theme.txt).fontWeight(.semibold).textGlow(radius: 3)
                         Text("The home-screen icon switches to match the theme you pick. iOS shows a short notice each time it changes.")
-                            .font(.caption).foregroundColor(Theme.muted)
+                            .font(Theme.font(.caption)).foregroundColor(Theme.muted)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer(minLength: 8)
@@ -470,7 +470,7 @@ struct ThemesView: View {
                 }
 
                 Text("Choose how the app looks. The change applies everywhere straight away.")
-                    .font(.footnote)
+                    .font(Theme.font(.footnote))
                     .foregroundColor(Theme.muted)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -501,12 +501,12 @@ private struct ThemeCard: View {
             HStack(spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(theme.name).foregroundColor(Theme.txt).fontWeight(.semibold).textGlow(radius: 3).pixelHeading(12, pt: 17)
-                    Text(theme.detail).font(.caption).foregroundColor(Theme.muted)
+                    Text(theme.detail).font(Theme.font(.caption)).foregroundColor(Theme.muted)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 8)
                 Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                    .font(.title3)
+                    .font(Theme.font(.title3))
                     .foregroundColor(selected ? Theme.accent : Theme.muted.opacity(0.6))
             }
         }
@@ -527,8 +527,16 @@ private struct ThemePreview: View {
     let theme: AppTheme
     private var p: Palette { theme.palette }
     private var pixel: Bool { p.card == .pixel }
+    /// Text in the preview, in the previewed theme's own font (not the current theme's)
     private func mono(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
-        .system(size: size, weight: weight, design: theme.mono ? .monospaced : .default)
+        switch theme {
+        case .retro where PixelFont.available:
+            return .custom(PixelFont.bold, size: 8)                 // 8 pt letters = 1 pt pixels
+        case .redDead where WesternFont.available:
+            return .custom(WesternFont.name, size: size * 1.3)
+        default:
+            return .system(size: size, weight: weight, design: theme.mono ? .monospaced : .default)
+        }
     }
 
     var body: some View {
@@ -536,7 +544,7 @@ private struct ThemePreview: View {
             // title bar
             HStack {
                 if let t = theme.previewTitle {
-                    Text(t).textCase(theme.westernHeadings ? .uppercase : nil).font(theme.westernHeadings ? .custom(WesternFont.name, size: 13) : mono(9, .bold))
+                    Text(t).textCase(theme.westernHeadings ? .uppercase : nil).font(mono(10, .bold))
                         .foregroundColor(Color(hex: p.accent))
                 } else {
                     Capsule().fill(Color(hex: p.txt)).frame(width: 46, height: 6)
