@@ -649,6 +649,7 @@ private struct ThemePreview: View {
 
             Spacer(minLength: 0)
         }
+        .modifier(ThemeFont(mono: theme.mono))     // overrides the active theme's forced monospaced design
         .padding(.bottom, 10)
         .frame(maxWidth: .infinity)
         .background(Color(hex: p.bg))
