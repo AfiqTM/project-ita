@@ -583,6 +583,8 @@ private struct ThemeCard: View {
             HStack(spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(theme.name).font(nameFont).foregroundColor(Theme.txt)
+                        // the active theme may force a monospaced design on everything below it: reset it here
+                        .modifier(ThemeFont(mono: theme == .terminal))
                     Text(theme.detail).font(Theme.font(.caption)).foregroundColor(Theme.muted)
                         .fixedSize(horizontal: false, vertical: true)
                 }
