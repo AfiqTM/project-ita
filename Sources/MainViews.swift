@@ -194,16 +194,8 @@ struct CoursesView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                HStack {
-                    GreetingReveal {   // Red Dead Redemption 2: a gunshot; Retro: Pac-Man (Themes.swift)
-                        HStack(alignment: .firstTextBaseline, spacing: 6) {
-                            Text("Hello,").foregroundColor(Theme.muted)
-                            Text(firstTwoNames).foregroundColor(Theme.accent).fontWeight(.semibold)
-                        }
-                        .textGlow()
-                        .rocksHeading(16, normal: .title3, pt: 20)
-                    }
-                    Spacer()
+                // intro animation per theme (Themes.swift): gunshot, Pac-Man or decoding symbols
+                GreetingBar(hello: "Hello,", name: firstTwoNames) {
                     MessagesButton()   // chat icon + unread badge (Messages.swift)
                 }
 

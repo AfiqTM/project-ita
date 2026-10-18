@@ -87,8 +87,8 @@ enum AppTheme: String, CaseIterable, Identifiable {
             return [(0x0E0D00, 0x2B2700), (0x0A0A0A, 0x2A2A18), (0x140A00, 0x3D2600),
                     (0x081000, 0x24330A), (0x100012, 0x2E1A36), (0x00101A, 0x0A2E44)]
         case .redDead:
-            return [(0x050505, 0x240807), (0x070404, 0x2E0A08), (0x050505, 0x1A0606),
-                    (0x080404, 0x330B09), (0x060606, 0x280807), (0x050303, 0x1E0706)]
+            return [(0x030303, 0x1A0605), (0x050303, 0x220706), (0x030303, 0x140404),
+                    (0x060303, 0x260807), (0x040404, 0x1E0605), (0x030202, 0x160505)]
         }
     }
 
@@ -351,7 +351,7 @@ struct PixelHeading: ViewModifier {
         if themes.theme.pixelHeadings {
             content
                 .font(PixelFont.available
-                      ? Font.custom(PixelFont.bold, size: size)
+                      ? Font.custom(PixelFont.bold, size: size * 1.2)
                       : Font.system(size: size + 3, weight: .heavy, design: .monospaced))
                 .shadow(color: Color(hex: themes.palette.glow), radius: 0, x: 2, y: 2)
         } else if themes.theme.westernHeadings {
@@ -474,7 +474,7 @@ struct AgedOverlay: View {
                         var star = StarShape().path(in: CGRect(x: -d / 2, y: -d / 2, width: d, height: d))
                         star = star.applying(CGAffineTransform(rotationAngle: next() * .pi / 2)
                             .concatenating(CGAffineTransform(translationX: c.x, y: c.y)))
-                        ctx.fill(star, with: .color(Color(hex: 0xD42B1F).opacity(0.07 + Double(i % 3) * 0.015)))
+                        ctx.fill(star, with: .color(Color(hex: 0xC8281C).opacity(0.04 + Double(i % 3) * 0.01)))
                         for _ in 0..<26 {
                             let r = 1 + next() * 3.5
                             let dot = CGRect(x: c.x + (next() - 0.5) * d, y: c.y + (next() - 0.5) * d, width: r, height: r)
@@ -487,7 +487,7 @@ struct AgedOverlay: View {
                         ctx.fill(Path(ellipseIn: rect), with: .color(Color(hex: 0xFFFFFF).opacity(0.03 + Double(next()) * 0.04)))
                     }
                 }
-                RadialGradient(colors: [Color.clear, Color.black.opacity(0.6)],
+                RadialGradient(colors: [Color.clear, Color.black.opacity(0.85)],
                                center: .center, startRadius: 180, endRadius: 600)
             }
             .ignoresSafeArea()
@@ -673,59 +673,133 @@ private struct ThemePreview: View {
 }
 
 
-// MARK: - Greeting animations
+// MARK: - Greeting intro
 //
-// "Hello, <name>" on the My courses tab plays a short intro once per launch (and once more after switching to the
-// theme): Red Dead Redemption 2 fires a shot from the left that uncovers the text, Retro sends Pac-Man across,
-// eating dots and a ghost on his tail, with the text appearing behind him. Skipped when Reduce Motion is on.
+// "Hello, <name>" on the My courses tab plays an intro once per launch (and once more after switching to the theme),
+// and it always leaves the same way it came:
+//  - Red Dead Redemption 2: a muzzle flash at the left edge, a bullet with a long trace crosses the whole row
+//    (uncovering the text behind it) and flies off the right edge; the trace then fades out.
+//  - Retro: Pac-Man chases a ghost across the row eating the dots under the text, which appears behind him; he
+//    eats the power pellet at the end of the text, the ghost turns blue, and both run off the right edge.
+//  - Terminal: the text is a grid of random symbols that lock into the letters one by one, left to right, behind
+//    a block cursor that blinks a few times and fades out once the last letter has locked.
+// Skipped when Reduce Motion is on.
 
 /// Which themes already played their greeting in this launch (so changing tabs doesn't replay it)
 final class GreetingPlayed {
     static var themes = Set<String>()
 }
 
-struct GreetingReveal<Content: View>: View {
-    private let content: Content
+/// The scramble-to-text effect of the Terminal theme
+enum ScrambleText {
+    static let pool = Array("@#$8*!%&?<>/\\|[]{}=+~^0123456789ABCDEF")
+    /// Second at which the i-th letter (counting across both words) locks in
+    static func lockTime(_ i: Int) -> Double { 0.45 + Double(i) * 0.085 + Double((i * 37) % 11) * 0.012 }
+
+    static func make(_ text: String, offset: Int, elapsed: Double, dim: Color) -> AttributedString {
+        var out = AttributedString()
+        let step = Int(max(elapsed, 0) * 22)                       // symbols change about 22 times a second
+        for (k, ch) in text.enumerated() {
+            let i = offset + k
+            if ch == " " || elapsed >= lockTime(i) {
+                out += AttributedString(String(ch))
+            } else {
+                var g = AttributedString(String(pool[(i * 7919 + step * 104729 + (step % 3) * 31) % pool.count]))
+                g.foregroundColor = dim
+                out += g
+            }
+        }
+        return out
+    }
+}
+
+struct GreetingBar<Trailing: View>: View {
+    let hello: String
+    let name: String
+    private let trailing: Trailing
     @ObservedObject private var themes = ThemeStore.shared
     @State private var playing: Bool
     @State private var started = false
-    @State private var progress: CGFloat = 0      // 0 = before the start, 1 = the effect has crossed the text
+    @State private var t0 = Date()
+    @State private var progress: CGFloat = 0      // Red Dead / Retro: 0 = before the start, 1 = the effect has left the row
     @State private var flash: Double = 0          // muzzle flash
-    @State private var size: CGSize = .zero
+    @State private var fade: Double = 0           // the effect's trace fading out
+    @State private var shake: CGFloat = 0         // recoil of the text when the shot is fired
+    @State private var textSize: CGSize = .zero
+    @State private var rowSize: CGSize = .zero
 
-    init(@ViewBuilder _ content: () -> Content) {
-        self.content = content()
+    init(hello: String, name: String, @ViewBuilder trailing: () -> Trailing) {
+        self.hello = hello
+        self.name = name
+        self.trailing = trailing()
         let t = ThemeStore.shared.theme
-        let will = (t == .redDead || t == .retro) && !UIAccessibility.isReduceMotionEnabled
+        let will = (t == .redDead || t == .retro || t == .terminal) && !UIAccessibility.isReduceMotionEnabled
             && !GreetingPlayed.themes.contains(t.rawValue)
         _playing = State(initialValue: will)
     }
 
-    /// How much of the text is uncovered, in points from the left
+    private var letters: Int { hello.count + name.count }
+
+    /// How much of the text is uncovered, in points from the left (Red Dead and Retro)
     private var revealWidth: CGFloat {
-        if themes.theme == .redDead { return max(0, progress * (size.width + 28) - 18) }
-        return max(0, -26 + progress * (size.width + 52) + 13)       // Pac-Man's centre
+        if themes.theme == .redDead { return min(max(0, -14 + progress * (rowSize.width + 90) - 6), textSize.width) }
+        return min(max(0, -26 + progress * (rowSize.width + 70) + 13), textSize.width)       // Pac-Man's centre
     }
 
     var body: some View {
-        content
-            .mask(alignment: .leading) {
-                if playing { Rectangle().frame(width: revealWidth) } else { Rectangle() }
-            }
-            .background(GeometryReader { g in
-                Color.clear
-                    .onAppear { size = g.size; begin() }
-                    .onChange(of: g.size) { size = $0 }
-            })
-            .overlay(alignment: .leading) {
-                if playing {
-                    if themes.theme == .redDead {
-                        GunshotEffect(progress: progress, flash: flash, size: size)
-                    } else {
-                        PacmanEffect(progress: progress, size: size)
-                    }
+        HStack {
+            textRow
+                .mask(alignment: .leading) {
+                    if playing && themes.theme != .terminal { Rectangle().frame(width: revealWidth) } else { Rectangle() }
                 }
+                .background(GeometryReader { g in
+                    Color.clear
+                        .onAppear { textSize = g.size; begin() }
+                        .onChange(of: g.size) { textSize = $0 }
+                })
+                .offset(x: shake)
+            Spacer()
+            trailing
+        }
+        .background(GeometryReader { g in
+            Color.clear
+                .onAppear { rowSize = g.size }
+                .onChange(of: g.size) { rowSize = $0 }
+        })
+        .overlay(alignment: .leading) { if playing { effect } }
+    }
+
+    @ViewBuilder private var textRow: some View {
+        if playing && themes.theme == .terminal {
+            TimelineView(.animation(minimumInterval: 1.0 / 20)) { ctx in
+                let e = ctx.date.timeIntervalSince(t0)
+                let dim = Color(hex: themes.palette.accent).opacity(0.55)
+                greeting(ScrambleText.make(hello, offset: 0, elapsed: e, dim: dim),
+                         ScrambleText.make(name, offset: hello.count, elapsed: e, dim: dim))
             }
+        } else {
+            greeting(AttributedString(hello), AttributedString(name))
+        }
+    }
+
+    private func greeting(_ a: AttributedString, _ b: AttributedString) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(a).foregroundColor(Theme.muted)
+            Text(b).foregroundColor(Theme.accent).fontWeight(.semibold)
+        }
+        .textGlow()
+        .rocksHeading(16, normal: .title3, pt: 20)
+    }
+
+    @ViewBuilder private var effect: some View {
+        switch themes.theme {
+        case .redDead:
+            GunshotEffect(progress: progress, flash: flash, fade: fade, size: rowSize)
+        case .retro:
+            PacmanEffect(progress: progress, size: rowSize, textWidth: textSize.width)
+        default:
+            TerminalCursor(start: t0, letters: letters, textSize: textSize)
+        }
     }
 
     private func begin() {
@@ -734,16 +808,24 @@ struct GreetingReveal<Content: View>: View {
         let theme = themes.theme
         GreetingPlayed.themes.insert(theme.rawValue)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            if theme == .redDead {
-                withAnimation(.easeOut(duration: 0.08)) { flash = 1 }
+            switch theme {
+            case .redDead:
+                // shot: flash and a little recoil, then the bullet crosses the row and leaves the screen
+                withAnimation(.easeOut(duration: 0.08)) { flash = 1; shake = -4 }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
-                    withAnimation(.easeIn(duration: 0.3)) { flash = 0 }
+                    withAnimation(.spring(response: 0.25, dampingFraction: 0.5)) { shake = 0 }
+                    withAnimation(.easeIn(duration: 0.35)) { flash = 0 }
                 }
-                withAnimation(.timingCurve(0.2, 0.9, 0.3, 1, duration: 0.6)) { progress = 1 }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { playing = false }
-            } else {
-                withAnimation(.linear(duration: 1.7)) { progress = 1 }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { playing = false }
+                withAnimation(.timingCurve(0.25, 0.1, 0.35, 1, duration: 1.7)) { progress = 1 }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.7) { withAnimation(.easeOut(duration: 0.6)) { fade = 1 } }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.4) { playing = false }
+            case .retro:
+                withAnimation(.linear(duration: 2.6)) { progress = 1 }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.8) { playing = false }
+            default:
+                t0 = Date()
+                let last = ScrambleText.lockTime(letters - 1)
+                DispatchQueue.main.asyncAfter(deadline: .now() + last + 1.4) { playing = false }
             }
         }
     }
@@ -766,28 +848,35 @@ private struct StarBurst: Shape {
     }
 }
 
-/// Red Dead Redemption 2: muzzle flash at the left edge, a bullet with a bright trace flying across the line
+/// Red Dead Redemption 2: muzzle flash at the left edge, a bullet with a long bright trace crossing the row
 private struct GunshotEffect: View {
     let progress: CGFloat
     let flash: Double
+    let fade: Double
     let size: CGSize
 
     var body: some View {
-        let x = -14 + progress * (size.width + 28)               // the bullet's centre
-        let tail = min(max(x + 14, 0), 170)
+        let x = -14 + progress * (size.width + 90)               // the bullet's centre; it ends beyond the right edge
+        let tail = min(max(x + 14, 0), 260)
         ZStack(alignment: .leading) {
             Capsule()                                             // trace left behind the bullet
-                .fill(LinearGradient(colors: [Color.clear, Color(hex: 0xFFE9B0).opacity(0.75)],
+                .fill(LinearGradient(colors: [Color.clear, Color(hex: 0xFFE9B0).opacity(0.7)],
                                      startPoint: .leading, endPoint: .trailing))
                 .frame(width: tail, height: 3)
                 .offset(x: x - tail)
+            Capsule()                                             // a fainter, wider smoke band under the trace
+                .fill(LinearGradient(colors: [Color.clear, Color(hex: 0xC8281C).opacity(0.25)],
+                                     startPoint: .leading, endPoint: .trailing))
+                .frame(width: tail * 0.9, height: 9)
+                .blur(radius: 4)
+                .offset(x: x - tail * 0.9)
             Capsule()                                             // the bullet
                 .fill(LinearGradient(colors: [Color(hex: 0xFFF3C9), Color(hex: 0xC98A2B)],
                                      startPoint: .top, endPoint: .bottom))
                 .frame(width: 18, height: 6)
                 .offset(x: x - 9)
             StarBurst(points: 9)                                  // muzzle flash
-                .fill(RadialGradient(colors: [Color.white, Color(hex: 0xFFB02E), Color(hex: 0xD42B1F).opacity(0)],
+                .fill(RadialGradient(colors: [Color.white, Color(hex: 0xFFB02E), Color(hex: 0xC8281C).opacity(0)],
                                      center: .center, startRadius: 0, endRadius: 30))
                 .frame(width: 60, height: 60)
                 .scaleEffect(0.35 + flash * 0.85)
@@ -795,7 +884,7 @@ private struct GunshotEffect: View {
                 .offset(x: -30)
         }
         .frame(width: size.width, height: size.height, alignment: .leading)
-        .opacity(progress >= 1 ? 0 : 1)
+        .opacity(1 - fade)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
@@ -846,16 +935,20 @@ private struct GhostShape: Shape {
     }
 }
 
-/// Retro: a row of pixel dots that Pac-Man eats while crossing the line, with a ghost chasing him
+/// Retro: Pac-Man crosses the whole row eating the dots under the text and a power pellet at its end; the ghost
+/// he was chasing turns blue, and both run off the right edge of the screen
 private struct PacmanEffect: View {
     let progress: CGFloat
     let size: CGSize
+    let textWidth: CGFloat
 
     var body: some View {
         let d: CGFloat = 26
-        let x = -d + progress * (size.width + 2 * d)             // Pac-Man's left edge
-        let gx = x - d * 2.0                                      // the ghost, a bit behind
-        let count = max(Int(size.width / 16), 1)
+        let x = -d + progress * (size.width + 70)                // Pac-Man's left edge (ends beyond the right edge)
+        let eaten = x + d * 0.5
+        let scared = eaten > textWidth                           // after the power pellet
+        let gx = scared ? x + d * 1.6 : x + d * 1.9              // the ghost runs ahead of him once it is blue
+        let count = max(Int(textWidth / 16), 1)
         ZStack(alignment: .topLeading) {
             ForEach(0..<count, id: \.self) { i in
                 let dx = CGFloat(i) * 16 + 8
@@ -863,25 +956,30 @@ private struct PacmanEffect: View {
                     .fill(Color(hex: 0xFFE628))
                     .frame(width: 4, height: 4)
                     .position(x: dx, y: size.height / 2)
-                    .opacity(dx > x + d * 0.5 ? 1 : 0)
+                    .opacity(dx > eaten ? 1 : 0)
             }
             TimelineView(.animation) { tl in
                 let t = tl.date.timeIntervalSinceReferenceDate
                 let mouth = 4 + 36 * abs(sin(t * 11))
                 ZStack(alignment: .topLeading) {
+                    Circle()                                      // power pellet at the end of the text, blinking
+                        .fill(Color(hex: 0xFFE628))
+                        .frame(width: 10, height: 10)
+                        .position(x: textWidth + 14, y: size.height / 2)
+                        .opacity(eaten > textWidth + 14 ? 0 : (sin(t * 9) > 0 ? 1 : 0.25))
                     PacShape(mouth: mouth)
                         .fill(Color(hex: 0xFFE628))
                         .frame(width: d, height: d)
                         .offset(x: x, y: (size.height - d) / 2)
                     GhostShape()
-                        .fill(Color(hex: 0xFF4A3F))
+                        .fill(scared ? Color(hex: 0x2A4BFF) : Color(hex: 0xFF4A3F))
                         .frame(width: d * 0.92, height: d * 0.92)
                         .overlay(alignment: .topLeading) {
                             HStack(spacing: 4) {
                                 ForEach(0..<2, id: \.self) { _ in
                                     Circle().fill(Color.white).frame(width: 7, height: 8)
-                                        .overlay(Circle().fill(Color(hex: 0x2A4BFF)).frame(width: 3.5, height: 3.5)
-                                            .offset(x: 1.5))
+                                        .overlay(Circle().fill(scared ? Color.white : Color(hex: 0x2A4BFF))
+                                            .frame(width: 3.5, height: 3.5).offset(x: scared ? 0 : 1.5))
                                 }
                             }
                             .padding(.leading, 4).padding(.top, 7)
@@ -892,6 +990,34 @@ private struct PacmanEffect: View {
             }
         }
         .frame(width: size.width, height: size.height, alignment: .topLeading)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
+/// Terminal: a block cursor that moves along with the locking letters, then blinks a few times and fades out
+private struct TerminalCursor: View {
+    let start: Date
+    let letters: Int
+    let textSize: CGSize
+    @ObservedObject private var themes = ThemeStore.shared
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 20)) { ctx in
+            let e = ctx.date.timeIntervalSince(start)
+            let locked = (0..<letters).filter { ScrambleText.lockTime($0) <= e }.count
+            let last = ScrambleText.lockTime(letters - 1)
+            let after = e - last
+            let alpha: Double = after < 0 ? 1
+                : (Int(after / 0.25) % 2 == 0 ? 1 : 0.0) * min(1, max(0, (1.3 - after) / 0.3))
+            Rectangle()
+                .fill(Color(hex: themes.palette.accent))
+                .frame(width: 9, height: max(textSize.height * 0.8, 14))
+                .shadow(color: Color(hex: themes.palette.accent).opacity(0.8), radius: 6)
+                .opacity(alpha)
+                .offset(x: textSize.width * CGFloat(locked) / CGFloat(max(letters, 1)) + 2)
+                .frame(width: textSize.width + 20, height: textSize.height, alignment: .leading)
+        }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }

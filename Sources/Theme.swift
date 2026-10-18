@@ -45,8 +45,8 @@ struct Palette {
 
     // Red Dead (after the game's own artwork and website): black, rockstar red, off-white text. Flat black cards with
     // a dark-red outline and a red banner strip on top (card: .western).
-    static let redDead = Palette(bg: 0x050505, surface: 0x0E0E0E, surface2: 0x171717, titleBar: 0x0A0A0A,
-                                 line: 0x3A1511, txt: 0xF1ECE4, muted: 0x9C9590, accent: 0xD42B1F,
+    static let redDead = Palette(bg: 0x020202, surface: 0x080808, surface2: 0x101010, titleBar: 0x050505,
+                                 line: 0x2E100C, txt: 0xE8E2D8, muted: 0x8E8882, accent: 0xC8281C,
                                  onAccent: 0xFFFFFF,
                                  green: 0x8FA35A, red: 0xFF5440, amber: 0xFF8040, blue: 0x7C9BB0,
                                  glow: 0x000000, card: .western)
@@ -135,8 +135,8 @@ enum Theme {
                 hard.shadowOffset = CGSize(width: 2, height: 2)
                 title[.shadow] = hard
                 large[.shadow] = hard
-                if let f = UIFont(name: PixelFont.bold, size: 12) { title[.font] = f }
-                if let f = UIFont(name: PixelFont.bold, size: 24) { large[.font] = f }
+                if let f = UIFont(name: PixelFont.bold, size: 14) { title[.font] = f }
+                if let f = UIFont(name: PixelFont.bold, size: 28) { large[.font] = f }
             }
         }
         if theme.westernHeadings {
@@ -173,6 +173,19 @@ enum Theme {
         let seg = UISegmentedControl.appearance()
         let barButton = UIBarButtonItem.appearance()
         if theme.westernHeadings, let f = RocksFont.ui(17) ?? UIFont(name: WesternFont.name, size: 17) {
+            seg.setTitleTextAttributes([.font: f], for: .normal)
+            seg.setTitleTextAttributes([.font: f], for: .selected)
+            barButton.setTitleTextAttributes([.font: f], for: .normal)
+            barButton.setTitleTextAttributes([.font: f], for: .highlighted)
+        } else if theme.pixelHeadings, let f = UIFont(name: PixelFont.bold, size: 11) {
+            // Retro: pixel font on the segmented pickers (All / Unread, ...) and bar buttons
+            seg.setTitleTextAttributes([.font: f], for: .normal)
+            seg.setTitleTextAttributes([.font: f], for: .selected)
+            barButton.setTitleTextAttributes([.font: f], for: .normal)
+            barButton.setTitleTextAttributes([.font: f], for: .highlighted)
+        } else if theme.mono {
+            // Terminal: monospaced
+            let f = UIFont.monospacedSystemFont(ofSize: 14, weight: .medium)
             seg.setTitleTextAttributes([.font: f], for: .normal)
             seg.setTitleTextAttributes([.font: f], for: .selected)
             barButton.setTitleTextAttributes([.font: f], for: .normal)
