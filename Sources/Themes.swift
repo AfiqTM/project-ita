@@ -727,6 +727,7 @@ struct GreetingBar<Trailing: View>: View {
     @State private var shake: CGFloat = 0         // recoil of the text when the shot is fired
     @State private var textSize: CGSize = .zero
     @State private var rowSize: CGSize = .zero
+    @State private var trailingWidth: CGFloat = 0
 
     init(hello: String, name: String, @ViewBuilder trailing: () -> Trailing) {
         self.hello = hello
@@ -740,10 +741,15 @@ struct GreetingBar<Trailing: View>: View {
 
     private var letters: Int { hello.count + name.count }
 
+    /// The strip the effects run in: the row without the trailing button (chat icon), so they end before it
+    private var lane: CGSize {
+        CGSize(width: max(rowSize.width - trailingWidth - 12, 0), height: rowSize.height)
+    }
+
     /// How much of the text is uncovered, in points from the left (Red Dead and Retro)
     private var revealWidth: CGFloat {
-        if themes.theme == .redDead { return min(max(0, -14 + progress * (rowSize.width + 90) - 6), textSize.width) }
-        return min(max(0, -26 + progress * (rowSize.width + 70) + 13), textSize.width)       // Pac-Man's centre
+        if themes.theme == .redDead { return min(max(0, -14 + progress * (lane.width + 90) - 6), textSize.width) }
+        return min(max(0, -26 + progress * (lane.width + 70) + 13), textSize.width)       // Pac-Man's centre
     }
 
     var body: some View {
@@ -760,13 +766,20 @@ struct GreetingBar<Trailing: View>: View {
                 .offset(x: shake)
             Spacer()
             trailing
+                .background(GeometryReader { g in
+                    Color.clear
+                        .onAppear { trailingWidth = g.size.width }
+                        .onChange(of: g.size.width) { trailingWidth = $0 }
+                })
         }
         .background(GeometryReader { g in
             Color.clear
                 .onAppear { rowSize = g.size }
                 .onChange(of: g.size) { rowSize = $0 }
         })
-        .overlay(alignment: .leading) { if playing { effect } }
+        .overlay(alignment: .leading) {
+            if playing { effect.mask(alignment: .leading) { laneMask } }
+        }
     }
 
     @ViewBuilder private var textRow: some View {
@@ -791,12 +804,26 @@ struct GreetingBar<Trailing: View>: View {
         .rocksHeading(16, normal: .title3, pt: 20)
     }
 
+    /// Everything the effects draw fades out over the last 40 points of the lane, so they dissolve before the chat icon
+    /// instead of running into it (the muzzle flash, left of the lane, stays visible)
+    private var laneMask: some View {
+        ZStack(alignment: .leading) {
+            Rectangle().fill(Color.black).frame(width: 60).offset(x: -60)
+            Rectangle()
+                .fill(LinearGradient(stops: [.init(color: .black, location: 0),
+                                             .init(color: .black, location: max(0, (lane.width - 40) / max(lane.width, 1))),
+                                             .init(color: .clear, location: 1)],
+                                     startPoint: .leading, endPoint: .trailing))
+                .frame(width: lane.width)
+        }
+    }
+
     @ViewBuilder private var effect: some View {
         switch themes.theme {
         case .redDead:
-            GunshotEffect(progress: progress, flash: flash, fade: fade, size: rowSize)
+            GunshotEffect(progress: progress, flash: flash, fade: fade, size: lane)
         case .retro:
-            PacmanEffect(progress: progress, size: rowSize, textWidth: textSize.width)
+            PacmanEffect(progress: progress, size: lane, textWidth: textSize.width)
         default:
             TerminalCursor(start: t0, letters: letters, textSize: textSize)
         }
