@@ -214,7 +214,7 @@ struct TodoRow: View {
                 Text(item.title).fontWeight(.semibold).foregroundColor(Theme.txt)
                     .multilineTextAlignment(.leading)
                 if let d = item.notes, !d.isEmpty {
-                    Text(d).font(Theme.font(.subheadline)).foregroundColor(Theme.muted)
+                    Text(d).font(Theme.read(.subheadline)).foregroundColor(Theme.muted)
                         .lineLimit(3).multilineTextAlignment(.leading)
                 }
                 if showSubject, let n = item.courseName {

@@ -194,7 +194,7 @@ struct ModuleRow: View {
     var body: some View {
         if module.modname == "label" {
             if let d = module.description?.plainText, !d.isEmpty {
-                Text(d).font(Theme.font(.subheadline)).foregroundColor(Theme.muted)
+                Text(d).font(Theme.read(.subheadline)).foregroundColor(Theme.muted)
                     .padding(14).frame(maxWidth: .infinity, alignment: .leading)
             }
         } else {
@@ -291,7 +291,7 @@ struct ForumView: View {
                             Text("\(d.userfullname ?? "") · \(fmt(d.created, time: false))")
                                 .font(Theme.font(.caption)).foregroundColor(Theme.muted)
                             if let m = d.message?.plainText, !m.isEmpty {
-                                Text(m).font(Theme.font(.subheadline)).foregroundColor(Theme.muted).lineLimit(4)
+                                Text(m).font(Theme.read(.subheadline)).foregroundColor(Theme.muted).lineLimit(4)
                                     .multilineTextAlignment(.leading)
                             }
                             if let r = d.numreplies, r > 0 {
@@ -612,7 +612,7 @@ struct PageModuleView: View {
                         ForEach(Array(blocks.enumerated()), id: \.offset) { _, b in
                             switch b {
                             case .text(let t):
-                                Text(t).font(Theme.font(.subheadline)).lineSpacing(3)
+                                Text(t).font(Theme.read(.subheadline)).lineSpacing(3)
                                     .multilineTextAlignment(.leading)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             case .image(let u):
@@ -730,8 +730,7 @@ enum HTMLText {
         }
         func add(_ s: String) {
             var a = AttributedString(s)
-            var f = Theme.font(.subheadline)
-            if bold > 0 { f = f.bold() }
+            var f = Theme.read(.subheadline, bold: bold > 0)
             if italic > 0 { f = f.italic() }
             a.font = f
             a.foregroundColor = Theme.txt

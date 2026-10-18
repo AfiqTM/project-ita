@@ -195,12 +195,14 @@ struct CoursesView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 HStack {
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text("Hello,").foregroundColor(Theme.muted)
-                        Text(firstTwoNames).foregroundColor(Theme.accent).fontWeight(.semibold)
+                    GreetingReveal {   // Red Dead Redemption 2: a gunshot; Retro: Pac-Man (Themes.swift)
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text("Hello,").foregroundColor(Theme.muted)
+                            Text(firstTwoNames).foregroundColor(Theme.accent).fontWeight(.semibold)
+                        }
+                        .textGlow()
+                        .rocksHeading(16, normal: .title3, pt: 20)
                     }
-                    .textGlow()
-                    .rocksHeading(16, normal: .title3, pt: 20)
                     Spacer()
                     MessagesButton()   // chat icon + unread badge (Messages.swift)
                 }

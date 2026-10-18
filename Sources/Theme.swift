@@ -74,22 +74,36 @@ enum Theme {
     static var uiAccent: UIColor   { UIColor(hex: p.accent) }
     static var uiOnAccent: UIColor { UIColor(hex: p.onAccent) }
 
-    /// A text style in the current theme: the system one, or Chinese Rocks at the same size in Red Dead.
-    /// (`.weight()` and `.bold()` can still be chained on the result; the font has a single weight.)
+    private static let styleSizes: [(Font, CGFloat, Font.TextStyle, Bool)] = [   // font, size, scales with, Chinese Rocks?
+        (.largeTitle, 34, .largeTitle, true), (.title, 28, .title, true), (.title2, 22, .title2, true),
+        (.title3, 20, .title3, true), (.headline, 17, .headline, true), (.subheadline, 15, .subheadline, true),
+        (.body, 17, .body, false), (.footnote, 13, .footnote, false),
+        (.caption, 12, .caption, false), (.caption2, 11, .caption2, false)]
+
+    /// A text style in the current theme: the system one, or in Red Dead Redemption 2 Chinese Rocks for titles and
+    /// sub-titles (largeTitle ... subheadline) and Zilla Slab for running text (body, footnote, caption).
+    /// (`.weight()` and `.bold()` can still be chained on the result; the fonts have one weight here.)
     static func font(_ style: Font) -> Font {
-        guard ThemeStore.shared.theme.westernHeadings, WesternFont.available else { return style }
-        let sizes: [(Font, CGFloat, Font.TextStyle)] = [
-            (.largeTitle, 34, .largeTitle), (.title, 28, .title), (.title2, 22, .title2), (.title3, 20, .title3),
-            (.headline, 17, .headline), (.body, 17, .body), (.subheadline, 15, .subheadline),
-            (.footnote, 13, .footnote), (.caption, 12, .caption), (.caption2, 11, .caption2)]
-        guard let m = sizes.first(where: { $0.0 == style }) else { return style }
+        guard ThemeStore.shared.theme.westernHeadings,
+              let m = styleSizes.first(where: { $0.0 == style }) else { return style }
+        if m.3 {
+            guard RocksFont.available else { return style }
+            return .custom(RocksFont.name, size: m.1 * RocksFont.scale, relativeTo: m.2)
+        }
+        guard WesternFont.available else { return style }
         return .custom(WesternFont.name, size: m.1 * WesternFont.scale, relativeTo: m.2)
     }
 
-    /// Corner radius for cards: the Retro theme has (almost) square, pixel-like corners; the others keep the radius
-    static func cardRadius(_ r: CGFloat) -> CGFloat {
-        p.card == .pixel ? min(r, 3) : r
+    /// Like `font`, but always the readable body font in Red Dead Redemption 2, even for the title/sub-title styles:
+    /// for longer text that happens to be set in a sub-title size (descriptions, previews, page text).
+    static func read(_ style: Font, bold: Bool = false) -> Font {
+        guard ThemeStore.shared.theme.westernHeadings, WesternFont.available,
+              let m = styleSizes.first(where: { $0.0 == style }) else { return bold ? style.bold() : style }
+        return .custom(bold ? WesternFont.bold : WesternFont.name, size: m.1 * WesternFont.scale, relativeTo: m.2)
     }
+
+    /// Corner radius for cards: every theme keeps the rounded shape of the Dark theme
+    static func cardRadius(_ r: CGFloat) -> CGFloat { r }
 
     /// Navigation bar, tab bar and tab badges. Bars that already exist keep the old look, so call this
     /// before the screens are rebuilt for a new theme (ThemeStore.select does).
@@ -158,7 +172,7 @@ enum Theme {
         // UIKit controls that SwiftUI wraps (segmented pickers, bar buttons) need the font set here as well
         let seg = UISegmentedControl.appearance()
         let barButton = UIBarButtonItem.appearance()
-        if theme.westernHeadings, let f = UIFont(name: WesternFont.name, size: 18) {
+        if theme.westernHeadings, let f = RocksFont.ui(17) ?? UIFont(name: WesternFont.name, size: 17) {
             seg.setTitleTextAttributes([.font: f], for: .normal)
             seg.setTitleTextAttributes([.font: f], for: .selected)
             barButton.setTitleTextAttributes([.font: f], for: .normal)
@@ -203,7 +217,7 @@ extension UIColor {
 // Light: a gentle drop shadow and a thin outline, since a glow doesn't show on a light page.
 // Terminal: a green glow and a thin green outline, like a terminal window.
 // Red Dead: flat black card, dark-red outline, red strip on top and a dark drop shadow, like the game's banners.
-// Retro: almost square corners, a thick outline and a hard offset block shadow, like an 8-bit window.
+// Retro: the usual rounded corners with a thick outline and a hard offset block shadow, like an arcade bezel.
 struct GlowCard: ViewModifier {
     var radius: CGFloat = 14
     @ObservedObject private var themes = ThemeStore.shared

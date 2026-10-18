@@ -87,8 +87,8 @@ enum AppTheme: String, CaseIterable, Identifiable {
             return [(0x0E0D00, 0x2B2700), (0x0A0A0A, 0x2A2A18), (0x140A00, 0x3D2600),
                     (0x081000, 0x24330A), (0x100012, 0x2E1A36), (0x00101A, 0x0A2E44)]
         case .redDead:
-            return [(0x0A0A0A, 0x4A0F0B), (0x120606, 0x7A1A12), (0x0A0A0A, 0x2E0B08),
-                    (0x180808, 0x8A1F14), (0x0C0C0C, 0x5A120D), (0x100505, 0x3A0D0A)]
+            return [(0x050505, 0x240807), (0x070404, 0x2E0A08), (0x050505, 0x1A0606),
+                    (0x080404, 0x330B09), (0x060606, 0x280807), (0x050303, 0x1E0706)]
         }
     }
 
@@ -99,7 +99,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
         case .light: return 0
         case .terminal: return -0.25
         case .retro: return -0.15
-        case .redDead: return -0.2
+        case .redDead: return -0.4
         }
     }
     var coverSaturation: Double {
@@ -251,28 +251,28 @@ enum PixelFont {
     static var available: Bool { UIFont(name: bold, size: 8) != nil }
 }
 
-/// The Red Dead Redemption 2 theme's font, built by Tools/make_rdr_font.py into Fonts/ChineseRocksPlus-Regular.ttf:
-/// capitals are Chinese Rocks (Typodermic Fonts, the lettering of the game's logo and website), small letters are
-/// Tavern (Oleg Voznyy), "&", brackets and braces are redrawn and check marks, bullets, arrows and shapes are added,
-/// so no symbol falls back to the system font. Check both licences (and whether they allow modified copies) before
-/// publishing the app.
+/// Body font of the Red Dead Redemption 2 theme: Zilla Slab (Fonts/ZillaSlab-Medium.ttf and -Bold.ttf, SIL OFL), a
+/// slab serif that is easy to read in long text and still looks Western. Titles and sub-titles use RocksFont instead.
 enum WesternFont {
-    static let name = "ChineseRocksPlus-Regular"
-    /// The letters are narrow, so every size is this much bigger than in the other themes to look as large as them
-    static let scale: CGFloat = 1.2
+    static let name = "ZillaSlab-Medium"
+    static let bold = "ZillaSlab-Bold"
+    /// Zilla Slab's letters are a little smaller than the system font's at the same size
+    static let scale: CGFloat = 1.08
 
     static func register() {
-        guard let url = Bundle.main.url(forResource: name, withExtension: "ttf") else { return }
-        CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+        for file in [name, bold] {
+            guard let url = Bundle.main.url(forResource: file, withExtension: "ttf") else { continue }
+            CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+        }
     }
 
-    static var available: Bool { UIFont(name: name, size: 12) != nil }
+    static var available: Bool { UIFont(name: name, size: 12) != nil && UIFont(name: bold, size: 12) != nil }
 }
 
 /// Chinese Rocks Rg (Fonts/ChineseRocksCaps-Regular.ttf, built by Tools/make_rocks_caps.py): all capitals, the
 /// game's lettering, letters untouched. Only "&" "(" ")" "{" "}" are redrawn (from Staatliches), the same fix as in
 /// WesternFont, because the original draws them like a plus and square brackets. The Red Dead theme uses it for
-/// headings, tab strips, the tab bar, nav bar titles and buttons; body text keeps WesternFont.
+/// titles, sub-titles, tab strips, the tab bar, nav bar titles and buttons; running text uses WesternFont (Zilla Slab).
 enum RocksFont {
     static let name = "ChineseRocksCaps-Regular"
     /// Capitals only, so a little smaller than WesternFont's 1.2 keeps headings from looking shouty
@@ -355,11 +355,11 @@ struct PixelHeading: ViewModifier {
                       : Font.system(size: size + 3, weight: .heavy, design: .monospaced))
                 .shadow(color: Color(hex: themes.palette.glow), radius: 0, x: 2, y: 2)
         } else if themes.theme.westernHeadings {
-            // same point size as the text has in the other themes, so nothing gets smaller or bigger
+            // Chinese Rocks at the size the text has in the other themes
             content
-                .font(WesternFont.available ? Font.custom(WesternFont.name, size: (pt ?? size) * WesternFont.scale)
-                                            : (normal ?? Font.system(size: pt ?? size, weight: .heavy)))
-                .tracking(0.6)
+                .font(RocksFont.available ? Font.custom(RocksFont.name, size: (pt ?? size) * RocksFont.scale)
+                                          : (normal ?? Font.system(size: pt ?? size, weight: .heavy)))
+                .tracking(RocksFont.tracking)
         } else if let normal {
             content.font(normal)
         } else {
@@ -602,8 +602,8 @@ private struct ThemePreview: View {
         switch theme {
         case .retro where PixelFont.available:
             return .custom(PixelFont.bold, size: 8)                 // 8 pt letters = 1 pt pixels
-        case .redDead where WesternFont.available:
-            return .custom(WesternFont.name, size: size * 1.3)
+        case .redDead where RocksFont.available:
+            return .custom(RocksFont.name, size: size * 1.3)
         default:
             return .system(size: size, weight: weight, design: theme.mono ? .monospaced : .default)
         }
@@ -664,10 +664,235 @@ private struct ThemePreview: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: 70)
         .background(Color(hex: p.surface))
-        .clipShape(RoundedRectangle(cornerRadius: pixel ? 2 : 8, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: pixel ? 2 : 8, style: .continuous)
+        .clipShape(RoundedRectangle(cornerRadius: pixel ? 6 : 8, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: pixel ? 6 : 8, style: .continuous)
             .stroke(Color(hex: p.line), lineWidth: pixel ? 2 : 1))
         .shadow(color: p.card == .terminal ? Color(hex: p.glow).opacity(0.9) : .clear, radius: 6)
         .shadow(color: pixel ? Color(hex: p.glow) : .clear, radius: 0, x: 2, y: 2)
+    }
+}
+
+
+// MARK: - Greeting animations
+//
+// "Hello, <name>" on the My courses tab plays a short intro once per launch (and once more after switching to the
+// theme): Red Dead Redemption 2 fires a shot from the left that uncovers the text, Retro sends Pac-Man across,
+// eating dots and a ghost on his tail, with the text appearing behind him. Skipped when Reduce Motion is on.
+
+/// Which themes already played their greeting in this launch (so changing tabs doesn't replay it)
+final class GreetingPlayed {
+    static var themes = Set<String>()
+}
+
+struct GreetingReveal<Content: View>: View {
+    private let content: Content
+    @ObservedObject private var themes = ThemeStore.shared
+    @State private var playing: Bool
+    @State private var started = false
+    @State private var progress: CGFloat = 0      // 0 = before the start, 1 = the effect has crossed the text
+    @State private var flash: Double = 0          // muzzle flash
+    @State private var size: CGSize = .zero
+
+    init(@ViewBuilder _ content: () -> Content) {
+        self.content = content()
+        let t = ThemeStore.shared.theme
+        let will = (t == .redDead || t == .retro) && !UIAccessibility.isReduceMotionEnabled
+            && !GreetingPlayed.themes.contains(t.rawValue)
+        _playing = State(initialValue: will)
+    }
+
+    /// How much of the text is uncovered, in points from the left
+    private var revealWidth: CGFloat {
+        if themes.theme == .redDead { return max(0, progress * (size.width + 28) - 18) }
+        return max(0, -26 + progress * (size.width + 52) + 13)       // Pac-Man's centre
+    }
+
+    var body: some View {
+        content
+            .mask(alignment: .leading) {
+                if playing { Rectangle().frame(width: revealWidth) } else { Rectangle() }
+            }
+            .background(GeometryReader { g in
+                Color.clear
+                    .onAppear { size = g.size; begin() }
+                    .onChange(of: g.size) { size = $0 }
+            })
+            .overlay(alignment: .leading) {
+                if playing {
+                    if themes.theme == .redDead {
+                        GunshotEffect(progress: progress, flash: flash, size: size)
+                    } else {
+                        PacmanEffect(progress: progress, size: size)
+                    }
+                }
+            }
+    }
+
+    private func begin() {
+        guard playing, !started else { return }
+        started = true
+        let theme = themes.theme
+        GreetingPlayed.themes.insert(theme.rawValue)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            if theme == .redDead {
+                withAnimation(.easeOut(duration: 0.08)) { flash = 1 }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+                    withAnimation(.easeIn(duration: 0.3)) { flash = 0 }
+                }
+                withAnimation(.timingCurve(0.2, 0.9, 0.3, 1, duration: 0.6)) { progress = 1 }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { playing = false }
+            } else {
+                withAnimation(.linear(duration: 1.7)) { progress = 1 }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { playing = false }
+            }
+        }
+    }
+}
+
+/// A spiky flash
+private struct StarBurst: Shape {
+    var points = 9
+    func path(in r: CGRect) -> Path {
+        let c = CGPoint(x: r.midX, y: r.midY)
+        var p = Path()
+        for i in 0..<(points * 2) {
+            let a = CGFloat(i) * .pi / CGFloat(points)
+            let rad = (i % 2 == 0 ? 1.0 : 0.42) * r.width / 2
+            let pt = CGPoint(x: c.x + cos(a) * rad, y: c.y + sin(a) * rad)
+            i == 0 ? p.move(to: pt) : p.addLine(to: pt)
+        }
+        p.closeSubpath()
+        return p
+    }
+}
+
+/// Red Dead Redemption 2: muzzle flash at the left edge, a bullet with a bright trace flying across the line
+private struct GunshotEffect: View {
+    let progress: CGFloat
+    let flash: Double
+    let size: CGSize
+
+    var body: some View {
+        let x = -14 + progress * (size.width + 28)               // the bullet's centre
+        let tail = min(max(x + 14, 0), 170)
+        ZStack(alignment: .leading) {
+            Capsule()                                             // trace left behind the bullet
+                .fill(LinearGradient(colors: [Color.clear, Color(hex: 0xFFE9B0).opacity(0.75)],
+                                     startPoint: .leading, endPoint: .trailing))
+                .frame(width: tail, height: 3)
+                .offset(x: x - tail)
+            Capsule()                                             // the bullet
+                .fill(LinearGradient(colors: [Color(hex: 0xFFF3C9), Color(hex: 0xC98A2B)],
+                                     startPoint: .top, endPoint: .bottom))
+                .frame(width: 18, height: 6)
+                .offset(x: x - 9)
+            StarBurst(points: 9)                                  // muzzle flash
+                .fill(RadialGradient(colors: [Color.white, Color(hex: 0xFFB02E), Color(hex: 0xD42B1F).opacity(0)],
+                                     center: .center, startRadius: 0, endRadius: 30))
+                .frame(width: 60, height: 60)
+                .scaleEffect(0.35 + flash * 0.85)
+                .opacity(flash)
+                .offset(x: -30)
+        }
+        .frame(width: size.width, height: size.height, alignment: .leading)
+        .opacity(progress >= 1 ? 0 : 1)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
+/// Pac-Man with his mouth opened by `mouth` degrees on each side
+private struct PacShape: Shape {
+    var mouth: Double
+    func path(in r: CGRect) -> Path {
+        let c = CGPoint(x: r.midX, y: r.midY)
+        let rad = r.width / 2
+        var p = Path()
+        p.move(to: c)
+        var a = mouth
+        while a <= 360 - mouth {
+            p.addLine(to: CGPoint(x: c.x + CGFloat(cos(a * .pi / 180)) * rad, y: c.y + CGFloat(sin(a * .pi / 180)) * rad))
+            a += 6
+        }
+        p.addLine(to: CGPoint(x: c.x + CGFloat(cos((360 - mouth) * .pi / 180)) * rad,
+                              y: c.y + CGFloat(sin((360 - mouth) * .pi / 180)) * rad))
+        p.closeSubpath()
+        return p
+    }
+}
+
+/// A ghost: round head, three feet at the bottom
+private struct GhostShape: Shape {
+    func path(in r: CGRect) -> Path {
+        let w = r.width, h = r.height
+        var p = Path()
+        p.move(to: CGPoint(x: 0, y: h))
+        p.addLine(to: CGPoint(x: 0, y: w / 2))
+        var a = 180.0
+        while a <= 360 {
+            p.addLine(to: CGPoint(x: w / 2 + CGFloat(cos(a * .pi / 180)) * w / 2,
+                                  y: w / 2 + CGFloat(sin(a * .pi / 180)) * w / 2))
+            a += 10
+        }
+        p.addLine(to: CGPoint(x: w, y: h))
+        let f = w / 3
+        p.addLine(to: CGPoint(x: w - f * 0.5, y: h * 0.8))
+        p.addLine(to: CGPoint(x: w - f, y: h))
+        p.addLine(to: CGPoint(x: w - f * 1.5, y: h * 0.8))
+        p.addLine(to: CGPoint(x: w - f * 2, y: h))
+        p.addLine(to: CGPoint(x: w - f * 2.5, y: h * 0.8))
+        p.closeSubpath()
+        return p
+    }
+}
+
+/// Retro: a row of pixel dots that Pac-Man eats while crossing the line, with a ghost chasing him
+private struct PacmanEffect: View {
+    let progress: CGFloat
+    let size: CGSize
+
+    var body: some View {
+        let d: CGFloat = 26
+        let x = -d + progress * (size.width + 2 * d)             // Pac-Man's left edge
+        let gx = x - d * 2.0                                      // the ghost, a bit behind
+        let count = max(Int(size.width / 16), 1)
+        ZStack(alignment: .topLeading) {
+            ForEach(0..<count, id: \.self) { i in
+                let dx = CGFloat(i) * 16 + 8
+                Rectangle()
+                    .fill(Color(hex: 0xFFE628))
+                    .frame(width: 4, height: 4)
+                    .position(x: dx, y: size.height / 2)
+                    .opacity(dx > x + d * 0.5 ? 1 : 0)
+            }
+            TimelineView(.animation) { tl in
+                let t = tl.date.timeIntervalSinceReferenceDate
+                let mouth = 4 + 36 * abs(sin(t * 11))
+                ZStack(alignment: .topLeading) {
+                    PacShape(mouth: mouth)
+                        .fill(Color(hex: 0xFFE628))
+                        .frame(width: d, height: d)
+                        .offset(x: x, y: (size.height - d) / 2)
+                    GhostShape()
+                        .fill(Color(hex: 0xFF4A3F))
+                        .frame(width: d * 0.92, height: d * 0.92)
+                        .overlay(alignment: .topLeading) {
+                            HStack(spacing: 4) {
+                                ForEach(0..<2, id: \.self) { _ in
+                                    Circle().fill(Color.white).frame(width: 7, height: 8)
+                                        .overlay(Circle().fill(Color(hex: 0x2A4BFF)).frame(width: 3.5, height: 3.5)
+                                            .offset(x: 1.5))
+                                }
+                            }
+                            .padding(.leading, 4).padding(.top, 7)
+                        }
+                        .offset(x: gx, y: (size.height - d * 0.92) / 2 + (sin(t * 14) > 0 ? 0 : 1))
+                }
+                .frame(width: size.width, height: size.height, alignment: .topLeading)
+            }
+        }
+        .frame(width: size.width, height: size.height, alignment: .topLeading)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }

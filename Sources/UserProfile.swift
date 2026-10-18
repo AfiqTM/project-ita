@@ -189,7 +189,7 @@ struct UserProfileView: View {
     private func fieldView(_ k: String, _ v: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(k).font(Theme.font(.subheadline).weight(.semibold)).foregroundColor(Theme.txt)
-            Text(v).font(Theme.font(.subheadline)).foregroundColor(Theme.muted).textSelection(.enabled)
+            Text(v).font(Theme.read(.subheadline)).foregroundColor(Theme.muted).textSelection(.enabled)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }

@@ -643,7 +643,7 @@ struct AttendanceView: View {
                     }
                 }
             } else if let n = note {
-                Text(n).font(Theme.font(.subheadline)).foregroundColor(Theme.muted)
+                Text(n).font(Theme.read(.subheadline)).foregroundColor(Theme.muted)
             }
         }
         .padding(16).frame(maxWidth: .infinity, alignment: .leading)
@@ -828,7 +828,7 @@ struct AssignmentView: View {
     }
 
     private func shareButton(_ f: FileRef) -> some View {
-        Button { shareSubmitted(f) } label: { ShareButtonLabel(size: 36) }
+        Button { shareSubmitted(f) } label: { ShareButtonLabel(size: 36, tile: false) }
             .buttonStyle(.plain)
             .accessibilityLabel("Share submitted files")
     }
@@ -1253,13 +1253,16 @@ struct IntroResp: Decodable {
     let courses: [Course]
 }
 
-// Share icon in a themed tile (48pt = easy to tap).
+// Share icon in a themed tile (48pt = easy to tap). `tile: false` draws just the icon (same tap area).
 struct ShareButtonLabel: View {
     var size: CGFloat = 48
+    var tile = true
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.surface2)
-            RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Theme.line, lineWidth: 1)
+            if tile {
+                RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.surface2)
+                RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Theme.line, lineWidth: 1)
+            }
             Image(systemName: "square.and.arrow.up")
                 .font(.system(size: size * 0.42, weight: .medium))
                 .foregroundColor(Theme.accent)
