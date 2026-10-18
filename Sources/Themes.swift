@@ -563,6 +563,18 @@ private struct ThemeCard: View {
     let theme: AppTheme
     let selected: Bool
 
+    /// The theme's name in that theme's own main font (not the font of the theme that is active right now)
+    private var nameFont: Font {
+        switch theme {
+        case .terminal: return .system(size: 20, weight: .semibold, design: .monospaced)
+        case .retro: return PixelFont.available ? .custom(PixelFont.bold, size: 18)
+                                                 : .system(size: 20, weight: .heavy, design: .monospaced)
+        case .redDead: return RocksFont.available ? .custom(RocksFont.name, size: 22 * RocksFont.scale)
+                                                  : .system(size: 20, weight: .semibold)
+        default: return .system(size: 20, weight: .semibold)
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             ThemePreview(theme: theme)
@@ -570,7 +582,7 @@ private struct ThemeCard: View {
 
             HStack(spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(theme.name).foregroundColor(Theme.txt).fontWeight(.semibold).textGlow(radius: 3).pixelHeading(12, pt: 17)
+                    Text(theme.name).font(nameFont).foregroundColor(Theme.txt)
                     Text(theme.detail).font(Theme.font(.caption)).foregroundColor(Theme.muted)
                         .fixedSize(horizontal: false, vertical: true)
                 }
