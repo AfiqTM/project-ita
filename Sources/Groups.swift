@@ -159,10 +159,13 @@ struct GroupChoiceView: View {
     @State private var leaving: GroupEntry?
     @State private var open: Set<Int> = []
     @State private var query = ""
+    @State private var showWeb = false        // join / leave happens on the website page (group select plugin)
 
     private var myId: Int { app.site?.userid ?? 0 }
     private var instance: Int { module.instance ?? 0 }
     private var webURL: URL { URL(string: module.url ?? "") ?? Site.url }
+    /// The "Group self-selection" plugin (mod_groupselect) has no app web-service functions, unlike choicegroup
+    private var isGroupSelect: Bool { module.modname == "groupselect" || (module.url ?? "").contains("groupselect") }
 
     private var entries: [GroupEntry] {
         var out: [GroupEntry] = options.map { o in
@@ -214,7 +217,8 @@ struct GroupChoiceView: View {
                 if let error = model.error { Text(error).font(Theme.font(.footnote)).foregroundColor(Theme.muted) }
                 if unsupported {
                     VStack(spacing: 10) {
-                        Text("This site may not allow joining groups from the app. If joining or leaving fails, use the website.")
+                        Text(isGroupSelect ? "Joining and leaving opens the group page on the website."
+                                           : "This site may not allow joining groups from the app. If joining or leaving fails, use the website.")
                             .font(Theme.font(.footnote)).foregroundColor(Theme.muted).multilineTextAlignment(.center)
                         NavigationLink { WebActivityView(url: webURL, title: module.name) } label: {
                             Text("Open on the website").fontWeight(.semibold).foregroundColor(Theme.onAccent)
@@ -267,6 +271,7 @@ struct GroupChoiceView: View {
         .task { await load() }
         .onReceive(NotificationCenter.default.publisher(for: .offlineBackOnline)) { _ in Task { await load() } }
         .onFreshData { await load() }
+        .navigationDestination(isPresented: $showWeb) { WebActivityView(url: webURL, title: module.name) }
         .alert("Leave this group?", isPresented: Binding(get: { leaving != nil }, set: { if !$0 { leaving = nil } })) {
             Button("Leave", role: .destructive) { if let e = leaving { Task { await leave(e) } } }
             Button("Cancel", role: .cancel) {}
@@ -352,6 +357,13 @@ struct GroupChoiceView: View {
 
     private func load() async {
         await model.load(courseId: courseId, myId: myId)
+        if isGroupSelect {
+            options = model.groups.map { ChoiceGroupOption(id: $0.id, text: $0.name) }
+            chosen = model.groups.first { $0.members.contains { $0.id == myId } }?.id
+            unsupported = true
+            loading = false
+            return
+        }
         do {
             let r: ChoiceGroupOptionsResp = try await MoodleAPI.shared.call(
                 "mod_choicegroup_get_choicegroup_options", ["choicegroupid": instance])
@@ -373,6 +385,7 @@ struct GroupChoiceView: View {
     }
 
     private func join(_ e: GroupEntry) async {
+        if isGroupSelect { showWeb = true; return }
         busy = e.id; message = nil
         defer { busy = nil }
         do {
@@ -387,6 +400,7 @@ struct GroupChoiceView: View {
     }
 
     private func leave(_ e: GroupEntry) async {
+        if isGroupSelect { showWeb = true; return }
         busy = e.id; message = nil
         defer { busy = nil }
         do {

@@ -162,7 +162,7 @@ struct ModuleRow: View {
         case "quiz": return "questionmark.circle"
         case "page": return "doc.text"
         case "attendance": return "checkmark.circle"
-        case "choicegroup": return "person.3"
+        case "choicegroup", "groupselect": return "person.3"
         default: return "square.grid.2x2"
         }
     }
@@ -181,7 +181,7 @@ struct ModuleRow: View {
             AssignmentView(courseId: courseId, module: module)
         case "attendance":
             AttendanceView(module: module, courseId: courseId)
-        case "choicegroup":
+        case "choicegroup", "groupselect":
             GroupChoiceView(courseId: courseId, module: module)
         case "folder":
             FolderView(module: module)
@@ -190,7 +190,9 @@ struct ModuleRow: View {
                 FileViewer(url: u, title: module.name, modified: module.contents?.first?.timemodified)
             } else { web }
         default:
-            web
+            if (module.url ?? "").contains("groupselect") {
+                GroupChoiceView(courseId: courseId, module: module)
+            } else { web }
         }
     }
 
