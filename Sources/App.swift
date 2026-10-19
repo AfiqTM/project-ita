@@ -17,7 +17,7 @@ struct iTaleemApp: App {
     @StateObject private var sync = SyncManager()
     @ObservedObject private var themes = ThemeStore.shared   // chosen look (Others > Themes)
     @Environment(\.scenePhase) private var scenePhase
-    init() { PixelFont.register(); WesternFont.register(); RocksFont.register(); VintageFont.register(); TypewriterFont.register(); Theme.applyAppearance(); NotificationManager.shared.setup(); OfflineNet.shared.start() }
+    init() { PixelFont.register(); WesternFont.register(); RocksFont.register(); Theme.applyAppearance(); NotificationManager.shared.setup(); OfflineNet.shared.start() }
 
     var body: some Scene {
         WindowGroup {
@@ -39,7 +39,6 @@ struct iTaleemApp: App {
             .background(Theme.bg.ignoresSafeArea())
             .overlay { if themes.theme.scanlines { ScanlineOverlay() } }   // Terminal: CRT scanlines
             .overlay { if themes.theme.aged { AgedOverlay() } }            // Red Dead: vignette and grain
-            .overlay { if themes.theme.filmGrain { VintageOverlay() } }    // Vintage: film grain, dust, vignette
         }
     }
 }

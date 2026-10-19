@@ -31,7 +31,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.afiq.italeem
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-        ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES: "AppIcon-Dark AppIcon-Light AppIcon-Terminal AppIcon-Retro AppIcon-RedDead AppIcon-Vintage"   # one icon per theme
+        ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES: "AppIcon-Dark AppIcon-Light AppIcon-Terminal AppIcon-Retro AppIcon-RedDead"   # one icon per theme
         TARGETED_DEVICE_FAMILY: "1"
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: "iTa'leem"
