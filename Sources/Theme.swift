@@ -6,8 +6,9 @@ import UIKit
 struct Palette {
     /// How cards are lifted off the page: a soft glow (dark), a drop shadow + outline (light),
     /// a glow + outline like a terminal window, hard pixel edges with an offset block shadow (8-bit),
-    /// or flat black with a red top strip and a dark drop shadow (western, Red Dead)
-    enum Card { case glow, soft, terminal, pixel, western }
+    /// flat black with a red top strip and a dark drop shadow (western, Red Dead),
+    /// or a warm paper-print card with a fine inner frame and two accent stripes on the top edge (vintage)
+    enum Card { case glow, soft, terminal, pixel, western, vintage }
 
     let bg, surface, surface2, titleBar, line, txt, muted, accent, onAccent: UInt32
     let green, red, amber, blue: UInt32     // status colours (present / absent / late / info)
@@ -50,6 +51,14 @@ struct Palette {
                                  onAccent: 0xFFFFFF,
                                  green: 0x8FA35A, red: 0xFF5440, amber: 0xFF8040, blue: 0x7C9BB0,
                                  glow: 0x000000, card: .western)
+
+    // Vintage (90s film print): warm near-black brown, aged-paper cream text, leather brown accent. About 5:1
+    // for the accent against the page and 5:1 for the dark text on the accent.
+    static let vintage = Palette(bg: 0x0D0A07, surface: 0x17110C, surface2: 0x211912, titleBar: 0x110C08,
+                                 line: 0x3D2D1E, txt: 0xEADCC3, muted: 0x9C8870, accent: 0xB4793F,
+                                 onAccent: 0x140D07,
+                                 green: 0x8DA567, red: 0xD0604A, amber: 0xD9A24A, blue: 0x7A9DB0,
+                                 glow: 0x000000, card: .vintage)
 }
 
 // Every colour reads from the palette of the chosen theme (Themes.swift). Screens pick the new colours up
@@ -87,19 +96,22 @@ enum Theme {
         guard ThemeStore.shared.theme.westernHeadings,
               let m = styleSizes.first(where: { $0.0 == style }) else { return style }
         if m.3 {
-            guard RocksFont.available else { return style }
-            return .custom(RocksFont.name, size: m.1 * RocksFont.scale, relativeTo: m.2)
+            let f = Face.display
+            guard f.available else { return style }
+            return .custom(f.name, size: m.1 * f.scale, relativeTo: m.2)
         }
-        guard WesternFont.available else { return style }
-        return .custom(WesternFont.name, size: m.1 * WesternFont.scale, relativeTo: m.2)
+        let f = Face.body
+        guard f.available else { return style }
+        return .custom(f.name, size: m.1 * f.scale, relativeTo: m.2)
     }
 
     /// Like `font`, but always the readable body font in Red Dead Redemption 2, even for the title/sub-title styles:
     /// for longer text that happens to be set in a sub-title size (descriptions, previews, page text).
     static func read(_ style: Font, bold: Bool = false) -> Font {
-        guard ThemeStore.shared.theme.westernHeadings, WesternFont.available,
+        let f = Face.body
+        guard ThemeStore.shared.theme.westernHeadings, f.available,
               let m = styleSizes.first(where: { $0.0 == style }) else { return bold ? style.bold() : style }
-        return .custom(bold ? WesternFont.bold : WesternFont.name, size: m.1 * WesternFont.scale, relativeTo: m.2)
+        return .custom(bold ? f.bold : f.name, size: m.1 * f.scale, relativeTo: m.2)
     }
 
     /// Corner radius for cards: every theme keeps the rounded shape of the Dark theme
@@ -142,8 +154,9 @@ enum Theme {
         if theme.westernHeadings {
             // the game's lettering, a little bigger than the system sizes (17 / 34) since the letters are narrow
             // Chinese Rocks Rg, with a little letter spacing
-            if let f = RocksFont.ui(28) ?? UIFont(name: WesternFont.name, size: 26) { title[.font] = f; title[.kern] = 1.2 }
-            if let f = RocksFont.ui(46) ?? UIFont(name: WesternFont.name, size: 44) { large[.font] = f; large[.kern] = 1.6 }
+            let face = Face.display
+            if let f = face.ui(face.navTitle) ?? UIFont(name: Face.body.name, size: 26) { title[.font] = f; title[.kern] = face.navKern }
+            if let f = face.ui(face.navLarge) ?? UIFont(name: Face.body.name, size: 44) { large[.font] = f; large[.kern] = face.navKern * 1.3 }
         }
         nav.titleTextAttributes = title
         nav.largeTitleTextAttributes = large
@@ -172,7 +185,7 @@ enum Theme {
         // UIKit controls that SwiftUI wraps (segmented pickers, bar buttons) need the font set here as well
         let seg = UISegmentedControl.appearance()
         let barButton = UIBarButtonItem.appearance()
-        if theme.westernHeadings, let f = RocksFont.ui(17) ?? UIFont(name: WesternFont.name, size: 17) {
+        if theme.westernHeadings, let f = Face.display.ui(Face.display.bar) ?? UIFont(name: Face.body.name, size: 17) {
             seg.setTitleTextAttributes([.font: f], for: .normal)
             seg.setTitleTextAttributes([.font: f], for: .selected)
             barButton.setTitleTextAttributes([.font: f], for: .normal)
@@ -196,12 +209,12 @@ enum Theme {
             barButton.setTitleTextAttributes(nil, for: .normal)
             barButton.setTitleTextAttributes(nil, for: .highlighted)
         }
-        if theme.westernHeadings, let f = RocksFont.ui(15) ?? UIFont(name: WesternFont.name, size: 15) {
+        if theme.westernHeadings, let f = Face.display.ui(Face.display.tab) ?? UIFont(name: Face.body.name, size: 15) {
             // tab bar labels: Chinese Rocks Rg; the kern keeps the narrow capitals from touching and
             // "Assignments" still fits its slot (about 71 pt wide at this size)
             for item in [tab.stackedLayoutAppearance, tab.inlineLayoutAppearance, tab.compactInlineLayoutAppearance] {
-                item.normal.titleTextAttributes = [.font: f, .kern: 0.5, .foregroundColor: UIColor(hex: p.muted)]
-                item.selected.titleTextAttributes = [.font: f, .kern: 0.5, .foregroundColor: uiAccent]
+                item.normal.titleTextAttributes = [.font: f, .kern: Face.display.tabKern, .foregroundColor: UIColor(hex: p.muted)]
+                item.selected.titleTextAttributes = [.font: f, .kern: Face.display.tabKern, .foregroundColor: uiAccent]
             }
         }
         UITabBar.appearance().standardAppearance = tab
@@ -239,6 +252,7 @@ struct GlowCard: ViewModifier {
         let p = themes.theme.palette
         let pixel = p.card == .pixel
         let western = p.card == .western
+        let vintage = p.card == .vintage
         let shape = RoundedRectangle(cornerRadius: Theme.cardRadius(radius), style: .continuous)
         let g = Color(hex: p.glow)
         // three shadow layers: colour, blur, x offset, y offset
@@ -252,11 +266,17 @@ struct GlowCard: ViewModifier {
             layers = [(g, 0, 3, 3), (Color.clear, 0, 0, 0), (Color.clear, 0, 0, 0)]
         case .western:
             layers = [(Color.black.opacity(0.7), 6, 0, 3), (Color.black.opacity(0.45), 18, 0, 8), (Color.clear, 0, 0, 0)]
+        case .vintage:
+            layers = [(Color.black.opacity(0.6), 5, 0, 3), (Color.black.opacity(0.4), 16, 0, 8), (Color.clear, 0, 0, 0)]
         }
         return content
             .background(Color(hex: p.surface))
             // western: a red banner along the top edge with a torn-paper lower edge (inside the rounded corners)
             .overlay(alignment: .top) { TornBand().fill(Color(hex: p.accent)).frame(height: western ? 9 : 0) }
+            // vintage: two stripes hanging from the top edge, like the colour bars on a film-print layout
+            .overlay(alignment: .topLeading) { VintageStripes().frame(height: vintage ? 4 : 0).opacity(vintage ? 1 : 0) }
+            // vintage: a fine frame inside the card, like the mat around a photograph
+            .overlay(shape.inset(by: vintage ? 5 : 0).stroke(Color(hex: p.txt).opacity(vintage ? 0.07 : 0), lineWidth: 1))
             .clipShape(shape)
             .overlay(shape.stroke(Color(hex: p.line), lineWidth: p.card == .glow ? 0 : (pixel ? 2 : 1)))
 
