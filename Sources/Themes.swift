@@ -14,7 +14,7 @@ import CoreText
 // happens and then faded out.
 
 enum AppTheme: String, CaseIterable, Identifiable {
-    case dark, light, terminal, retro, redDead
+    case dark, light, terminal, retro, redDead, vintage
 
     var id: String { rawValue }
 
@@ -25,6 +25,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
         case .terminal: return "Terminal"
         case .retro: return "Retro"
         case .redDead: return "Red Dead Redemption 2"
+        case .vintage: return "Vintage"
         }
     }
 
@@ -35,6 +36,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
         case .terminal: return "Terminal look: near-black, neon green, a monospaced font and a green glow."
         case .retro: return "Old-school arcade: black and olive tiles, yellow accent, hard pixel edges and a pixel-style font."
         case .redDead: return "Rockstar-poster look: black and red, stencil-style caps headings, flat cards with a red banner strip."
+        case .vintage: return "90s film print: warm dark brown, aged-paper cream, a leather-brown accent, Royal Knight lettering and typewriter text, film grain."
         }
     }
 
@@ -47,11 +49,15 @@ enum AppTheme: String, CaseIterable, Identifiable {
     /// Arcade headings: the pixel font (when bundled, see PixelFont) with a hard block shadow
     var pixelHeadings: Bool { self == .retro }
 
-    /// Red Dead headings: Chinese Rocks, the game's lettering
-    var westernHeadings: Bool { self == .redDead }
+    /// Themes with their own title font (Red Dead: Chinese Rocks, Vintage: Royal Knight) and body font (Zilla Slab /
+    /// Courier Prime). The fonts themselves come from `Face`.
+    var westernHeadings: Bool { self == .redDead || self == .vintage }
 
     /// Aged-photograph vignette and film grain over the whole app
     var aged: Bool { self == .redDead }
+
+    /// Warm film grain, dust and a soft vignette over the whole app
+    var filmGrain: Bool { self == .vintage }
 
     var palette: Palette {
         switch self {
@@ -60,6 +66,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
         case .terminal: return .terminal
         case .retro: return .retro
         case .redDead: return .redDead
+        case .vintage: return .vintage
         }
     }
 
@@ -89,6 +96,9 @@ enum AppTheme: String, CaseIterable, Identifiable {
         case .redDead:
             return [(0x030303, 0x1A0605), (0x050303, 0x220706), (0x030303, 0x140404),
                     (0x060303, 0x260807), (0x040404, 0x1E0605), (0x030202, 0x160505)]
+        case .vintage:
+            return [(0x140E09, 0x3A2818), (0x120E0B, 0x33261C), (0x17100A, 0x46301C),
+                    (0x0F0D09, 0x2C2618), (0x150D0B, 0x3B2420), (0x0E0C0A, 0x2A2118)]
         }
     }
 
@@ -100,6 +110,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
         case .terminal: return -0.25
         case .retro: return -0.15
         case .redDead: return -0.4
+        case .vintage: return -0.22
         }
     }
     var coverSaturation: Double {
@@ -107,6 +118,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
         case .terminal: return 0.6
         case .retro: return 0.9
         case .redDead: return 0.3
+        case .vintage: return 0.4         // faded colour, like an old print
         default: return 1
         }
     }
@@ -116,6 +128,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
         case .terminal: return 0x1FBF55
         case .retro: return 0xFFE628
         case .redDead: return 0xC4281C   // red-and-black print
+        case .vintage: return 0xB4793F   // sepia
         default: return nil
         }
     }
@@ -125,6 +138,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
         case .terminal: return Palette.terminal.accent
         case .retro: return Palette.retro.accent
         case .redDead: return 0xFFFFFF   // white: a red star would vanish on the dark circle
+        case .vintage: return 0xE3AE80   // light peach (the brown accent is too dark on the dark circle)
         default: return Palette.dark.accent
         }
     }
@@ -137,6 +151,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
         case .terminal: return "> italeem_"
         case .retro: return "ITA'LEEM  1UP"
         case .redDead: return "WANTED"
+        case .vintage: return "VINTAGE  No.90"
         default: return nil
         }
     }
@@ -146,13 +161,14 @@ enum AppTheme: String, CaseIterable, Identifiable {
         case .terminal: return ("$ cs101", "> 85% ok")
         case .retro: return ("CS101", "SCORE 85")
         case .redDead: return ("CS101", "$85 REWARD")
+        case .vintage: return ("CS 101", "Score 85")
         default: return nil
         }
     }
 }
 
 /// The home-screen icon that goes with each theme. Each one is an alternate icon set in the asset catalog
-/// (Assets.xcassets/AppIcon-Dark, AppIcon-Light, AppIcon-Terminal, AppIcon-Retro, AppIcon-RedDead) and listed in project.yml under
+/// (Assets.xcassets/AppIcon-Dark, AppIcon-Light, AppIcon-Terminal, AppIcon-Retro, AppIcon-RedDead, AppIcon-Vintage) and listed in project.yml under
 /// ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES.
 /// iOS shows its own "You have changed the icon" notice every time the icon changes; apps can't hide it.
 /// The icon only follows the theme while the switch on the Themes screen is on.
@@ -170,6 +186,7 @@ enum AppIcon {
         case .terminal: return "AppIcon-Terminal"
         case .retro: return "AppIcon-Retro"
         case .redDead: return "AppIcon-RedDead"
+        case .vintage: return "AppIcon-Vintage"
         }
     }
 
@@ -291,6 +308,65 @@ enum RocksFont {
     static func ui(_ size: CGFloat) -> UIFont? { UIFont(name: name, size: size) }
 }
 
+/// Royal Knight (Fonts/RoyalKnight-Regular.ttf, patched by Tools/make_royal_knight.py): the Vintage theme's title font.
+/// Capitals plus small capitals, so it is only used for titles and sub-titles; running text uses TypewriterFont.
+enum VintageFont {
+    static let name = "RoyalKnight-Regular"
+    /// Royal Knight's capitals are about as tall as the system font's but much wider, so a little smaller
+    static let scale: CGFloat = 0.92
+    static let tracking: CGFloat = 0.4
+
+    static func register() {
+        guard let url = Bundle.main.url(forResource: "RoyalKnight-Regular", withExtension: "ttf") else { return }
+        CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+    }
+    static var available: Bool { UIFont(name: name, size: 12) != nil }
+}
+
+/// Courier Prime (Fonts/CourierPrime-Regular.ttf and -Bold.ttf, SIL OFL): the Vintage theme's running text.
+/// A typewriter face made to be read on a screen, like the typed captions on a 90s print layout.
+enum TypewriterFont {
+    static let name = "CourierPrime-Regular"
+    static let bold = "CourierPrime-Bold"
+    /// Courier Prime's letters are small for their width: a touch bigger than the system font's size
+    static let scale: CGFloat = 1.04
+
+    static func register() {
+        for file in [name, bold] {
+            guard let url = Bundle.main.url(forResource: file, withExtension: "ttf") else { continue }
+            CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+        }
+    }
+    static var available: Bool { UIFont(name: name, size: 12) != nil && UIFont(name: bold, size: 12) != nil }
+}
+
+/// The title face and the text face of the theme that is active (themes with `westernHeadings`): where the sizes
+/// of the nav bar, tab bar and bar buttons differ between the fonts they are kept together here.
+struct FaceSpec {
+    let name: String
+    let bold: String
+    let scale: CGFloat
+    let tracking: CGFloat
+    var navTitle: CGFloat = 28, navLarge: CGFloat = 46, tab: CGFloat = 15, bar: CGFloat = 17
+    var navKern: CGFloat = 1.2, tabKern: CGFloat = 0.5
+
+    var available: Bool { UIFont(name: name, size: 12) != nil && UIFont(name: bold, size: 12) != nil }
+    /// UIKit font for the nav bar / tab bar (size is the final point size, `scale` is not applied)
+    func ui(_ size: CGFloat) -> UIFont? { UIFont(name: name, size: size) }
+
+    static let rocks = FaceSpec(name: RocksFont.name, bold: RocksFont.name, scale: RocksFont.scale, tracking: RocksFont.tracking)
+    static let zilla = FaceSpec(name: WesternFont.name, bold: WesternFont.bold, scale: WesternFont.scale, tracking: 0)
+    static let royalKnight = FaceSpec(name: VintageFont.name, bold: VintageFont.name, scale: VintageFont.scale,
+                                      tracking: VintageFont.tracking, navTitle: 24, navLarge: 38, tab: 13, bar: 15,
+                                      navKern: 0.5, tabKern: 0.3)
+    static let courier = FaceSpec(name: TypewriterFont.name, bold: TypewriterFont.bold, scale: TypewriterFont.scale, tracking: 0)
+}
+
+enum Face {
+    static var display: FaceSpec { ThemeStore.shared.theme == .vintage ? .royalKnight : .rocks }
+    static var body: FaceSpec { ThemeStore.shared.theme == .vintage ? .courier : .zilla }
+}
+
 /// Chinese Rocks Rg for one piece of text in the Red Dead theme; every other theme keeps `normal` (or whatever
 /// font the text already had). Use it on the text itself, and give the other themes' font through `normal`,
 /// since a `.font` set closer to the text would win over this one.
@@ -300,9 +376,9 @@ struct RocksText: ViewModifier {
     var normal: Font?
     @ObservedObject private var themes = ThemeStore.shared
     func body(content: Content) -> some View {
-        if themes.theme.westernHeadings && RocksFont.available {
+        if themes.theme.westernHeadings && Face.display.available {
             content
-                .font(.custom(RocksFont.name, size: pt * RocksFont.scale))
+                .font(.custom(Face.display.name, size: pt * Face.display.scale))
                 .tracking(tracking)
         } else if let normal {
             content.font(normal)
@@ -319,18 +395,18 @@ struct RocksHeading: ViewModifier {
     var pt: CGFloat
     @ObservedObject private var themes = ThemeStore.shared
     func body(content: Content) -> some View {
-        if themes.theme.westernHeadings && RocksFont.available {
+        if themes.theme.westernHeadings && Face.display.available {
             content
-                .font(.custom(RocksFont.name, size: pt * RocksFont.scale))
-                .tracking(RocksFont.tracking)
+                .font(.custom(Face.display.name, size: pt * Face.display.scale))
+                .tracking(Face.display.tracking)
         } else {
             content.pixelHeading(size, normal: normal, pt: pt)
         }
     }
 }
 extension View {
-    func rocks(_ pt: CGFloat, tracking: CGFloat = RocksFont.tracking, normal: Font? = nil) -> some View {
-        modifier(RocksText(pt: pt, tracking: tracking, normal: normal))
+    func rocks(_ pt: CGFloat, tracking: CGFloat? = nil, normal: Font? = nil) -> some View {
+        modifier(RocksText(pt: pt, tracking: tracking ?? Face.display.tracking, normal: normal))
     }
     func rocksHeading(_ size: CGFloat = 12, normal: Font? = nil, pt: CGFloat) -> some View {
         modifier(RocksHeading(size: size, normal: normal, pt: pt))
@@ -357,9 +433,9 @@ struct PixelHeading: ViewModifier {
         } else if themes.theme.westernHeadings {
             // Chinese Rocks at the size the text has in the other themes
             content
-                .font(RocksFont.available ? Font.custom(RocksFont.name, size: (pt ?? size) * RocksFont.scale)
-                                          : (normal ?? Font.system(size: pt ?? size, weight: .heavy)))
-                .tracking(RocksFont.tracking)
+                .font(Face.display.available ? Font.custom(Face.display.name, size: (pt ?? size) * Face.display.scale)
+                                             : (normal ?? Font.system(size: pt ?? size, weight: .heavy)))
+                .tracking(Face.display.tracking)
         } else if let normal {
             content.font(normal)
         } else {
@@ -497,6 +573,74 @@ struct AgedOverlay: View {
     }
 }
 
+/// Vintage cards: a wide and a short stripe hanging from the top-left edge (peach to leather brown), like the
+/// colour bars on a 90s film-print layout
+struct VintageStripes: View {
+    var body: some View {
+        HStack(spacing: 4) {
+            Rectangle()
+                .fill(LinearGradient(colors: [Color(hex: 0xE3AE80), Color(hex: Palette.vintage.accent)],
+                                     startPoint: .leading, endPoint: .trailing))
+                .frame(width: 38)
+            Rectangle().fill(Color(hex: Palette.vintage.accent).opacity(0.55)).frame(width: 14)
+        }
+        .padding(.leading, 18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .allowsHitTesting(false)
+    }
+}
+
+/// Vintage: warm film grain, a few dust specks and hairline scratches, faint diagonal light lines (like the
+/// ones across the print layouts this look is after) and a soft vignette over the whole app
+struct VintageOverlay: View {
+    @Environment(\.accessibilityReduceTransparency) private var reduce
+
+    var body: some View {
+        if !reduce {
+            ZStack {
+                Canvas { ctx, size in
+                    var seed: UInt64 = 0xD1B54A32D192ED03
+                    func next() -> CGFloat {   // fixed pseudo-random sequence, so the grain doesn't change
+                        seed = seed &* 6364136223846793005 &+ 1442695040888963407
+                        return CGFloat(seed >> 40) / CGFloat(1 << 24)
+                    }
+                    // faint diagonal hairlines
+                    var x: CGFloat = -size.height
+                    while x < size.width {
+                        var line = Path()
+                        line.move(to: CGPoint(x: x, y: size.height))
+                        line.addLine(to: CGPoint(x: x + size.height * 0.62, y: 0))
+                        ctx.stroke(line, with: .color(Color(hex: 0xEADCC3).opacity(0.022)), lineWidth: 0.6)
+                        x += 74
+                    }
+                    // grain: warm and dark specks
+                    for _ in 0..<700 {
+                        let r = next() * 1.3 + 0.4
+                        let rect = CGRect(x: next() * size.width, y: next() * size.height, width: r, height: r)
+                        let warm = next() > 0.45
+                        ctx.fill(Path(ellipseIn: rect),
+                                 with: .color(warm ? Color(hex: 0xE3C9A0).opacity(0.035 + Double(next()) * 0.04)
+                                                   : Color.black.opacity(0.18 + Double(next()) * 0.2)))
+                    }
+                    // dust and short scratches
+                    for _ in 0..<16 {
+                        let a = CGPoint(x: next() * size.width, y: next() * size.height)
+                        var scratch = Path()
+                        scratch.move(to: a)
+                        scratch.addLine(to: CGPoint(x: a.x + (next() - 0.5) * 5, y: a.y + 6 + next() * 26))
+                        ctx.stroke(scratch, with: .color(Color(hex: 0xEADCC3).opacity(0.05)), lineWidth: 0.5)
+                    }
+                }
+                RadialGradient(colors: [Color.clear, Color(hex: 0x080402).opacity(0.55)],
+                               center: .center, startRadius: 240, endRadius: 640)
+            }
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
+    }
+}
+
 /// Monospaced font for a whole screen tree (iOS 16.1 and later; older versions keep the normal font)
 struct ThemeFont: ViewModifier {
     let mono: Bool
@@ -573,6 +717,8 @@ private struct ThemeCard: View {
                                                  : .system(size: 20, weight: .heavy, design: .monospaced)
         case .redDead: return RocksFont.available ? .custom(RocksFont.name, size: 17 * RocksFont.scale)
                                                   : .system(size: 20, weight: .semibold)
+        case .vintage: return VintageFont.available ? .custom(VintageFont.name, size: 20 * 0.95)    // capitals 14 pt tall
+                                                    : .system(size: 20, weight: .semibold, design: .serif)
         default: return .system(size: 20, weight: .semibold)
         }
     }
@@ -620,6 +766,10 @@ private struct ThemePreview: View {
             return .custom(PixelFont.bold, size: 8)                 // 8 pt letters = 1 pt pixels
         case .redDead where RocksFont.available:
             return .custom(RocksFont.name, size: size * 0.95 * RocksFont.scale)   // same capital height as the system font
+        case .vintage where VintageFont.available && TypewriterFont.available:
+            // titles and the button in Royal Knight, the small lines in Courier Prime
+            return weight == .bold ? .custom(VintageFont.name, size: size * 0.95)
+                                   : .custom(TypewriterFont.name, size: size * 1.04)
         default:
             return .system(size: size, weight: weight, design: theme.mono ? .monospaced : .default)
         }
