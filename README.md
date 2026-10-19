@@ -47,7 +47,7 @@ Native client for iTa'leem (IIUM Moodle) using Moodle's mobile web-service API, 
 
 ### Offline
 - **Slow or unstable connection**: every answer from the site is timed. Screens always open from the saved copy first. If the site is slow, the app only waits 1.5 s (1 s when the connection keeps failing, 4 s on a good one) before it stays on the saved copy and shows a "Slow connection" pill. The request is not cancelled: when it arrives the data is saved and every open screen swaps to it at once, with no reload and no animation.
-- **Offline support** (Others, on by default): course lists, course contents, grades, announcements, notifications and attendance pages are saved and open with no internet, with a small "Offline" pill. Updated about every 12 hours (random 10-14 h); course contents are only downloaded again when the site says they changed. Optional "Download on mobile data" switch.
+- **Offline support** (Others, on by default): course lists, course contents, grades, announcements, notifications and attendance pages are saved and open with no internet, with a small "Offline" pill. Updated about every 3 days (random 2.5-3.5 days); course contents are only downloaded again when the site says they changed. Optional "Download on mobile data" switch.
 - **Download course files** (inside Offline support, off by default): saves PDFs, slides and attachments (resources, folder files, page attachments; no videos or links).
   - Own Wi-Fi / mobile-data rule ("Files on mobile data", off by default), separate from the general one
   - Per-file limit: 10 MB (default), 25 MB or 50 MB

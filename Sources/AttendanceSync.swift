@@ -146,7 +146,7 @@ enum AttendanceSync {
         let items = entries.map { $0.item }
 
         // Offline support: also keep each subject's full attendance page for use with no internet
-        // (on the same ~12-hour schedule as the other offline downloads)
+        // (on the same ~3-day schedule as the other offline downloads)
         if OfflineSettings.enabled && OfflineNet.shared.canDownload && OfflinePrefetch.attendanceCopiesDue() {
             var all = true
             for (c, m) in found where currentIDs.contains(c.id) {

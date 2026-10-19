@@ -7,7 +7,7 @@ import CryptoKit
 // their own folder, so turning the data copy off never deletes them, and deleting them never touches the data.
 //
 //   Download course files (off by default, inside Offline support)
-//     - in the normal ~12-hour download, every file up to the size limit (10 MB, or 25 / 50 MB) of every
+//     - in the normal ~3-day download, every file up to the size limit (10 MB, or 25 / 50 MB) of every
 //       course is saved; Wi-Fi only unless "Files on mobile data" is on (it ignores the general mobile-data setting)
 //     - a file is downloaded once; it is fetched again only when its last-modified time changes
 //     - videos and external links are never included (they aren't real files on the site)
@@ -249,7 +249,7 @@ final class OfflineFileStore: ObservableObject, @unchecked Sendable {
     }
 
     /// One course: downloads what is new or changed and within the size limit. Called by the normal
-    /// ~12-hour download (OfflinePrefetch) with the course contents it just checked.
+    /// ~3-day download (OfflinePrefetch) with the course contents it just checked.
     static func syncCourse(_ secs: [CourseSection]) async {
         guard OfflineSettings.enabled, OfflineSettings.filesEnabled else { return }
         let s = shared

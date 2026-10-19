@@ -27,7 +27,8 @@ struct CamsGroup: Codable, Identifiable, Equatable {
         }
         return kind
     }
-    var weightValue: Double? { camsNumber(weight) }
+    /// Left empty it counts as 10 (the grey "10" shown in the Weight box), like an empty "out of" counts as 20
+    var weightValue: Double? { weight.trimmingCharacters(in: .whitespaces).isEmpty ? 10 : camsNumber(weight) }
 
     /// Average of the filled-in entries as a percentage (each entry counts equally).
     var percent: Double? {
@@ -46,7 +47,7 @@ struct CamsGroup: Codable, Identifiable, Equatable {
                 || (!$0.outOf.isEmpty && (camsNumber($0.outOf) ?? 0) <= 0)
         }
         if bad { return "Check the boxes: marks and \"out of\" need to be numbers (out of must be above 0)." }
-        if weightValue == nil { return "Set this one's weight % (top right) so it counts in the total." }
+        if weightValue == nil { return "Weight % (top right) needs to be a number." }
         return nil
     }
     /// Marks this component adds to the overall result, e.g. 75% of a 10% component = 7.5

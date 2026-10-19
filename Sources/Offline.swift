@@ -272,17 +272,17 @@ enum OfflineCache {
 // MARK: background download
 //
 // What is downloaded again, and when (nothing is fetched twice for the same reason):
-//   One download about every 12 hours (random, 10-14 h). In it:
+//   One download about every 3 days (random, 2.5-3.5 days). In it:
 //   course lists, notifications, grades, announcements ... downloaded
 //   course contents ..... a cheap "did anything change?" check first (core_course_get_updates_since);
 //                         the full contents are only downloaded when it says yes. If the site doesn't
-//                         support that check they are downloaded. A copy older than 3 days is replaced
+//                         support that check they are downloaded. A copy older than 7 days is replaced
 //                         either way, as a safety net.
 
 enum OfflinePrefetch {
     private static var running = false
 
-    // Background downloads happen about every 12 hours, at a random time between 10 and 14 hours after
+    // Background downloads happen about every 3 days, at a random time between 2.5 and 3.5 days after
     // the last one (so the app doesn't hit the site at the same moment as everyone else). The next time is
     // remembered across launches. Opening the app earlier does nothing; switching Offline support on, or
     // allowing mobile data, downloads straight away.
@@ -291,7 +291,7 @@ enum OfflinePrefetch {
     static let lastKey = "offline.lastDownload"
     private static let nextAttendanceKey = "offline.nextAttendanceCopy"
 
-    private static func randomGap() -> TimeInterval { .random(in: 10 * 3600 ... 14 * 3600) }
+    private static func randomGap() -> TimeInterval { .random(in: 60 * 3600 ... 84 * 3600) }
     private static func due(_ key: String) -> Bool {
         Date().timeIntervalSince1970 >= UserDefaults.standard.double(forKey: key)   // unset = due now
     }
@@ -301,10 +301,10 @@ enum OfflinePrefetch {
     static func attendanceCopiesDue() -> Bool { due(nextAttendanceKey) }
     static func attendanceCopiesDone() { scheduleNext(nextAttendanceKey) }
 
-    static let listMaxAge: TimeInterval = 11 * 3600          // a list saved by the last download is reused until the next one
+    static let listMaxAge: TimeInterval = 58 * 3600          // a list saved by the last download is reused until the next one
     static let freshAge: TimeInterval = 10 * 60
-    static let noCheckAge: TimeInterval = 6 * 3600           // only used when the site has no change check
-    static let safetyAge: TimeInterval = 3 * 86400           // a copy this old is replaced even if nothing seems to have changed
+    static let noCheckAge: TimeInterval = 2 * 86400           // only used when the site has no change check
+    static let safetyAge: TimeInterval = 7 * 86400           // a copy this old is replaced even if nothing seems to have changed
 
     // Whether the site answers the change check (learned once per launch)
     private static let flagLock = NSLock()
@@ -411,7 +411,7 @@ enum OfflinePrefetch {
             await assignmentStatuses(ar, uid: uid)
         }
 
-        let extras = true   // grades and announcements come with every download (it only happens twice a day)
+        let extras = true   // grades and announcements come with every download (it only happens every few days)
 
         // 4 courses at a time
         let list = Array(ids)
