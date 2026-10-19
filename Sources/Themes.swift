@@ -563,13 +563,15 @@ private struct ThemeCard: View {
     let theme: AppTheme
     let selected: Bool
 
-    /// The theme's name in that theme's own main font (not the font of the theme that is active right now)
+    /// The theme's name in that theme's own main font (not the font of the theme that is active right now).
+    /// Sizes are picked so the capital letters are the same height (about 14 pt) in every theme:
+    /// system 20 pt = 14.1, pixel 16 pt = 14.0 (2 pt pixels), Chinese Rocks 17 x scale = 13.9.
     private var nameFont: Font {
         switch theme {
         case .terminal: return .system(size: 20, weight: .semibold, design: .monospaced)
-        case .retro: return PixelFont.available ? .custom(PixelFont.bold, size: 18)
+        case .retro: return PixelFont.available ? .custom(PixelFont.bold, size: 16)
                                                  : .system(size: 20, weight: .heavy, design: .monospaced)
-        case .redDead: return RocksFont.available ? .custom(RocksFont.name, size: 22 * RocksFont.scale)
+        case .redDead: return RocksFont.available ? .custom(RocksFont.name, size: 17 * RocksFont.scale)
                                                   : .system(size: 20, weight: .semibold)
         default: return .system(size: 20, weight: .semibold)
         }
@@ -617,7 +619,7 @@ private struct ThemePreview: View {
         case .retro where PixelFont.available:
             return .custom(PixelFont.bold, size: 8)                 // 8 pt letters = 1 pt pixels
         case .redDead where RocksFont.available:
-            return .custom(RocksFont.name, size: size * 1.3)
+            return .custom(RocksFont.name, size: size * 0.95 * RocksFont.scale)   // same capital height as the system font
         default:
             return .system(size: size, weight: weight, design: theme.mono ? .monospaced : .default)
         }

@@ -509,17 +509,82 @@ struct TodoEditSheet: View {
 struct CourseTodoTab: View {
     let courseId: Int
     @EnvironmentObject var todos: TodoStore
+    @State private var selected: TodoItem?
 
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
                 ForEach(todos.pending(for: courseId)) { item in
                     TodoRow(item: item, showSubject: false) { withAnimation { todos.complete(item.id) } }
+                        .onTapGesture { selected = item }
                 }
             }
             .glowCard()
             .padding(16)
         }
         .background(Theme.bg.ignoresSafeArea())
+        .sheet(item: $selected) { TodoDetailSheet(item: $0) }
+    }
+}
+
+// MARK: - Detail (tap an item inside a course: full description, mark as done, edit)
+
+struct TodoDetailSheet: View {
+    let item: TodoItem
+    @EnvironmentObject var todos: TodoStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var editing = false
+
+    /// The latest saved version (it may have been edited or synced while this is open)
+    private var current: TodoItem { todos.pending.first { $0.id == item.id } ?? item }
+    private var overdue: Bool { current.due < Date() }
+
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text(current.title).font(Theme.font(.title2).weight(.bold)).foregroundColor(Theme.txt)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label(current.kind.title, systemImage: current.kind.icon)
+                            .font(Theme.font(.subheadline)).foregroundColor(Theme.accent)
+                        Text("\(current.kind.dueLabel) \(dueText(current.due))")
+                            .font(Theme.font(.subheadline))
+                            .foregroundColor(overdue ? Color.red.opacity(0.85) : Theme.muted)
+                    }
+
+                    if let d = current.notes, !d.isEmpty {
+                        Rectangle().fill(Theme.line).frame(height: 1)
+                        Text(d).font(Theme.read(.body)).foregroundColor(Theme.txt)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
+                    }
+
+                    Button {
+                        todos.complete(current.id)
+                        dismiss()
+                    } label: {
+                        Label("Mark as done", systemImage: "checkmark.circle.fill")
+                            .font(Theme.font(.body).weight(.semibold))
+                            .frame(maxWidth: .infinity).padding(.vertical, 12)
+                            .background(Theme.accent).foregroundColor(Theme.onAccent)
+                            .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius(12), style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(16)
+            }
+            .background(Theme.bg.ignoresSafeArea())
+            .navigationTitle("To-Do")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) { Button("Close") { dismiss() } }
+                ToolbarItem(placement: .navigationBarTrailing) { Button("Edit") { editing = true } }
+            }
+            .sheet(isPresented: $editing) { TodoEditSheet(existing: current) }
+        }
+        .navigationViewStyle(.stack)
     }
 }
