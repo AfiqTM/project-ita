@@ -411,10 +411,17 @@ struct GradeItem: Decodable, Identifiable {
     let percentageformatted: String?
 }
 
+struct PersonGroup: Decodable {
+    let id: Int
+    let name: String?
+    let description: String?
+}
+
 struct Person: Decodable, Identifiable {
     let id: Int
     let fullname: String
     let profileimageurlsmall: String?
+    var groups: [PersonGroup]?   // the groups this person is in (core_enrol_get_enrolled_users)
 }
 
 struct AssignResp: Decodable { let courses: [AssignCourse] }
