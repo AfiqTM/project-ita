@@ -89,9 +89,10 @@ private struct MemberRow: View {
         } label: {
             HStack(spacing: 12) {
                 Avatar(person: person)
-                Text(person.fullname).foregroundColor(Theme.txt).multilineTextAlignment(.leading)
-                if isMe { Text("You").font(Theme.font(.caption2)).foregroundColor(Theme.muted) }
-                Spacer()
+                (Text(person.fullname).foregroundColor(Theme.txt)
+                    + Text(isMe ? "  (You)" : "").font(Theme.font(.footnote).weight(.bold)).foregroundColor(Theme.accent))
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 Image(systemName: "chevron.right").font(Theme.font(.caption)).foregroundColor(Theme.muted)
             }
             .padding(.horizontal, 12).padding(.vertical, 8)
@@ -133,155 +134,15 @@ private struct Pill: View {
     }
 }
 
-// MARK: - Groups tab
+// MARK: - Group Selection (opened from the course page): all groups + join / switch / leave
 
-struct GroupsView: View {
-    let courseId: Int
-    @EnvironmentObject var app: AppState
-    @StateObject private var model = CourseGroupsModel()
-    @State private var choiceModules: [Module] = []
-    @State private var query = ""
-    @State private var open: Set<Int> = []
-
-    private var myId: Int { app.site?.userid ?? 0 }
-    private var mine: [CourseGroupInfo] { model.groups.filter { $0.members.contains { $0.id == myId } } }
-
-    private var others: [CourseGroupInfo] {
-        let rest = model.groups.filter { g in !g.members.contains { $0.id == myId } }
-        guard !query.isEmpty else { return rest }
-        return rest.filter { g in
-            g.name.localizedCaseInsensitiveContains(query)
-                || g.members.contains { $0.fullname.localizedCaseInsensitiveContains(query) }
-        }
-    }
-
-    var body: some View {
-        ScrollView {
-            VStack(spacing: 14) {
-                // join / leave
-                if !choiceModules.isEmpty {
-                    VStack(spacing: 0) {
-                        ForEach(Array(choiceModules.enumerated()), id: \.element.id) { i, m in
-                            NavigationLink { GroupChoiceView(courseId: courseId, module: m) } label: {
-                                HStack(spacing: 12) {
-                                    Image(systemName: "person.crop.circle.badge.plus").foregroundColor(Theme.accent).frame(width: 24)
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(m.name).foregroundColor(Theme.txt).multilineTextAlignment(.leading)
-                                        Text("Join or leave a group").font(Theme.font(.caption)).foregroundColor(Theme.muted)
-                                    }
-                                    Spacer()
-                                    Image(systemName: "chevron.right").font(Theme.font(.caption)).foregroundColor(Theme.muted)
-                                }
-                                .padding(12).contentShape(Rectangle())
-                                .overlay(Rectangle().fill(Theme.line).frame(height: i == 0 ? 0 : 1), alignment: .top)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                    .glowCard()
-                }
-
-                if let error = model.error { Text(error).font(Theme.font(.footnote)).foregroundColor(Theme.muted) }
-
-                // my group(s) with all members
-                if !mine.isEmpty {
-                    sectionTitle(mine.count == 1 ? "My group" : "My groups")
-                    ForEach(mine) { g in groupCard(g, forceOpen: true) }
-                } else if !model.loading && model.error == nil {
-                    VStack(spacing: 4) {
-                        Text("You're not in a group yet").fontWeight(.semibold).foregroundColor(Theme.txt)
-                        if !choiceModules.isEmpty {
-                            Text("Open the group selection above to join one.")
-                                .font(Theme.font(.footnote)).foregroundColor(Theme.muted)
-                        }
-                    }
-                    .frame(maxWidth: .infinity).padding(16).glowCard()
-                }
-
-                // everyone else
-                if !model.groups.isEmpty {
-                    sectionTitle("All groups")
-                    TextField("Search groups or members", text: $query)
-                        .foregroundColor(Theme.txt).padding(12)
-                        .background(Theme.surface).clipShape(RoundedRectangle(cornerRadius: 10))
-                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.line))
-                    ForEach(others) { g in groupCard(g, forceOpen: !query.isEmpty) }
-                    if others.isEmpty && !query.isEmpty {
-                        Text("No group or member matches \"\(query)\".")
-                            .font(Theme.font(.footnote)).foregroundColor(Theme.muted).padding(.top, 8)
-                    }
-                }
-
-                if !model.loading && model.error == nil && model.groups.isEmpty {
-                    Text("This course has no groups you can see.")
-                        .font(Theme.font(.footnote)).foregroundColor(Theme.muted).padding(.top, 8)
-                }
-                if model.loading { ProgressView().tint(Theme.accent) }
-            }
-            .padding(16)
-        }
-        .scrollDismissesKeyboard(.interactively)
-        .refreshable { await reload() }
-        .task { await reload() }
-    }
-
-    private func reload() async {
-        async let people: Void = model.load(courseId: courseId, myId: myId)
-        async let mods: Void = loadChoiceModules()
-        _ = await (people, mods)
-    }
-
-    private func loadChoiceModules() async {
-        if let secs: [CourseSection] = try? await MoodleAPI.shared.call("core_course_get_contents", ["courseid": courseId]) {
-            choiceModules = secs.flatMap { $0.modules }.filter { $0.modname == "choicegroup" && $0.uservisible != false }
-        }
-    }
-
-    private func sectionTitle(_ t: String) -> some View {
-        Text(t).font(Theme.font(.footnote).weight(.semibold)).foregroundColor(Theme.muted)
-            .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 4)
-    }
-
-    private func groupCard(_ g: CourseGroupInfo, forceOpen: Bool) -> some View {
-        let isMine = g.members.contains { $0.id == myId }
-        let expanded = open.contains(g.id) || forceOpen
-        return VStack(spacing: 0) {
-            Button {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    if open.contains(g.id) { open.remove(g.id) } else { open.insert(g.id) }
-                }
-            } label: {
-                HStack(spacing: 10) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(g.name).fontWeight(.semibold).foregroundColor(Theme.txt).multilineTextAlignment(.leading)
-                        Text("\(g.members.count) member\(g.members.count == 1 ? "" : "s")")
-                            .font(Theme.font(.caption)).foregroundColor(Theme.muted)
-                    }
-                    Spacer()
-                    if isMine { Pill(text: "My group") }
-                    Image(systemName: expanded ? "chevron.up" : "chevron.down")
-                        .font(Theme.font(.caption)).foregroundColor(Theme.muted)
-                }
-                .padding(12).contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
-            if expanded {
-                if !g.about.isEmpty {
-                    Text(g.about).font(Theme.font(.footnote)).foregroundColor(Theme.muted)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 12).padding(.bottom, 8)
-                }
-                ForEach(g.members.sorted { $0.fullname < $1.fullname }) { p in
-                    MemberRow(person: p, courseId: courseId, isMe: p.id == myId)
-                }
-            }
-        }
-        .glowCard()
-    }
+private struct GroupEntry: Identifiable {
+    let id: Int
+    let name: String
+    let about: String
+    let members: [Person]
+    let option: ChoiceGroupOption?     // nil = a group that isn't part of this selection activity
 }
-
-// MARK: - Group Selection activity (join / switch / leave)
 
 struct GroupChoiceView: View {
     let courseId: Int
@@ -295,20 +156,52 @@ struct GroupChoiceView: View {
     @State private var busy: Int?             // group id being changed
     @State private var message: String?
     @State private var unsupported = false
-    @State private var leaving: ChoiceGroupOption?
+    @State private var leaving: GroupEntry?
     @State private var open: Set<Int> = []
+    @State private var query = ""
 
     private var myId: Int { app.site?.userid ?? 0 }
     private var instance: Int { module.instance ?? 0 }
     private var webURL: URL { URL(string: module.url ?? "") ?? Site.url }
 
-    private func members(of id: Int) -> [Person] {
-        model.groups.first { $0.id == id }?.members.sorted { $0.fullname < $1.fullname } ?? []
+    private var entries: [GroupEntry] {
+        var out: [GroupEntry] = options.map { o in
+            let g = model.groups.first { $0.id == o.id }
+            return GroupEntry(id: o.id, name: (o.text ?? g?.name ?? "Group \(o.id)").plainText,
+                              about: g?.about ?? "", members: g?.members ?? [], option: o)
+        }
+        let known = Set(out.map(\.id))
+        out += model.groups.filter { !known.contains($0.id) }
+            .map { GroupEntry(id: $0.id, name: $0.name, about: $0.about, members: $0.members, option: nil) }
+        return out.sorted {
+            let a = isMine($0), b = isMine($1)
+            if a != b { return a }
+            return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+        }
+    }
+
+    private func isMine(_ e: GroupEntry) -> Bool {
+        e.option != nil ? chosen == e.id : e.members.contains { $0.id == myId }
+    }
+
+    private func memberCount(_ e: GroupEntry) -> Int {
+        let extra = (isMine(e) && !e.members.contains { $0.id == myId } && overridden) ? 1 : 0
+        return max(e.members.count, (e.option?.count ?? 0) + extra)
+    }
+
+    private var mine: [GroupEntry] { entries.filter { isMine($0) } }
+    private var others: [GroupEntry] {
+        let rest = entries.filter { !isMine($0) }
+        guard !query.isEmpty else { return rest }
+        return rest.filter { e in
+            e.name.localizedCaseInsensitiveContains(query)
+                || e.members.contains { $0.fullname.localizedCaseInsensitiveContains(query) }
+        }
     }
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 12) {
+            VStack(spacing: 14) {
                 if let d = module.description?.plainText, !d.isEmpty {
                     Text(d).font(Theme.read(.subheadline)).foregroundColor(Theme.muted)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -318,10 +211,11 @@ struct GroupChoiceView: View {
                         .padding(12).frame(maxWidth: .infinity, alignment: .leading)
                         .background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 10))
                 }
+                if let error = model.error { Text(error).font(Theme.font(.footnote)).foregroundColor(Theme.muted) }
                 if unsupported {
                     VStack(spacing: 10) {
-                        Text("This site doesn't allow joining groups from the app.")
-                            .foregroundColor(Theme.txt).multilineTextAlignment(.center)
+                        Text("This site may not allow joining groups from the app. If joining or leaving fails, use the website.")
+                            .font(Theme.font(.footnote)).foregroundColor(Theme.muted).multilineTextAlignment(.center)
                         NavigationLink { WebActivityView(url: webURL, title: module.name) } label: {
                             Text("Open on the website").fontWeight(.semibold).foregroundColor(Theme.onAccent)
                                 .padding(.horizontal, 16).padding(.vertical, 10)
@@ -330,7 +224,37 @@ struct GroupChoiceView: View {
                     }
                     .frame(maxWidth: .infinity).padding(16).glowCard()
                 }
-                ForEach(options) { o in optionCard(o) }
+
+                // my group with all its members
+                if !mine.isEmpty {
+                    sectionTitle(mine.count == 1 ? "My group" : "My groups")
+                    ForEach(mine) { e in groupCard(e, forceOpen: true) }
+                } else if !loading && model.error == nil {
+                    VStack(spacing: 4) {
+                        Text("You're not in a group yet").fontWeight(.semibold).foregroundColor(Theme.txt)
+                        Text("Tap Join on a group below.").font(Theme.font(.footnote)).foregroundColor(Theme.muted)
+                    }
+                    .frame(maxWidth: .infinity).padding(16).glowCard()
+                }
+
+                // everyone else
+                if !entries.isEmpty {
+                    sectionTitle("All groups")
+                    TextField("Search groups or members", text: $query)
+                        .foregroundColor(Theme.txt).padding(12)
+                        .background(Theme.surface)
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.line))
+                    ForEach(others) { e in groupCard(e, forceOpen: !query.isEmpty) }
+                    if others.isEmpty && !query.isEmpty {
+                        Text("No group or member matches \"\(query)\".")
+                            .font(Theme.font(.footnote)).foregroundColor(Theme.muted).padding(.top, 8)
+                    }
+                }
+                if !loading && model.error == nil && entries.isEmpty {
+                    Text("This course has no groups you can see.")
+                        .font(Theme.font(.footnote)).foregroundColor(Theme.muted).padding(.top, 8)
+                }
                 if loading { ProgressView().tint(Theme.accent) }
             }
             .padding(16)
@@ -338,70 +262,90 @@ struct GroupChoiceView: View {
         .background(Theme.bg.ignoresSafeArea())
         .navigationTitle(module.name)
         .navigationBarTitleDisplayMode(.inline)
+        .scrollDismissesKeyboard(.interactively)
         .refreshable { overridden = false; await load() }
         .task { await load() }
         .onReceive(NotificationCenter.default.publisher(for: .offlineBackOnline)) { _ in Task { await load() } }
         .onFreshData { await load() }
         .alert("Leave this group?", isPresented: Binding(get: { leaving != nil }, set: { if !$0 { leaving = nil } })) {
-            Button("Leave", role: .destructive) { if let o = leaving { Task { await leave(o) } } }
+            Button("Leave", role: .destructive) { if let e = leaving { Task { await leave(e) } } }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text(leaving.map { "You will no longer be in \(($0.text ?? "this group").plainText)." } ?? "")
+            Text(leaving.map { "You will no longer be in \($0.name)." } ?? "")
         }
     }
 
-    private func optionCard(_ o: ChoiceGroupOption) -> some View {
-        let isMine = chosen == o.id
-        let list = members(of: o.id)
-        let count = max(list.count, (o.count ?? 0) + ((isMine && !list.contains { $0.id == myId } && overridden) ? 1 : 0))
-        let full = o.limit > 0 && count >= o.limit && !isMine
-        let expanded = open.contains(o.id) || isMine
+    private func sectionTitle(_ t: String) -> some View {
+        Text(t).font(Theme.font(.footnote).weight(.semibold)).foregroundColor(Theme.muted)
+            .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 4)
+    }
+
+    private func groupCard(_ e: GroupEntry, forceOpen: Bool) -> some View {
+        let mineNow = isMine(e)
+        let count = memberCount(e)
+        let limit = e.option?.limit ?? 0
+        let full = limit > 0 && count >= limit && !mineNow
+        let expanded = open.contains(e.id) || forceOpen
+        let members = e.members.sorted { $0.fullname < $1.fullname }
         return VStack(spacing: 0) {
             HStack(spacing: 10) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text((o.text ?? "Group \(o.id)").plainText).fontWeight(.semibold).foregroundColor(Theme.txt)
-                    Text(o.limit > 0 ? "\(count)/\(o.limit) members" : "\(count) member\(count == 1 ? "" : "s")")
-                        .font(Theme.font(.caption)).foregroundColor(full ? Theme.accent : Theme.muted)
+                // tapping the title area expands / collapses the member list
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        if open.contains(e.id) { open.remove(e.id) } else { open.insert(e.id) }
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(e.name).fontWeight(.semibold).foregroundColor(Theme.txt).multilineTextAlignment(.leading)
+                            Text(limit > 0 ? "\(count)/\(limit) members" : "\(count) member\(count == 1 ? "" : "s")")
+                                .font(Theme.font(.caption)).foregroundColor(full ? Theme.accent : Theme.muted)
+                        }
+                        Spacer(minLength: 0)
+                        Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                            .font(Theme.font(.caption)).foregroundColor(Theme.muted)
+                    }
+                    .contentShape(Rectangle())
                 }
-                Spacer()
-                if busy == o.id { ProgressView().tint(Theme.accent) }
-                else if isMine {
-                    Button { leaving = o } label: {
+                .buttonStyle(.plain)
+
+                if busy == e.id { ProgressView().tint(Theme.accent) }
+                else if mineNow {
+                    Button { leaving = e } label: {
                         Text("Leave").fontWeight(.semibold).foregroundColor(Theme.txt)
                             .padding(.horizontal, 14).padding(.vertical, 7)
                             .overlay(Capsule().stroke(Theme.line))
                     }
-                } else {
-                    Button { Task { await join(o) } } label: {
+                    .buttonStyle(.plain)
+                } else if e.option != nil {
+                    Button { Task { await join(e) } } label: {
                         Text(full ? "Full" : (chosen == nil ? "Join" : "Switch")).fontWeight(.semibold)
                             .foregroundColor(full ? Theme.muted : Theme.onAccent)
                             .padding(.horizontal, 14).padding(.vertical, 7)
                             .background(full ? Theme.surface2 : Theme.accent).clipShape(Capsule())
                     }
-                    .disabled(full || busy != nil || o.disabled?.value == true)
-                }
-                Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        if open.contains(o.id) { open.remove(o.id) } else { open.insert(o.id) }
-                    }
-                } label: {
-                    Image(systemName: expanded ? "chevron.up" : "chevron.down")
-                        .font(Theme.font(.caption)).foregroundColor(Theme.muted).padding(6)
+                    .buttonStyle(.plain)
+                    .disabled(full || busy != nil || e.option?.disabled?.value == true)
                 }
             }
             .padding(12)
 
             if expanded {
-                if list.isEmpty {
+                if !e.about.isEmpty {
+                    Text(e.about).font(Theme.font(.footnote)).foregroundColor(Theme.muted)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 12).padding(.bottom, 8)
+                }
+                if members.isEmpty {
                     Text("No members yet").font(Theme.font(.footnote)).foregroundColor(Theme.muted)
                         .frame(maxWidth: .infinity, alignment: .leading).padding(12)
                         .overlay(Rectangle().fill(Theme.line).frame(height: 1), alignment: .top)
                 }
-                ForEach(list) { p in MemberRow(person: p, courseId: courseId, isMe: p.id == myId) }
+                ForEach(members) { p in MemberRow(person: p, courseId: courseId, isMe: p.id == myId) }
             }
         }
         .glowCard()
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(isMine ? Theme.accent : .clear, lineWidth: 1.5))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(mineNow ? Theme.accent : .clear, lineWidth: 1.5))
     }
 
     // MARK: Actions
@@ -420,39 +364,39 @@ struct GroupChoiceView: View {
                 // no web-service access to the activity: still show the course's groups from the participant list
                 if options.isEmpty {
                     options = model.groups.map { ChoiceGroupOption(id: $0.id, text: $0.name) }
-                    chosen = model.groups.first { $0.members.contains { $0.id == myId } }?.id
                 }
+                if !overridden { chosen = model.groups.first { $0.members.contains { $0.id == myId } }?.id }
                 unsupported = true
             }
         }
         loading = false
     }
 
-    private func join(_ o: ChoiceGroupOption) async {
-        busy = o.id; message = nil
+    private func join(_ e: GroupEntry) async {
+        busy = e.id; message = nil
         defer { busy = nil }
         do {
             _ = try await MoodleAPI.shared.raw("mod_choicegroup_submit_choicegroup_response",
-                                                ["choicegroupid": instance, "responses": [o.id]])
-            overridden = true; chosen = o.id; open.insert(o.id)
-            message = "You joined \((o.text ?? "the group").plainText)."
+                                                ["choicegroupid": instance, "responses": [e.id]])
+            overridden = true; chosen = e.id; open.insert(e.id)
+            message = "You joined \(e.name)."
             await model.load(courseId: courseId, myId: myId)
         } catch {
-            if !(error is CancellationError) { message = "Couldn't join: \(error.localizedDescription)" }
+            if !(error is CancellationError) { message = "Couldn't join: \(error.localizedDescription)"; unsupported = true }
         }
     }
 
-    private func leave(_ o: ChoiceGroupOption) async {
-        busy = o.id; message = nil
+    private func leave(_ e: GroupEntry) async {
+        busy = e.id; message = nil
         defer { busy = nil }
         do {
             _ = try await MoodleAPI.shared.raw("mod_choicegroup_delete_choicegroup_responses",
-                                                ["choicegroupid": instance, "responses": [o.id]])
+                                                ["choicegroupid": instance, "responses": [e.id]])
             overridden = true; chosen = nil
-            message = "You left \((o.text ?? "the group").plainText)."
+            message = "You left \(e.name)."
             await model.load(courseId: courseId, myId: myId)
         } catch {
-            if !(error is CancellationError) { message = "Couldn't leave: \(error.localizedDescription)" }
+            if !(error is CancellationError) { message = "Couldn't leave: \(error.localizedDescription)"; unsupported = true }
         }
     }
 }
