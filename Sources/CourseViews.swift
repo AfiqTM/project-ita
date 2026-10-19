@@ -1,10 +1,10 @@
 import SwiftUI
 import WebKit
 
-// MARK: - Course detail (Course / Participants / Grades tabs)
+// MARK: - Course detail (Course / Participants / Groups / Grades tabs)
 
 enum CourseTab: String, CaseIterable, Identifiable {
-    case course = "Course", participants = "Participants", drive = "My Drive", todo = "To-Do", grades = "Grades"
+    case course = "Course", participants = "Participants", groups = "Groups", drive = "My Drive", todo = "To-Do", grades = "Grades"
     var id: String { rawValue }
 }
 
@@ -32,6 +32,7 @@ struct CourseDetailView: View {
         switch t {
         case .course: CourseContentView(courseId: course.id)
         case .participants: ParticipantsView(courseId: course.id)
+        case .groups: GroupsView(courseId: course.id)
         case .drive: CourseDriveTab(courseId: course.id)
         case .todo: CourseTodoTab(courseId: course.id)
         case .grades: GradesView(courseId: course.id)
@@ -162,6 +163,7 @@ struct ModuleRow: View {
         case "quiz": return "questionmark.circle"
         case "page": return "doc.text"
         case "attendance": return "checkmark.circle"
+        case "choicegroup": return "person.3"
         default: return "square.grid.2x2"
         }
     }
@@ -180,6 +182,8 @@ struct ModuleRow: View {
             AssignmentView(courseId: courseId, module: module)
         case "attendance":
             AttendanceView(module: module, courseId: courseId)
+        case "choicegroup":
+            GroupChoiceView(courseId: courseId, module: module)
         case "folder":
             FolderView(module: module)
         case "resource":
