@@ -1,4 +1,5 @@
 import SwiftUI
+import WebKit
 
 // MARK: - Groups (course page tab + the "Group Selection" activity)
 //
@@ -159,12 +160,21 @@ struct GroupChoiceView: View {
     @State private var leaving: GroupEntry?
     @State private var open: Set<Int> = []
     @State private var query = ""
-    @State private var showWeb = false        // join / leave happens on the website page (group select plugin)
+    @State private var webAction: URL?        // join / leave runs on the site's own page (group select plugin)
 
     private var myId: Int { app.site?.userid ?? 0 }
     private var instance: Int { module.instance ?? 0 }
     private var webURL: URL { URL(string: module.url ?? "") ?? Site.url }
-    /// The "Group self-selection" plugin (mod_groupselect) has no app web-service functions, unlike choicegroup
+    /// The "Group self-selection" plugin (mod_groupselect) has no app web-service functions, unlike choicegroup:
+    /// joining / leaving is done by opening the site's own select / unselect page and confirming it for you.
+    private func actionURL(_ key: String, _ groupId: Int) -> URL {
+        guard var c = URLComponents(url: webURL, resolvingAgainstBaseURL: false) else { return webURL }
+        var items = (c.queryItems ?? []).filter { $0.name != "select" && $0.name != "unselect" }
+        if !items.contains(where: { $0.name == "id" }) { items.append(URLQueryItem(name: "id", value: String(module.id))) }
+        items.append(URLQueryItem(name: key, value: String(groupId)))
+        c.queryItems = items
+        return c.url ?? webURL
+    }
     private var isGroupSelect: Bool { module.modname == "groupselect" || (module.url ?? "").contains("groupselect") }
 
     private var entries: [GroupEntry] {
@@ -217,8 +227,7 @@ struct GroupChoiceView: View {
                 if let error = model.error { Text(error).font(Theme.font(.footnote)).foregroundColor(Theme.muted) }
                 if unsupported {
                     VStack(spacing: 10) {
-                        Text(isGroupSelect ? "Joining and leaving opens the group page on the website."
-                                           : "This site may not allow joining groups from the app. If joining or leaving fails, use the website.")
+                        Text("This site may not allow joining groups from the app. If joining or leaving fails, use the website.")
                             .font(Theme.font(.footnote)).foregroundColor(Theme.muted).multilineTextAlignment(.center)
                         NavigationLink { WebActivityView(url: webURL, title: module.name) } label: {
                             Text("Open on the website").fontWeight(.semibold).foregroundColor(Theme.onAccent)
@@ -271,7 +280,12 @@ struct GroupChoiceView: View {
         .task { await load() }
         .onReceive(NotificationCenter.default.publisher(for: .offlineBackOnline)) { _ in Task { await load() } }
         .onFreshData { await load() }
-        .navigationDestination(isPresented: $showWeb) { WebActivityView(url: webURL, title: module.name) }
+        .navigationDestination(isPresented: Binding(get: { webAction != nil }, set: { if !$0 { webAction = nil } })) {
+            if let u = webAction { GroupWebActionView(url: u, title: module.name) }
+        }
+        .onChange(of: webAction) { v in
+            if v == nil && isGroupSelect { Task { overridden = false; await load() } }
+        }
         .alert("Leave this group?", isPresented: Binding(get: { leaving != nil }, set: { if !$0 { leaving = nil } })) {
             Button("Leave", role: .destructive) { if let e = leaving { Task { await leave(e) } } }
             Button("Cancel", role: .cancel) {}
@@ -324,7 +338,7 @@ struct GroupChoiceView: View {
                     .buttonStyle(.plain)
                 } else if e.option != nil {
                     Button { Task { await join(e) } } label: {
-                        Text(full ? "Full" : (chosen == nil ? "Join" : "Switch")).fontWeight(.semibold)
+                        Text(full ? "Full" : (chosen == nil || isGroupSelect ? "Join" : "Switch")).fontWeight(.semibold)
                             .foregroundColor(full ? Theme.muted : Theme.onAccent)
                             .padding(.horizontal, 14).padding(.vertical, 7)
                             .background(full ? Theme.surface2 : Theme.accent).clipShape(Capsule())
@@ -360,7 +374,7 @@ struct GroupChoiceView: View {
         if isGroupSelect {
             options = model.groups.map { ChoiceGroupOption(id: $0.id, text: $0.name) }
             chosen = model.groups.first { $0.members.contains { $0.id == myId } }?.id
-            unsupported = true
+            unsupported = false
             loading = false
             return
         }
@@ -385,7 +399,7 @@ struct GroupChoiceView: View {
     }
 
     private func join(_ e: GroupEntry) async {
-        if isGroupSelect { showWeb = true; return }
+        if isGroupSelect { webAction = actionURL("select", e.id); return }
         busy = e.id; message = nil
         defer { busy = nil }
         do {
@@ -400,7 +414,7 @@ struct GroupChoiceView: View {
     }
 
     private func leave(_ e: GroupEntry) async {
-        if isGroupSelect { showWeb = true; return }
+        if isGroupSelect { webAction = actionURL("unselect", e.id); return }
         busy = e.id; message = nil
         defer { busy = nil }
         do {
@@ -411,6 +425,105 @@ struct GroupChoiceView: View {
             await model.load(courseId: courseId, myId: myId)
         } catch {
             if !(error is CancellationError) { message = "Couldn't leave: \(error.localizedDescription)"; unsupported = true }
+        }
+    }
+}
+
+
+// MARK: - Join / leave through the site's own page (group select plugin)
+//
+// Opens the select / unselect page (logged in like any other website page), presses its confirm button, and
+// goes back when the site has accepted it. If the page has no plain confirm button (a group password, a
+// full group, a signed-out session) it simply stays open so you can finish it by hand.
+
+struct GroupWebActionView: View {
+    let url: URL
+    let title: String
+    @EnvironmentObject var app: AppState
+    @Environment(\.dismiss) private var dismiss
+    @State private var resolved: URL?
+    @State private var status = "Contacting the site…"
+
+    var body: some View {
+        Group {
+            if let r = resolved {
+                VStack(spacing: 0) {
+                    Text(status).font(Theme.font(.footnote)).foregroundColor(Theme.muted)
+                        .frame(maxWidth: .infinity).padding(8).background(Theme.surface)
+                    GroupWebAction(url: r, onStatus: { status = $0 }, onDone: { dismiss() })
+                }
+            } else {
+                ProgressView().tint(Theme.accent).frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .background(Theme.bg.ignoresSafeArea())
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
+        .task { resolved = await MoodleAPI.shared.autologin(url, userid: app.site?.userid ?? 0) }
+    }
+}
+
+private struct GroupWebAction: UIViewRepresentable {
+    let url: URL
+    let onStatus: (String) -> Void
+    let onDone: () -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(onStatus: onStatus, onDone: onDone) }
+
+    func makeUIView(context: Context) -> WKWebView {
+        let w = WKWebView(frame: .zero, configuration: WKWebViewConfiguration())
+        w.navigationDelegate = context.coordinator
+        w.load(URLRequest(url: url))
+        return w
+    }
+    func updateUIView(_ uiView: WKWebView, context: Context) {}
+
+    final class Coordinator: NSObject, WKNavigationDelegate {
+        let onStatus: (String) -> Void
+        let onDone: () -> Void
+        private var submitted = false
+        private var finished = false
+        init(onStatus: @escaping (String) -> Void, onDone: @escaping () -> Void) {
+            self.onStatus = onStatus; self.onDone = onDone
+        }
+
+        // presses the confirm button of the select / unselect page (not a password form, not a log-out form)
+        private static let js = """
+        (function(){
+          var fs = [].slice.call(document.forms).filter(function(f){
+            return /groupselect/.test(f.action || '') && f.querySelector('input[name=sesskey]')
+              && !f.querySelector('input[type=password], input[name=grouppassword]');
+          });
+          if (!fs.length) return 'none';
+          var f = fs[0], b = f.querySelector('button[type=submit], input[type=submit]');
+          if (b) { b.click(); } else { f.submit(); }
+          return 'ok';
+        })()
+        """
+
+        func webView(_ w: WKWebView, didFinish navigation: WKNavigation!) {
+            if w.url?.path.contains("/login/") == true {
+                DispatchQueue.main.async { self.onStatus("You're signed out — open the Website tab and sign in, then try again.") }
+                return
+            }
+            if submitted {
+                guard !finished else { return }
+                finished = true
+                DispatchQueue.main.async { self.onStatus("Done") }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { self.onDone() }
+                return
+            }
+            w.evaluateJavaScript(Self.js) { [weak self] r, _ in
+                guard let self = self else { return }
+                if (r as? String) == "ok" {
+                    self.submitted = true
+                    DispatchQueue.main.async { self.onStatus("Confirming…") }
+                } else {
+                    DispatchQueue.main.async {
+                        self.onStatus("Finish it on this page, then go back — the list refreshes when you do.")
+                    }
+                }
+            }
         }
     }
 }
