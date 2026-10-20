@@ -231,27 +231,8 @@ struct ChatAvatar: View {
     let url: String?
     var size: CGFloat = 46
 
-    private var initials: String {
-        let parts = name.split(separator: " ").prefix(2).compactMap { $0.first }
-        return String(parts).uppercased()
-    }
-
     var body: some View {
-        ZStack {
-            Circle().fill(Theme.surface2)
-            Text(initials)
-                .font(.system(size: size * 0.36, weight: .semibold))
-                .foregroundColor(Theme.accent)
-            if let s = url, let u = MoodleAPI.shared.fileURL(s) {
-                AsyncImage(url: u) { img in
-                    img.resizable().scaledToFill()
-                } placeholder: {
-                    Color.clear
-                }
-            }
-        }
-        .frame(width: size, height: size)
-        .clipShape(Circle())
+        ProfilePhoto(name: name, urls: [url], size: size, sizeKey: "f1", outline: false)
     }
 }
 

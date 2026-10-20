@@ -470,10 +470,7 @@ struct ParticipantsView: View {
                                             imageURL: p.profileimageurlsmall)
                         } label: {
                             HStack(spacing: 12) {
-                                AsyncImage(url: p.profileimageurlsmall.flatMap { MoodleAPI.shared.fileURL($0) }) { i in
-                                    i.resizable().scaledToFill()
-                                } placeholder: { Theme.surface2 }
-                                .frame(width: 34, height: 34).clipShape(Circle())
+                                ProfilePhoto(name: p.fullname, urls: [p.profileimageurlsmall], size: 34, sizeKey: "f1", outline: false)
                                 Text(p.fullname).foregroundColor(Theme.txt)
                                 Spacer()
                                 Image(systemName: "chevron.right").font(Theme.font(.caption)).foregroundColor(Theme.muted)

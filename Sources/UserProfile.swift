@@ -416,6 +416,9 @@ struct ProfilePhoto: View {
     let name: String
     let urls: [String?]
     var size: CGFloat = 84
+    /// Moodle's picture size to try first: f3 (large) for the profile page, f1 (100 px) for small list avatars
+    var sizeKey = "f3"
+    var outline = true
 
     private var initials: String {
         String(name.split(separator: " ").prefix(2).compactMap { $0.first }).uppercased()
@@ -426,14 +429,14 @@ struct ProfilePhoto: View {
             Circle().fill(Theme.surface2)
             Text(initials).font(.system(size: size * 0.36, weight: .semibold)).foregroundColor(Theme.accent)
             // f3 (large) first so it stays sharp on 3x screens; f1 / the list thumbnail are fallbacks
-            RemoteImage(candidates: PhotoURL.candidates(urls, size: "f3") + PhotoURL.candidates(urls, size: "f1"),
+            RemoteImage(candidates: PhotoURL.candidates(urls, size: sizeKey) + PhotoURL.candidates(urls, size: "f1"),
                         minPixels: size * UIScreen.main.scale) { _ in Color.clear }
                 .frame(width: size, height: size)
                 .clipped()
         }
         .frame(width: size, height: size)
         .clipShape(Circle())
-        .overlay(Circle().stroke(Theme.line, lineWidth: 1))
+        .overlay(Circle().stroke(Theme.line, lineWidth: outline ? 1 : 0))
     }
 }
 

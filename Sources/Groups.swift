@@ -72,10 +72,8 @@ private struct Avatar: View {
     let person: Person
     var size: CGFloat = 30
     var body: some View {
-        AsyncImage(url: person.profileimageurlsmall.flatMap { MoodleAPI.shared.fileURL($0) }) { i in
-            i.resizable().scaledToFill()
-        } placeholder: { Theme.surface2 }
-        .frame(width: size, height: size).clipShape(Circle())
+        // tries the sharper sizes and the other address forms, and shows the initials when no picture loads
+        ProfilePhoto(name: person.fullname, urls: [person.profileimageurlsmall], size: size, sizeKey: "f1", outline: false)
     }
 }
 
@@ -96,7 +94,7 @@ private struct MemberRow: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Image(systemName: "chevron.right").font(Theme.font(.caption)).foregroundColor(Theme.muted)
             }
-            .padding(.horizontal, 12).padding(.vertical, 8)
+            .padding(.horizontal, 12).padding(.vertical, 10)
             .contentShape(Rectangle())
             .overlay(Rectangle().fill(Theme.line).frame(height: 1).padding(.horizontal, 10), alignment: .top)
         }
@@ -362,6 +360,7 @@ struct GroupChoiceView: View {
                         .overlay(Rectangle().fill(Theme.line).frame(height: 1), alignment: .top)
                 }
                 ForEach(members) { p in MemberRow(person: p, courseId: courseId, isMe: p.id == myId) }
+                Color.clear.frame(height: 8)      // the last name keeps the same distance from the card edge as the first
             }
         }
         .glowCard()
