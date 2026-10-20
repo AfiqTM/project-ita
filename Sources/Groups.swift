@@ -98,7 +98,7 @@ private struct MemberRow: View {
             }
             .padding(.horizontal, 12).padding(.vertical, 8)
             .contentShape(Rectangle())
-            .overlay(Rectangle().fill(Theme.line).frame(height: 1), alignment: .top)
+            .overlay(Rectangle().fill(Theme.line).frame(height: 1).padding(.horizontal, 10), alignment: .top)
         }
         .buttonStyle(.plain)
     }
@@ -254,10 +254,10 @@ struct GroupChoiceView: View {
                 if !entries.isEmpty {
                     sectionTitle("All groups")
                     TextField("Search groups or members", text: $query)
-                        .foregroundColor(Theme.txt).padding(12)
+                        .foregroundColor(Theme.txt).padding(13)
                         .background(Theme.surface)
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
-                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.line))
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Theme.line))
                     ForEach(others) { e in groupCard(e, forceOpen: !query.isEmpty) }
                     if others.isEmpty && !query.isEmpty {
                         Text("No group or member matches \"\(query)\".")
@@ -318,7 +318,7 @@ struct GroupChoiceView: View {
                         VStack(alignment: .leading, spacing: 3) {
                             Text(e.name).fontWeight(.semibold).foregroundColor(Theme.txt).multilineTextAlignment(.leading)
                             Text(limit > 0 ? "\(count)/\(limit) members" : "\(count) member\(count == 1 ? "" : "s")")
-                                .font(Theme.font(.caption)).foregroundColor(full ? Theme.accent : Theme.muted)
+                                .font(Theme.font(.footnote)).foregroundColor(full ? Theme.accent : Theme.muted)
                         }
                         Spacer(minLength: 0)
                         Image(systemName: expanded ? "chevron.up" : "chevron.down")
@@ -332,7 +332,7 @@ struct GroupChoiceView: View {
                 else if mineNow {
                     Button { leaving = e } label: {
                         Text("Leave").fontWeight(.semibold).foregroundColor(Theme.txt)
-                            .padding(.horizontal, 14).padding(.vertical, 7)
+                            .padding(.horizontal, 14).padding(.vertical, 6)
                             .overlay(Capsule().stroke(Theme.line))
                     }
                     .buttonStyle(.plain)
@@ -340,8 +340,9 @@ struct GroupChoiceView: View {
                     Button { Task { await join(e) } } label: {
                         Text(full ? "Full" : (chosen == nil || isGroupSelect ? "Join" : "Switch")).fontWeight(.semibold)
                             .foregroundColor(full ? Theme.muted : Theme.onAccent)
-                            .padding(.horizontal, 14).padding(.vertical, 7)
-                            .background(full ? Theme.surface2 : Theme.accent).clipShape(Capsule())
+                            .padding(.horizontal, 12).padding(.vertical, 6)
+                            .background(full ? Theme.surface2 : Theme.accent)
+                            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                     }
                     .buttonStyle(.plain)
                     .disabled(full || busy != nil || e.option?.disabled?.value == true)
