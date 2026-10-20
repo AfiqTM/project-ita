@@ -477,6 +477,8 @@ struct AttendanceView: View {
     @State private var reversed = false
     @State private var savedAt: Date?       // set while the saved copy is shown (website not reachable / signed out)
     @State private var appeared = false
+    @State private var retryAfter: Double = 0     // seconds until the screen tries again by itself (sign-in limit)
+    @State private var retries = 0
     @ObservedObject private var net = OfflineMonitor.shared
 
     private var uid: Int { app.site?.userid ?? 0 }
@@ -524,6 +526,14 @@ struct AttendanceView: View {
             // last download first, then the online page replaces it
             if summary == nil, OfflineSettings.enabled,
                let c: AttSaved = OfflineCache.loadObject(AttSaved.key(module.id)) { summary = c.summary }
+            await loadSummary()
+        }
+        .task(id: retryAfter) {
+            // Moodle allows one auto sign-in per 6 minutes: wait it out and try again, no manual relogin needed
+            guard retryAfter > 0, retries < 4 else { return }
+            try? await Task.sleep(nanoseconds: UInt64(retryAfter * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            retries += 1
             await loadSummary()
         }
         .onAppear {
@@ -725,12 +735,14 @@ struct AttendanceView: View {
                 return
             }
             let wait = MoodleAPI.shared.autologinWait
+            retryAfter = wait > 0 ? wait + 5 : 0
             note = "Couldn't load your attendance." + (wait > 0
-                ? " Auto sign-in is on cooldown (about \(Int(wait / 60) + 1) min). Pull down to refresh after that."
+                ? " Moodle allows one auto sign-in per 6 minutes. Trying again by itself in about \(Int(wait / 60) + 1) min (or pull down)."
                 : " Open any page in the Website tab to sign in, then pull down here to refresh.")
             debugText = await DebugLog.shared.text()
             return
         }
+        retryAfter = 0; retries = 0
         var s = MoodleAPI.shared.parseAttendance(html)
         if s.rows.isEmpty && s.records.isEmpty {
             note = "No attendance data found on the page."
