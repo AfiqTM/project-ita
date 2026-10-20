@@ -99,6 +99,7 @@ struct RootView: View {
                 await notifs.refresh(uid: uid)
                 await assignments.load(uid: uid)
                 await AttendanceSync.refresh(userid: uid)
+                await AutoAttendance.shared.refreshAndPush(userid: uid)
                 await NotificationManager.shared.checkIncoming(uid: uid)
                 await OfflinePrefetch.run(uid: uid)
             }
@@ -632,6 +633,7 @@ struct ProfileView: View {
     @EnvironmentObject var todos: TodoStore
     @EnvironmentObject var driveAuth: DriveAuth
     @ObservedObject private var themes = ThemeStore.shared
+    @ObservedObject private var autoAtt = AutoAttendance.shared
 
     var body: some View {
         ScrollView {
@@ -653,6 +655,11 @@ struct ProfileView: View {
                     NavigationLink { CAMSCalculatorScreen() } label: {
                         ProfileRow(icon: "function", title: "Final Exam Calculator",
                                    subtitle: "Marks needed in the final exam", showLine: true)
+                    }
+                    NavigationLink { AutoAttendanceView() } label: {
+                        ProfileRow(icon: "checkmark.circle", title: "Auto Attendance",
+                                   subtitle: autoAtt.state.master ? "On · \(autoAtt.enabledCount) subject\(autoAtt.enabledCount == 1 ? "" : "s")" : "Off",
+                                   showLine: true)
                     }
                     NavigationLink { MyDriveView() } label: {
                         ProfileRow(icon: "externaldrive", title: "My Drive",

@@ -1,0 +1,16 @@
+name = "italeem-auto-attendance"
+main = "worker.js"
+compatibility_date = "2024-09-01"
+
+# runs every minute (free plan allows this)
+[triggers]
+crons = ["* * * * *"]
+
+# 1) npx wrangler kv namespace create STORE   -> paste the id below
+# 2) npx wrangler secret put ACCESS_KEY       -> any long random password (the same one goes in the app)
+[[kv_namespaces]]
+binding = "STORE"
+id = "PASTE_KV_NAMESPACE_ID_HERE"
+
+[vars]
+SITE = "https://italeemc.iium.edu.my"

@@ -21,6 +21,12 @@ Native client for iTa'leem (IIUM Moodle) using Moodle's mobile web-service API, 
 - Attendance screen with the records and the maximum possible attendance at the top
 - Home-screen widget (small / medium / large) showing the maximum possible attendance of every subject, refreshed in the background
 
+### Auto Attendance (Others > Auto Attendance)
+- For subjects where you must press "Submit attendance" yourself. **Off by default**; the master switch is on the screen
+- Lists only "Section" subjects that have an attendance activity (the public course pages are skipped to avoid repeats)
+- Tick a subject: its class time is read from the attendance page and can be corrected; pick the 15-minute window (or shuffle one) and the server submits at a random moment inside it, as Present
+- iOS can't run an app at an exact time, so a small free server does the submitting: see `Server/README.md`
+
 ### Alerts and messages
 - Alerts tab (notifications) with an unread badge; the app icon badge = unread alerts + unread chats
 - Messages: chat list, conversations, reply, select and delete for me, start a chat from a profile
