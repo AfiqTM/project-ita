@@ -74,6 +74,7 @@ struct AutoAttConfig: Codable, Identifiable, Equatable {
     var detStart: Int?       // class time found on the attendance page
     var detEnd: Int?
     var sessions: [AutoSession]
+    var past: Bool?          // the subject is listed under "past" on the site
 }
 
 struct AutoAttState: Codable {
@@ -104,6 +105,8 @@ final class AutoAttendance: ObservableObject {
     @Published var jobs: [AutoJobStatus] = []
     @Published var message: String?
     @Published var loading = false
+    @Published var noAttendance: [String] = []     // "Section" subjects with no attendance activity
+    @Published var failedCourses: [String] = []    // subjects whose contents couldn't be loaded
     var userid = 0
     private var pushTask: Task<Void, Never>?
 
@@ -185,28 +188,52 @@ final class AutoAttendance: ObservableObject {
         loading = true
         defer { loading = false }
         let api = MoodleAPI.shared
+
+        // current + upcoming subjects, then past ones too (a lecturer may have put a subject under "past" by mistake)
+        var list: [(Course, Bool)] = courses.map { ($0, false) }
+        var have = Set(courses.map { $0.id })
+        func fetch(_ cls: String) async -> [Course] {
+            if OfflineSettings.enabled, let r = await OfflinePrefetch.courses(cls) { return r.courses }
+            let r: CourseList? = try? await api.call("core_course_get_enrolled_courses_by_timeline_classification",
+                                                     ["classification": cls, "limit": 0, "offset": 0, "sort": "fullname"])
+            return r?.courses ?? []
+        }
+        for c in await fetch("past") {
+            if have.insert(c.id).inserted { list.append((c, true)) }
+        }
+
         var seen = Set<Int>()
-        for course in courses where course.isSectionCourse {      // subjects without "Section" are skipped
+        var noAtt: [String] = []
+        var failed: [String] = []
+        for (course, isPast) in list where course.isSectionCourse {      // subjects without "Section" are skipped
             var secs: [CourseSection]?
             if OfflineSettings.enabled { secs = await OfflinePrefetch.contents(course.id) }
             else { secs = try? await api.call("core_course_get_contents", ["courseid": course.id]) }
-            let mods = (secs ?? []).flatMap { $0.modules }.filter { $0.modname == "attendance" && $0.uservisible != false }
+            guard let got = secs else { failed.append(course.subjectName); continue }
+            let mods = got.flatMap { $0.modules }.filter { $0.modname == "attendance" && $0.uservisible != false }
+            if mods.isEmpty { noAtt.append(course.subjectName) }
             for m in mods {
                 seen.insert(m.id)
                 let name = mods.count > 1 ? course.subjectName + " · " + m.name : course.subjectName
                 if let i = state.configs.firstIndex(where: { $0.id == m.id }) {
                     state.configs[i].name = name
                     state.configs[i].url = m.url ?? state.configs[i].url
+                    state.configs[i].past = isPast
                 } else {
-                    state.configs.append(AutoAttConfig(id: m.id, courseId: course.id, name: name, url: m.url ?? "",
-                                                       enabled: false, startMin: nil, endMin: nil, windowStart: nil,
-                                                       detStart: nil, detEnd: nil, sessions: []))
+                    var c = AutoAttConfig(id: m.id, courseId: course.id, name: name, url: m.url ?? "",
+                                          enabled: false, startMin: nil, endMin: nil, windowStart: nil,
+                                          detStart: nil, detEnd: nil, sessions: [])
+                    c.past = isPast
+                    state.configs.append(c)
                 }
             }
         }
+        noAttendance = noAtt
+        failedCourses = failed
         if !seen.isEmpty { state.configs = state.configs.filter { seen.contains($0.id) || $0.enabled } }
         state.configs.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-        for c in state.configs where seen.contains(c.id) && (c.enabled || c.detStart == nil || interactive) {
+        // class times: ticked subjects, and (when the screen is opened) the current ones; past ones only if ticked
+        for c in state.configs where seen.contains(c.id) && (c.enabled || (c.past != true && (c.detStart == nil || interactive))) {
             await readPage(c.id, uid: uid, interactive: interactive)
         }
         scheduleSync()
@@ -417,8 +444,12 @@ struct AutoAttendanceView: View {
 
     // ---- subjects ----
 
+    @State private var showPast = false
+
     private var subjectsCard: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        let current = m.state.configs.filter { $0.past != true }
+        let past = m.state.configs.filter { $0.past == true }
+        return VStack(alignment: .leading, spacing: 0) {
             Text("SUBJECTS").font(Theme.font(.caption)).foregroundColor(Theme.muted).padding(16)
             if m.state.configs.isEmpty {
                 if m.loading { ProgressView().tint(Theme.accent).frame(maxWidth: .infinity).padding(16) }
@@ -427,9 +458,35 @@ struct AutoAttendanceView: View {
                         .font(Theme.font(.subheadline)).foregroundColor(Theme.muted).padding(16)
                 }
             }
-            ForEach(m.state.configs) { c in row(c) }
+            ForEach(current) { c in row(c) }
+            if !past.isEmpty {
+                Button { withAnimation { showPast.toggle() } } label: {
+                    HStack {
+                        Text("Past subjects (\(past.count))").font(Theme.font(.subheadline).weight(.semibold))
+                        Spacer()
+                        Image(systemName: showPast ? "chevron.up" : "chevron.down").font(Theme.font(.caption))
+                    }
+                    .foregroundColor(Theme.accent).padding(14).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .overlay(Rectangle().fill(Theme.line).frame(height: 1), alignment: .top)
+                if showPast { ForEach(past) { c in row(c) } }
+            }
             if m.loading && !m.state.configs.isEmpty {
                 ProgressView().tint(Theme.accent).frame(maxWidth: .infinity).padding(12)
+            }
+            if !m.noAttendance.isEmpty || !m.failedCourses.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    if !m.noAttendance.isEmpty {
+                        Text("No attendance activity: " + m.noAttendance.joined(separator: ", "))
+                    }
+                    if !m.failedCourses.isEmpty {
+                        Text("Couldn't load (pull down to retry): " + m.failedCourses.joined(separator: ", "))
+                    }
+                }
+                .font(Theme.font(.caption2)).foregroundColor(Theme.muted)
+                .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+                .overlay(Rectangle().fill(Theme.line).frame(height: 1), alignment: .top)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading).glowCard()
@@ -484,23 +541,29 @@ struct AutoAttendanceView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text(c.detStart == nil ? "CLASS TIME (not found on the page, set it yourself)" : "CLASS TIME (from the attendance page)")
                 .font(Theme.font(.caption)).foregroundColor(Theme.muted)
-            HStack {
-                DatePicker("From", selection: minutes({ t.0 }, { v in m.update(c.id) { $0.startMin = v; $0.endMin = max($0.endMin ?? t.1, v + 5) } }),
+            HStack(spacing: 8) {
+                Text("From").foregroundColor(Theme.txt)
+                DatePicker("", selection: minutes({ t.0 }, { v in m.update(c.id) { $0.startMin = v; $0.endMin = max($0.endMin ?? t.1, v + 5) } }),
                            displayedComponents: .hourAndMinute)
-                DatePicker("To", selection: minutes({ t.1 }, { v in m.update(c.id) { $0.endMin = v } }),
+                    .labelsHidden()
+                Spacer(minLength: 12)
+                Text("To").foregroundColor(Theme.txt)
+                DatePicker("", selection: minutes({ t.1 }, { v in m.update(c.id) { $0.endMin = v } }),
                            displayedComponents: .hourAndMinute)
+                    .labelsHidden()
             }
-            .foregroundColor(Theme.txt)
             if c.startMin != nil || c.endMin != nil {
                 Button("Use the time from the page") { m.resetTime(c.id) }
                     .font(Theme.font(.caption).weight(.semibold)).foregroundColor(Theme.accent)
             }
 
             Text("SUBMITS AT A RANDOM MOMENT BETWEEN").font(Theme.font(.caption)).foregroundColor(Theme.muted)
-            HStack {
-                DatePicker("Window starts", selection: minutes({ w.0 }, { v in m.update(c.id) { $0.windowStart = v } }),
+            HStack(spacing: 8) {
+                Text("Window starts").foregroundColor(Theme.txt)
+                Spacer(minLength: 12)
+                DatePicker("", selection: minutes({ w.0 }, { v in m.update(c.id) { $0.windowStart = v } }),
                            displayedComponents: .hourAndMinute)
-                    .foregroundColor(Theme.txt)
+                    .labelsHidden()
                 Button { m.shuffleWindow(c.id) } label: {
                     Image(systemName: "shuffle").foregroundColor(Theme.accent)
                 }
@@ -515,13 +578,17 @@ struct AutoAttendanceView: View {
     }
 
     private func jobList(_ list: [AutoJobStatus]) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        let finished = Array(list.filter { $0.state != "pending" }.suffix(2))        // latest results first
+        let upcoming = list.filter { $0.state == "pending" }
+        let next = Array(upcoming.prefix(5))                                          // the nearest ones
+        return VStack(alignment: .leading, spacing: 8) {
             Text("SCHEDULE").font(Theme.font(.caption)).foregroundColor(Theme.muted)
-            ForEach(list.suffix(6)) { j in
+            ForEach(finished + next) { j in
                 let when = Date(timeIntervalSince1970: j.fireAt / 1000)
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(when.formatted(date: .abbreviated, time: .shortened)).font(Theme.font(.caption)).foregroundColor(Theme.txt)
+                        Text(when.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated).hour().minute()))
+                            .font(Theme.font(.caption)).foregroundColor(Theme.txt)
                         if let msg = j.msg, !msg.isEmpty {
                             Text(msg).font(Theme.font(.caption2)).foregroundColor(Theme.muted)
                         }
@@ -530,6 +597,10 @@ struct AutoAttendanceView: View {
                     StatusPill(text: j.state == "done" ? "Submitted" : (j.state == "failed" ? "Failed" : "Scheduled"),
                                color: j.state == "done" ? Tone.green : (j.state == "failed" ? Tone.red : Tone.amber))
                 }
+            }
+            if upcoming.count > next.count {
+                Text("+ \(upcoming.count - next.count) more later in the semester")
+                    .font(Theme.font(.caption2)).foregroundColor(Theme.muted)
             }
         }
     }
