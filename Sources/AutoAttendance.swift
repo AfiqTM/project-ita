@@ -348,10 +348,18 @@ final class AutoAttendance: ObservableObject {
 
     func fetchStatus() async {
         guard userid > 0, serverReady, state.master else { return }
-        struct R: Decodable { var jobs: [AutoJobStatus] }
+        struct R: Decodable { var jobs: [AutoJobStatus]; var lastLogin: Double? }
         if let d = try? await request("status", query: [URLQueryItem(name: "userid", value: String(userid))]),
            let r = try? JSONDecoder().decode(R.self, from: d) {
             jobs = r.jobs.sorted { $0.from < $1.from }
+            // The server's sign-in used this account's one-key-per-6-minutes allowance: remember it so the app
+            // shows the right wait instead of trying and failing
+            if let l = r.lastLogin, l > 0 {
+                let k = "autologin.last", t = l / 1000
+                if t > UserDefaults.standard.double(forKey: k), t <= Date().timeIntervalSince1970 + 5 {
+                    UserDefaults.standard.set(t, forKey: k)
+                }
+            }
         }
     }
 
