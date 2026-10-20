@@ -541,16 +541,16 @@ struct AutoAttendanceView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text(c.detStart == nil ? "CLASS TIME (not found on the page, set it yourself)" : "CLASS TIME (from the attendance page)")
                 .font(Theme.font(.caption)).foregroundColor(Theme.muted)
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 Text("From").foregroundColor(Theme.txt)
                 DatePicker("", selection: minutes({ t.0 }, { v in m.update(c.id) { $0.startMin = v; $0.endMin = max($0.endMin ?? t.1, v + 5) } }),
                            displayedComponents: .hourAndMinute)
                     .labelsHidden()
-                Spacer(minLength: 12)
-                Text("To").foregroundColor(Theme.txt)
+                Text("To").foregroundColor(Theme.txt).padding(.leading, 10)
                 DatePicker("", selection: minutes({ t.1 }, { v in m.update(c.id) { $0.endMin = v } }),
                            displayedComponents: .hourAndMinute)
                     .labelsHidden()
+                Spacer(minLength: 0)
             }
             if c.startMin != nil || c.endMin != nil {
                 Button("Use the time from the page") { m.resetTime(c.id) }
@@ -558,16 +558,16 @@ struct AutoAttendanceView: View {
             }
 
             Text("SUBMITS AT A RANDOM MOMENT BETWEEN").font(Theme.font(.caption)).foregroundColor(Theme.muted)
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 Text("Window starts").foregroundColor(Theme.txt)
-                Spacer(minLength: 12)
                 DatePicker("", selection: minutes({ w.0 }, { v in m.update(c.id) { $0.windowStart = v } }),
                            displayedComponents: .hourAndMinute)
                     .labelsHidden()
                 Button { m.shuffleWindow(c.id) } label: {
-                    Image(systemName: "shuffle").foregroundColor(Theme.accent)
+                    Image(systemName: "shuffle").foregroundColor(Theme.accent).padding(.leading, 6)
                 }
                 .buttonStyle(.plain)
+                Spacer(minLength: 0)
             }
             Text("\(AutoAttParse.clock(w.0)) - \(AutoAttParse.clock(w.1))")
                 .font(Theme.font(.title3).bold()).foregroundColor(Theme.accent)
