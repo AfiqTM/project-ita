@@ -12,8 +12,8 @@ diff --git a/Sources/DailyInfo.swift b/Sources/DailyInfo.swift
  //      free Cloudflare server as Auto Attendance: Server/worker.js, POST /classify). When the server isn't set up,
 diff --git a/Sources/DailyInfoView.swift b/Sources/DailyInfoView.swift
 --- a/Sources/DailyInfoView.swift	2026-10-21 17:22:02.000000000 +0000
-+++ b/Sources/DailyInfoView.swift	2026-10-21 17:32:59.782139968 +0000
-@@ -32,40 +32,57 @@
++++ b/Sources/DailyInfoView.swift	2026-10-21 17:40:13.823052256 +0000
+@@ -32,40 +32,74 @@
      }
  }
  
@@ -47,17 +47,40 @@ diff --git a/Sources/DailyInfoView.swift b/Sources/DailyInfoView.swift
      private let tabBarClearance: CGFloat = 96
  
      var body: some View {
-         TabView(selection: $page) {
-+            DailyInfoView().tag(0)
-             CoursesView()
-                 .safeAreaInset(edge: .bottom, spacing: 0) { Color.clear.frame(height: tabBarClearance) }
+-        TabView(selection: $page) {
+-            CoursesView()
+-                .safeAreaInset(edge: .bottom, spacing: 0) { Color.clear.frame(height: tabBarClearance) }
 -                .tag(0)
 -            DailyInfoView().tag(1)
-+                .tag(1)
++        // The pager fills the whole screen, top included, so scrolling content slides up under the status bar and
++        // fades out. Before, the pager stopped at the safe area, which cut the greeting ("Hello, ...") off along a
++        // hard line just below the status bar while scrolling. Each page keeps its resting position with its own
++        // top room, measured here before the safe area is ignored.
++        GeometryReader { geo in
++            let top = geo.safeAreaInsets.top
++            TabView(selection: $page) {
++                DailyInfoView()
++                    .safeAreaInset(edge: .top, spacing: 0) { Color.clear.frame(height: top) }
++                    .tag(0)
++                CoursesView()
++                    .safeAreaInset(edge: .top, spacing: 0) { Color.clear.frame(height: top) }
++                    .safeAreaInset(edge: .bottom, spacing: 0) { Color.clear.frame(height: tabBarClearance) }
++                    .tag(1)
++            }
++            .tabViewStyle(.page(indexDisplayMode: .never))
++            .ignoresSafeArea(.container, edges: [.top, .bottom])   // pager size never depends on the bars
++            .background(Theme.bg.ignoresSafeArea())
++            .overlay(alignment: .top) {
++                // soft fade under the status bar instead of a hard cut
++                LinearGradient(colors: [Theme.bg.opacity(0.92), Theme.bg.opacity(0)], startPoint: .top, endPoint: .bottom)
++                    .frame(height: top + 8)
++                    .ignoresSafeArea(.container, edges: .top)
++                    .allowsHitTesting(false)
++            }
          }
-         .tabViewStyle(.page(indexDisplayMode: .never))
-         .ignoresSafeArea(.container, edges: .bottom)   // pager size never depends on the tab bar
-         .background(Theme.bg.ignoresSafeArea())
+-        .tabViewStyle(.page(indexDisplayMode: .never))
+-        .ignoresSafeArea(.container, edges: .bottom)   // pager size never depends on the tab bar
+-        .background(Theme.bg.ignoresSafeArea())
          .toolbar(barHidden ? .hidden : .visible, for: .tabBar)
          .onChange(of: page) { new in
 -            if new == 0 { store.markAllSeen() }
