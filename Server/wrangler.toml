@@ -12,5 +12,9 @@ crons = ["* * * * *"]
 binding = "STORE"
 id = "PASTE_KV_NAMESPACE_ID_HERE"
 
+# Daily Info reads announcements with Workers AI (free daily allowance)
+[ai]
+binding = "AI"
+
 [vars]
 SITE = "https://italeemc.iium.edu.my"

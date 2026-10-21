@@ -50,6 +50,17 @@ export default {
       return json({ ok: true });
     }
 
+    if (url.pathname === "/classify" && req.method === "POST") {
+      if (!env.AI) return json({ error: "AI binding missing: add [ai] binding = \"AI\" to wrangler.toml and redeploy" }, 501);
+      const b = await req.json();
+      const items = (b.items || []).slice(0, 6);
+      const results = {}, failed = [];
+      await Promise.all(items.map(async it => {
+        try { results[it.id] = await classifyOne(env, b.today, it); } catch (e) { failed.push(it.id); }
+      }));
+      return json({ results, failed });
+    }
+
     if (url.pathname === "/status") {
       const u = JSON.parse((await env.STORE.get("u:" + url.searchParams.get("userid"))) || "null");
       return json({ jobs: (u?.jobs || []).map(({ key, cmid, from, to, fireAt, state, msg }) => ({ key, cmid, from, to, fireAt, state, msg })) });
@@ -204,4 +215,55 @@ async function submit(u, j) {
     return { ok: false, msg: "Sent, but the site still shows the Submit link" };
   }
   return { ok: true, msg: "Submitted at " + new Date().toISOString() };
+}
+
+// ---------- Daily Info: read one announcement with Workers AI ----------
+const KINDS = ["cancelled", "online", "venue", "rescheduled", "note"];
+const SCHEMA = {
+  type: "object",
+  properties: {
+    changes: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          kind: { type: "string", enum: KINDS },
+          classDate: { type: "string" },
+          startTime: { type: "string" },
+          newDate: { type: "string" },
+          newStartTime: { type: "string" },
+          venue: { type: "string" },
+          summary: { type: "string" },
+        },
+        required: ["kind", "summary"],
+      },
+    },
+  },
+  required: ["changes"],
+};
+
+const SYSTEM = `You read a university lecturer's announcement and list ONLY changes to a scheduled class, lab, tutorial, test or exam.
+Kinds: "cancelled" (class will not be held), "online" (class moved online; venue = platform such as Zoom), "venue" (same time, different room; venue = the new room), "rescheduled" (moved to another day or time), "note" (short schedule-related notice that fits none of the others, e.g. bring a laptop to the next class).
+Rules:
+- Ignore assignments, grades, deadlines, reading material and anything that is not about when/where/how a class meets. If there is nothing, return {"changes": []}.
+- Dates are YYYY-MM-DD. Times are 24-hour HH:MM. Work out relative dates ("tomorrow", "next Monday") from the posted date given. Malaysian dates are day first (05/10 = 5 October).
+- classDate/startTime = the original class. For "rescheduled", newDate/newStartTime = where it moved to. For other kinds leave newDate and newStartTime empty.
+- Leave a field as "" when the announcement does not say it. Never guess.
+- summary: one short sentence in English.`;
+
+async function classifyOne(env, today, it) {
+  const user = `Today: ${today}\nSubject: ${it.course}\nPosted: ${it.posted}\nTitle: ${it.title}\n\n${String(it.text || "").slice(0, 3000)}`;
+  const out = await env.AI.run(env.AI_MODEL || "@cf/meta/llama-3.1-8b-instruct", {
+    messages: [{ role: "system", content: SYSTEM }, { role: "user", content: user }],
+    response_format: { type: "json_schema", json_schema: SCHEMA },
+    max_tokens: 600,
+    temperature: 0,
+  });
+  let r = out && out.response;
+  if (typeof r === "string") {
+    const m = r.match(/\{[\s\S]*\}/);
+    r = JSON.parse(m ? m[0] : r);
+  }
+  if (!r || !Array.isArray(r.changes)) throw new Error("bad AI answer");
+  return r.changes.filter(c => c && KINDS.includes(c.kind)).slice(0, 4);
 }

@@ -122,6 +122,7 @@ final class AutoAttendance: ObservableObject {
     var enabledCount: Int { state.configs.filter { $0.enabled }.count }
     func config(_ id: Int) -> AutoAttConfig? { state.configs.first { $0.id == id } }
 
+    var serverURL: URL? { base }
     private var base: URL? {
         var s = state.server.trimmingCharacters(in: .whitespacesAndNewlines)
         while s.hasSuffix("/") { s.removeLast() }

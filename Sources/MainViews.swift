@@ -17,7 +17,7 @@ struct RootView: View {
 
     var body: some View {
         TabView(selection: $tab) {
-            NavigationStack { CoursesView() }
+            NavigationStack { CoursesHome() }   // My courses, swipe left for Daily info (DailyInfoView.swift)
                 .tabItem { Label("My courses", systemImage: "books.vertical") }
                 .tag(0)
             NavigationStack { AssignmentsTabView(model: assignments) }
