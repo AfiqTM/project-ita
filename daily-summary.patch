@@ -1,0 +1,190 @@
+diff -ruN a/README.md b/README.md
+--- a/README.md	2026-10-21 17:01:33.144597733 +0000
++++ b/README.md	2026-10-21 17:01:33.148347903 +0000
+@@ -27,12 +27,12 @@
+ - Tick a subject: its class time is read from the attendance page and can be corrected; pick the 15-minute window (or shuffle one) and the server submits at a random moment inside it, as Present
+ - iOS can't run an app at an exact time, so a small free server does the submitting: see `Server/README.md`
+ 
+-### Daily info (swipe left on My courses)
+-- A second page next to My courses (swipe left, or tap the dots at the bottom). Lists class changes: **Cancelled, Online, New venue, Rescheduled, Notice**, grouped by day, with Upcoming / Past / Removed views and a filter by type and by subject
++### Daily summary (swipe left on My courses)
++- A second page next to My courses (swipe right to left; the tab bar hides while it is open and returns when you swipe back). Lists class changes: **Cancelled, Online, New venue, Rescheduled, Notice**, grouped by day, with Upcoming / Past / Removed views and a filter by type and by subject
+ - Filled from the announcements of every current subject. The newest announcements (last 21 days) are read by AI; each is read once and again only if edited. Pull down or tap the refresh icon to scan now
+ - AI runs on the same free Cloudflare server as Auto Attendance (`POST /classify`, Workers AI, see `Server/README.md`). Without the server, or when it doesn't answer, a built-in keyword reader (English and common Malay words) is used, and the entry is labelled "Auto" instead of "AI"
+ - Add your own with **+**; tap any entry to correct it (a corrected entry is never overwritten by a later scan). Detected entries you remove stay removed; your own are deleted. Long-press for Edit / Remove
+-- A badge on the dots shows new upcoming changes you haven't looked at yet. Everything is saved on the phone
++- A small accent-coloured dot left of "Hello, …" on My courses shows there are new upcoming changes you haven't looked at yet (it goes away once you open Daily summary). Everything is saved on the phone
+ 
+ ### Alerts and messages
+ - Alerts tab (notifications) with an unread badge; the app icon badge = unread alerts + unread chats
+diff -ruN a/Server/README.md b/Server/README.md
+--- a/Server/README.md	2026-10-21 17:01:33.144629109 +0000
++++ b/Server/README.md	2026-10-21 17:01:33.148394807 +0000
+@@ -13,8 +13,8 @@
+ 2. In the app: Others > Auto Attendance > turn it on > paste that address and the same access key > Test connection.
+ 3. Tick your subjects.
+ 
+-## Daily info (AI)
+-The app's Daily info page sends new announcements to `POST /classify`, which asks Workers AI (`@cf/meta/llama-3.1-8b-instruct`, free daily allowance) which classes are cancelled / online / moved / rescheduled. It needs the `[ai]` binding already in `wrangler.toml`: just `npx wrangler deploy` again after updating. To use another model, add `AI_MODEL = "@cf/..."` under `[vars]`. If the endpoint answers an error, the app falls back to its built-in keyword reader. Announcement text is processed by Cloudflare Workers AI and is not stored by this server.
++## Daily summary (AI)
++The app's Daily summary page sends new announcements to `POST /classify`, which asks Workers AI (`@cf/meta/llama-3.1-8b-instruct`, free daily allowance) which classes are cancelled / online / moved / rescheduled. It needs the `[ai]` binding already in `wrangler.toml`: just `npx wrangler deploy` again after updating. To use another model, add `AI_MODEL = "@cf/..."` under `[vars]`. If the endpoint answers an error, the app falls back to its built-in keyword reader. Announcement text is processed by Cloudflare Workers AI and is not stored by this server.
+ 
+ ## Good to know
+ - The server stores your Moodle token (and private token) so it can sign in for you. Deploy your own copy; don't share the key.
+diff -ruN a/Server/worker.js b/Server/worker.js
+--- a/Server/worker.js	2026-10-21 17:01:33.144643616 +0000
++++ b/Server/worker.js	2026-10-21 17:01:33.148408976 +0000
+@@ -217,7 +217,7 @@
+   return { ok: true, msg: "Submitted at " + new Date().toISOString() };
+ }
+ 
+-// ---------- Daily Info: read one announcement with Workers AI ----------
++// ---------- Daily Summary: read one announcement with Workers AI ----------
+ const KINDS = ["cancelled", "online", "venue", "rescheduled", "note"];
+ const SCHEMA = {
+   type: "object",
+diff -ruN a/Sources/DailyInfo.swift b/Sources/DailyInfo.swift
+--- a/Sources/DailyInfo.swift	2026-10-21 17:01:33.146021381 +0000
++++ b/Sources/DailyInfo.swift	2026-10-21 17:01:33.149920675 +0000
+@@ -1,6 +1,6 @@
+ import SwiftUI
+ 
+-// MARK: - Daily Info
++// MARK: - Daily Summary
+ //
+ // A page next to "My courses" (swipe left) listing changes to classes: cancelled, online, another venue,
+ // rescheduled (and other short notices). Entries come from two places:
+@@ -139,7 +139,7 @@
+         if let d = try? JSONEncoder().encode(s) { UserDefaults.standard.set(d, forKey: Self.key) }
+     }
+ 
+-    /// Detected changes that are still ahead and not looked at yet (badge on My courses)
++    /// Detected changes that are still ahead and not looked at yet (dot next to the greeting on My courses)
+     var unseenCount: Int {
+         entries.filter { $0.hidden != true && $0.source == .announcement && !seen.contains($0.id) && !$0.isPast() }.count
+     }
+diff -ruN a/Sources/DailyInfoView.swift b/Sources/DailyInfoView.swift
+--- a/Sources/DailyInfoView.swift	2026-10-21 17:01:33.146042175 +0000
++++ b/Sources/DailyInfoView.swift	2026-10-21 17:01:33.149938461 +0000
+@@ -32,15 +32,17 @@
+     }
+ }
+ 
+-// MARK: - Page container: My courses  <-  swipe left  ->  Daily info
++// MARK: - Page container: My courses  <-  swipe left  ->  Daily summary
+ //
+-// A paged view inside the first tab, so the tab bar keeps its five tabs.
++// A paged view inside the first tab. Swipe right-to-left on My courses to open Daily summary; the tab bar
++// slides away while it is open and fades back when you swipe back to My courses.
+ 
+ struct CoursesHome: View {
+     @EnvironmentObject var catalog: CourseCatalog
+     @ObservedObject private var store = DailyInfoStore.shared
+     @Environment(\.scenePhase) private var scenePhase
+     @State private var page = 0
++    @State private var barHidden = false
+ 
+     var body: some View {
+         TabView(selection: $page) {
+@@ -49,8 +51,11 @@
+         }
+         .tabViewStyle(.page(indexDisplayMode: .never))
+         .background(Theme.bg.ignoresSafeArea())
+-        .overlay(alignment: .bottom) { indicator.padding(.bottom, 6) }
+-        .onChange(of: page) { new in if new == 0 { store.markAllSeen() } }
++        .toolbar(barHidden ? .hidden : .visible, for: .tabBar)
++        .onChange(of: page) { new in
++            if new == 0 { store.markAllSeen() }
++            withAnimation(.easeInOut(duration: 0.3)) { barHidden = (new == 1) }
++        }
+         .task {
+             await catalog.loadIfNeeded()
+             await store.scan(courses: catalog.courses)
+@@ -63,36 +68,9 @@
+             Task { await store.scan(courses: catalog.courses, force: true) }
+         }
+     }
+-
+-    private var indicator: some View {
+-        HStack(spacing: 8) {
+-            dot(0, "My courses")
+-            dot(1, "Daily info")
+-        }
+-        .padding(.horizontal, 12).padding(.vertical, 6)
+-        .background(Theme.surface.opacity(0.92))
+-        .clipShape(Capsule())
+-        .overlay(Capsule().stroke(Theme.line, lineWidth: 1))
+-    }
+-
+-    private func dot(_ i: Int, _ name: String) -> some View {
+-        Button { withAnimation(.easeInOut(duration: 0.25)) { page = i } } label: {
+-            HStack(spacing: 5) {
+-                Circle().fill(page == i ? Theme.accent : Theme.muted.opacity(0.5)).frame(width: 7, height: 7)
+-                if page == i { Text(name).font(Theme.font(.caption2)).foregroundColor(Theme.txt) }
+-                if i == 1, store.unseenCount > 0, page != 1 {
+-                    Text("\(store.unseenCount)").font(Theme.font(.caption2).weight(.bold))
+-                        .foregroundColor(Theme.onAccent)
+-                        .padding(.horizontal, 5).padding(.vertical, 1)
+-                        .background(Theme.accent).clipShape(Capsule())
+-                }
+-            }
+-        }
+-        .buttonStyle(.plain)
+-    }
+ }
+ 
+-// MARK: - Daily Info screen
++// MARK: - Daily Summary screen
+ 
+ struct DailyInfoView: View {
+     @EnvironmentObject var catalog: CourseCatalog
+@@ -173,7 +151,7 @@
+     private var header: some View {
+         HStack(spacing: 12) {
+             VStack(alignment: .leading, spacing: 2) {
+-                Text("Daily info").font(Theme.font(.largeTitle).weight(.bold)).foregroundColor(Theme.txt)
++                Text("Daily summary").font(Theme.font(.largeTitle).weight(.bold)).foregroundColor(Theme.txt)
+                 Text("Class changes from your announcements")
+                     .font(Theme.font(.footnote)).foregroundColor(Theme.muted)
+             }
+diff -ruN a/Sources/MainViews.swift b/Sources/MainViews.swift
+--- a/Sources/MainViews.swift	2026-10-21 17:01:33.146083126 +0000
++++ b/Sources/MainViews.swift	2026-10-21 17:01:33.149982769 +0000
+@@ -17,7 +17,7 @@
+ 
+     var body: some View {
+         TabView(selection: $tab) {
+-            NavigationStack { CoursesHome() }   // My courses, swipe left for Daily info (DailyInfoView.swift)
++            NavigationStack { CoursesHome() }   // My courses, swipe left for Daily summary (DailyInfoView.swift)
+                 .tabItem { Label("My courses", systemImage: "books.vertical") }
+                 .tag(0)
+             NavigationStack { AssignmentsTabView(model: assignments) }
+@@ -132,6 +132,7 @@
+ 
+ struct CoursesView: View {
+     @EnvironmentObject var app: AppState
++    @ObservedObject private var daily = DailyInfoStore.shared
+     @State private var filter: CourseFilter = .all
+     @State private var courses: [Course] = []
+     @State private var favOverride: [Int: Bool] = [:]
+@@ -196,9 +197,18 @@
+         ScrollView {
+             VStack(alignment: .leading, spacing: 18) {
+                 // intro animation per theme (Themes.swift): gunshot, Pac-Man or decoding symbols
+-                GreetingBar(hello: "Hello,", name: firstTwoNames) {
+-                    MessagesButton()   // chat icon + unread badge (Messages.swift)
++                HStack(spacing: 8) {
++                    // new class changes in Daily summary that you haven't looked at yet: a plain accent dot, no number
++                    if daily.unseenCount > 0 {
++                        Circle().fill(Theme.accent).frame(width: 9, height: 9)
++                            .transition(.scale.combined(with: .opacity))
++                            .accessibilityLabel("New in Daily summary")
++                    }
++                    GreetingBar(hello: "Hello,", name: firstTwoNames) {
++                        MessagesButton()   // chat icon + unread badge (Messages.swift)
++                    }
+                 }
++                .animation(.easeInOut(duration: 0.25), value: daily.unseenCount > 0)
+ 
+                 searchBar
+                 suggestionList

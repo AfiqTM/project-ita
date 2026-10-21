@@ -32,15 +32,17 @@ private extension View {
     }
 }
 
-// MARK: - Page container: My courses  <-  swipe left  ->  Daily info
+// MARK: - Page container: My courses  <-  swipe left  ->  Daily summary
 //
-// A paged view inside the first tab, so the tab bar keeps its five tabs.
+// A paged view inside the first tab. Swipe right-to-left on My courses to open Daily summary; the tab bar
+// slides away while it is open and fades back when you swipe back to My courses.
 
 struct CoursesHome: View {
     @EnvironmentObject var catalog: CourseCatalog
     @ObservedObject private var store = DailyInfoStore.shared
     @Environment(\.scenePhase) private var scenePhase
     @State private var page = 0
+    @State private var barHidden = false
 
     var body: some View {
         TabView(selection: $page) {
@@ -49,8 +51,11 @@ struct CoursesHome: View {
         }
         .tabViewStyle(.page(indexDisplayMode: .never))
         .background(Theme.bg.ignoresSafeArea())
-        .overlay(alignment: .bottom) { indicator.padding(.bottom, 6) }
-        .onChange(of: page) { new in if new == 0 { store.markAllSeen() } }
+        .toolbar(barHidden ? .hidden : .visible, for: .tabBar)
+        .onChange(of: page) { new in
+            if new == 0 { store.markAllSeen() }
+            withAnimation(.easeInOut(duration: 0.3)) { barHidden = (new == 1) }
+        }
         .task {
             await catalog.loadIfNeeded()
             await store.scan(courses: catalog.courses)
@@ -63,36 +68,9 @@ struct CoursesHome: View {
             Task { await store.scan(courses: catalog.courses, force: true) }
         }
     }
-
-    private var indicator: some View {
-        HStack(spacing: 8) {
-            dot(0, "My courses")
-            dot(1, "Daily info")
-        }
-        .padding(.horizontal, 12).padding(.vertical, 6)
-        .background(Theme.surface.opacity(0.92))
-        .clipShape(Capsule())
-        .overlay(Capsule().stroke(Theme.line, lineWidth: 1))
-    }
-
-    private func dot(_ i: Int, _ name: String) -> some View {
-        Button { withAnimation(.easeInOut(duration: 0.25)) { page = i } } label: {
-            HStack(spacing: 5) {
-                Circle().fill(page == i ? Theme.accent : Theme.muted.opacity(0.5)).frame(width: 7, height: 7)
-                if page == i { Text(name).font(Theme.font(.caption2)).foregroundColor(Theme.txt) }
-                if i == 1, store.unseenCount > 0, page != 1 {
-                    Text("\(store.unseenCount)").font(Theme.font(.caption2).weight(.bold))
-                        .foregroundColor(Theme.onAccent)
-                        .padding(.horizontal, 5).padding(.vertical, 1)
-                        .background(Theme.accent).clipShape(Capsule())
-                }
-            }
-        }
-        .buttonStyle(.plain)
-    }
 }
 
-// MARK: - Daily Info screen
+// MARK: - Daily Summary screen
 
 struct DailyInfoView: View {
     @EnvironmentObject var catalog: CourseCatalog
@@ -173,7 +151,7 @@ struct DailyInfoView: View {
     private var header: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Daily info").font(Theme.font(.largeTitle).weight(.bold)).foregroundColor(Theme.txt)
+                Text("Daily summary").font(Theme.font(.largeTitle).weight(.bold)).foregroundColor(Theme.txt)
                 Text("Class changes from your announcements")
                     .font(Theme.font(.footnote)).foregroundColor(Theme.muted)
             }

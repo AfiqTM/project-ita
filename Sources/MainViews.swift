@@ -17,7 +17,7 @@ struct RootView: View {
 
     var body: some View {
         TabView(selection: $tab) {
-            NavigationStack { CoursesHome() }   // My courses, swipe left for Daily info (DailyInfoView.swift)
+            NavigationStack { CoursesHome() }   // My courses, swipe left for Daily summary (DailyInfoView.swift)
                 .tabItem { Label("My courses", systemImage: "books.vertical") }
                 .tag(0)
             NavigationStack { AssignmentsTabView(model: assignments) }
@@ -132,6 +132,7 @@ enum CourseFilter: String, CaseIterable, Identifiable {
 
 struct CoursesView: View {
     @EnvironmentObject var app: AppState
+    @ObservedObject private var daily = DailyInfoStore.shared
     @State private var filter: CourseFilter = .all
     @State private var courses: [Course] = []
     @State private var favOverride: [Int: Bool] = [:]
@@ -196,9 +197,18 @@ struct CoursesView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 // intro animation per theme (Themes.swift): gunshot, Pac-Man or decoding symbols
-                GreetingBar(hello: "Hello,", name: firstTwoNames) {
-                    MessagesButton()   // chat icon + unread badge (Messages.swift)
+                HStack(spacing: 8) {
+                    // new class changes in Daily summary that you haven't looked at yet: a plain accent dot, no number
+                    if daily.unseenCount > 0 {
+                        Circle().fill(Theme.accent).frame(width: 9, height: 9)
+                            .transition(.scale.combined(with: .opacity))
+                            .accessibilityLabel("New in Daily summary")
+                    }
+                    GreetingBar(hello: "Hello,", name: firstTwoNames) {
+                        MessagesButton()   // chat icon + unread badge (Messages.swift)
+                    }
                 }
+                .animation(.easeInOut(duration: 0.25), value: daily.unseenCount > 0)
 
                 searchBar
                 suggestionList

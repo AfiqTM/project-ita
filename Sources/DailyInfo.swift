@@ -1,6 +1,6 @@
 import SwiftUI
 
-// MARK: - Daily Info
+// MARK: - Daily Summary
 //
 // A page next to "My courses" (swipe left) listing changes to classes: cancelled, online, another venue,
 // rescheduled (and other short notices). Entries come from two places:
@@ -139,7 +139,7 @@ final class DailyInfoStore: ObservableObject {
         if let d = try? JSONEncoder().encode(s) { UserDefaults.standard.set(d, forKey: Self.key) }
     }
 
-    /// Detected changes that are still ahead and not looked at yet (badge on My courses)
+    /// Detected changes that are still ahead and not looked at yet (dot next to the greeting on My courses)
     var unseenCount: Int {
         entries.filter { $0.hidden != true && $0.source == .announcement && !seen.contains($0.id) && !$0.isPast() }.count
     }

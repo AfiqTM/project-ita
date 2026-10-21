@@ -217,7 +217,7 @@ async function submit(u, j) {
   return { ok: true, msg: "Submitted at " + new Date().toISOString() };
 }
 
-// ---------- Daily Info: read one announcement with Workers AI ----------
+// ---------- Daily Summary: read one announcement with Workers AI ----------
 const KINDS = ["cancelled", "online", "venue", "rescheduled", "note"];
 const SCHEMA = {
   type: "object",

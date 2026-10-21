@@ -13,8 +13,8 @@ opens the attendance page and presses "Submit attendance" (status Present).
 2. In the app: Others > Auto Attendance > turn it on > paste that address and the same access key > Test connection.
 3. Tick your subjects.
 
-## Daily info (AI)
-The app's Daily info page sends new announcements to `POST /classify`, which asks Workers AI (`@cf/meta/llama-3.1-8b-instruct`, free daily allowance) which classes are cancelled / online / moved / rescheduled. It needs the `[ai]` binding already in `wrangler.toml`: just `npx wrangler deploy` again after updating. To use another model, add `AI_MODEL = "@cf/..."` under `[vars]`. If the endpoint answers an error, the app falls back to its built-in keyword reader. Announcement text is processed by Cloudflare Workers AI and is not stored by this server.
+## Daily summary (AI)
+The app's Daily summary page sends new announcements to `POST /classify`, which asks Workers AI (`@cf/meta/llama-3.1-8b-instruct`, free daily allowance) which classes are cancelled / online / moved / rescheduled. It needs the `[ai]` binding already in `wrangler.toml`: just `npx wrangler deploy` again after updating. To use another model, add `AI_MODEL = "@cf/..."` under `[vars]`. If the endpoint answers an error, the app falls back to its built-in keyword reader. Announcement text is processed by Cloudflare Workers AI and is not stored by this server.
 
 ## Good to know
 - The server stores your Moodle token (and private token) so it can sign in for you. Deploy your own copy; don't share the key.
