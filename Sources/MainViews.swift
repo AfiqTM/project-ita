@@ -1,602 +1,877 @@
 import SwiftUI
+import UserNotifications
 
-// MARK: - Helpers
-
-private func clockText(_ min: Int?) -> String? { min.map { AutoAttParse.clock($0) } }
-
-private func dayText(_ d: Date) -> String {
-    let cal = Calendar.current
-    if cal.isDateInToday(d) { return "Today" }
-    if cal.isDateInTomorrow(d) { return "Tomorrow" }
-    if cal.isDateInYesterday(d) { return "Yesterday" }
-    let f = DateFormatter()
-    f.dateFormat = cal.isDate(d, equalTo: Date(), toGranularity: .year) ? "EEE, d MMM" : "EEE, d MMM yyyy"
-    return f.string(from: d)
-}
-
-private func minutesToDate(_ m: Int, on day: Date = Date()) -> Date {
-    Calendar.current.date(bySettingHour: m / 60, minute: m % 60, second: 0, of: day) ?? day
-}
-private func dateToMinutes(_ d: Date) -> Int {
-    let c = Calendar.current.dateComponents([.hour, .minute], from: d)
-    return (c.hour ?? 0) * 60 + (c.minute ?? 0)
-}
-
-private extension View {
-    func dailyBox(focused: Bool = false) -> some View {
-        self.padding(12)
-            .background(Theme.surface2)
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(focused ? Theme.accent : Theme.line, lineWidth: 1))
-    }
-}
-
-// MARK: - Page container: Daily summary (left)  <-  swipe left to right  ->  My courses (right)
-//
-// A paged view inside the first tab. My courses is the home page; swipe left-to-right on it to open Daily summary,
-// which sits to its left. Swipe right-to-left to come back.
-//
-// The tab bar is NOT hidden through SwiftUI's .toolbar(.hidden, for: .tabBar). That changes the page's safe area,
-// so after the swipe had finished the bar disappeared late (a fixed wait) and Daily summary jumped down by the
-// bar's inset the moment it did. Instead PagerTabBarLink (below) slides and fades the UIKit tab bar by the pager's
-// own scroll offset: the bar leaves exactly with the finger, and no layout ever changes.
-//
-// The pager ignores the top and bottom safe area and always fills the screen; pages scroll underneath the status
-// bar (soft fade) and the tab bar, and My courses keeps its own room at the bottom.
-
-struct CoursesHome: View {
-    @EnvironmentObject var catalog: CourseCatalog
-    @ObservedObject private var store = DailyInfoStore.shared
+struct RootView: View {
+    @EnvironmentObject var app: AppState
     @Environment(\.scenePhase) private var scenePhase
-    @State private var page = 1            // 0 = Daily summary (left), 1 = My courses (right, home)
+    @StateObject private var assignments = AssignmentsModel()
+    @StateObject private var notifs = NotifBadgeModel()
+    @StateObject private var browser = SiteBrowser()
+    @ObservedObject private var chat = ChatStore.shared   // unread chats, for the app-icon badge
 
-    /// Room kept free at the bottom of My courses so the last card can scroll up clear of the tab bar
-    private let tabBarClearance: CGFloat = 96
+    // Kept here (not inside the tabs) so they survive when the tabs are rebuilt for a new theme:
+    // the selected tab and, in Others, the screen that is open (Others > Themes)
+    @ObservedObject private var themes = ThemeStore.shared
+    @State private var tab = 0
+    @State private var othersPath: [OthersRoute] = []
 
     var body: some View {
-        GeometryReader { geo in
-            let top = geo.safeAreaInsets.top
-            TabView(selection: $page) {
-                DailyInfoView()
-                    .safeAreaInset(edge: .top, spacing: 0) { Color.clear.frame(height: top) }
-                    .tag(0)
-                CoursesView()
-                    .safeAreaInset(edge: .top, spacing: 0) { Color.clear.frame(height: top) }
-                    .safeAreaInset(edge: .bottom, spacing: 0) { Color.clear.frame(height: tabBarClearance) }
-                    .tag(1)
+        TabView(selection: $tab) {
+            NavigationStack { CoursesHome() }   // My courses, swipe right for Daily summary (DailyInfoView.swift)
+                .tabItem { Label("My courses", systemImage: "books.vertical") }
+                .tag(0)
+            NavigationStack { AssignmentsTabView(model: assignments) }
+                .tabItem { Label("Assignments", systemImage: "checklist") }
+                .badge(assignments.badgeCount)   // to-do items due inside the range chosen in the tab
+                .tag(1)
+            NavigationStack { AlertsView(badge: notifs) }
+                .tabItem { Label("Alerts", systemImage: "bell") }
+                .badge(notifs.count)   // unread notifications
+                .tag(2)
+            NavigationStack { SiteBrowserView(browser: browser) }
+                .tabItem { Label("Website", systemImage: "globe") }
+                .tag(3)
+            NavigationStack(path: $othersPath) {
+                ProfileView()
+                    .navigationDestination(for: OthersRoute.self) { route in
+                        switch route {
+                        case .themes: ThemesView()
+                        }
+                    }
             }
-            .tabViewStyle(.page(indexDisplayMode: .never))
-            .noBottomEdgeEffect()                                   // no system band behind the floating tab bar
-            .ignoresSafeArea(.container, edges: [.top, .bottom])   // pager size never depends on the bars
-            .background(Theme.bg.ignoresSafeArea())
-            .background(PagerTabBarLink(page: page).allowsHitTesting(false))
-            .overlay(alignment: .top) {
-                // soft fade under the status bar instead of a hard cut
-                LinearGradient(colors: [Theme.bg.opacity(0.92), Theme.bg.opacity(0)], startPoint: .top, endPoint: .bottom)
-                    .frame(height: top + 8)
-                    .ignoresSafeArea(.container, edges: .top)
-                    .allowsHitTesting(false)
+            .tabItem { Label("Others", systemImage: "ellipsis.circle") }
+            .tag(4)
+        }
+        // A new identity per theme: every screen is rebuilt, so all colours are read again
+        .id(themes.theme)
+        .safeAreaInset(edge: .top, spacing: 0) { OfflineBanner().id(themes.theme) }   // small "Offline" pill, only while saved data is shown
+        .overlay { MessagesOverlay() }   // Messages: full-screen, above the tab bar (Messages.swift)
+        // Load at launch so the badges are right before either tab is opened
+        .task(id: app.site?.userid) {
+            guard let uid = app.site?.userid else { return }
+            await OfflineCache.paintFromCache { await assignments.load(uid: uid) }   // last download first, instantly
+            await assignments.load(uid: uid)                                          // then the online version
+        }
+        .task { await NotificationManager.shared.requestPermission() }
+        // Offline support: download the lists in the background so they open with no internet
+        .task(id: app.site?.userid) {
+            if let uid = app.site?.userid { await OfflinePrefetch.run(uid: uid) }
+        }
+        // The website answered again after saved data was shown: refresh
+        .onReceive(NotificationCenter.default.publisher(for: .offlineBackOnline)) { _ in
+            guard let uid = app.site?.userid else { return }
+            Task { await assignments.load(uid: uid); await notifs.refresh(uid: uid) }
+        }
+        // Newer data was saved in the background (slow connection): show it at once
+        .onFreshData {
+            guard let uid = app.site?.userid else { return }
+            await assignments.load(uid: uid)
+            await notifs.refresh(uid: uid)
+        }
+        // Changes made with no internet are sent when the app opens, and when the connection returns
+        .task { await OfflineQueue.shared.flush() }
+        .onReceive(NotificationCenter.default.publisher(for: .offlineQueueSent)) { _ in
+            guard let uid = app.site?.userid else { return }
+            Task { await assignments.load(uid: uid) }
+        }
+        // Home-screen widget data (maximum possible attendance per subject)
+        .task(id: app.site?.userid) {
+            if let uid = app.site?.userid { await AttendanceSync.refresh(userid: uid) }
+        }
+        // Unread alerts: check now, then every 15 s while the app is open
+        .task(id: app.site?.userid) {
+            guard let uid = app.site?.userid else { return }
+            while !Task.isCancelled {
+                await notifs.refresh(uid: uid)
+                await NotificationManager.shared.checkIncoming(uid: uid)
+                try? await Task.sleep(nanoseconds: 15_000_000_000)
             }
         }
-        .onChange(of: page) { new in
-            if new == 1 { store.markAllSeen() }
-        }
-        .task {
-            await catalog.loadIfNeeded()
-            await store.scan(courses: catalog.courses)
+        // App-icon badge on the home screen = unread alerts + unread chats
+        .onChange(of: notifs.count + chat.unread) { n in
+            UNUserNotificationCenter.current().setBadgeCount(n) { _ in }
         }
         .onChange(of: scenePhase) { phase in
-            guard phase == .active else { return }
-            Task { await store.scan(courses: catalog.courses) }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .offlineBackOnline)) { _ in
-            Task { await store.scan(courses: catalog.courses, force: true) }
+            if phase == .background { NotificationManager.shared.scheduleRefresh() }
+            guard phase == .active, let uid = app.site?.userid else { return }
+            Task {
+                await OfflineQueue.shared.flush()
+                await notifs.refresh(uid: uid)
+                await assignments.load(uid: uid)
+                await AttendanceSync.refresh(userid: uid)
+                await AutoAttendance.shared.refreshAndPush(userid: uid)
+                await NotificationManager.shared.checkIncoming(uid: uid)
+                await OfflinePrefetch.run(uid: uid)
+            }
         }
     }
 }
 
-extension View {
-    /// iOS 26 puts a system "edge effect" under floating bars. On this app's pure-black pages it showed up as a thin
-    /// black band at the very bottom, behind the tab bar. Hidden for the bottom edge only (iOS 26+, Xcode 26+).
-    @ViewBuilder func noBottomEdgeEffect() -> some View {
-        #if compiler(>=6.2)
-        if #available(iOS 26.0, *) { self.scrollEdgeEffectHidden(true, for: .bottom) } else { self }
-        #else
-        self
-        #endif
-    }
-}
+// MARK: - My courses
 
-// MARK: - Tab bar follows the pager
+enum CourseFilter: String, CaseIterable, Identifiable {
+    case all = "All"
+    case inprogress = "In progress"
+    case future = "Future"
+    case past = "Past"
+    case favourites = "Starred"
+    case hidden = "Removed from view"
 
-/// Slides and fades the system tab bar in step with the pager's swipe (0 = Daily summary: gone, 1 = My courses:
-/// shown). It watches the contentOffset of the pager's paging scroll view. Only the bar's transform and alpha are
-/// touched (never the SwiftUI toolbar visibility), so nothing is re-laid out and no page moves.
-/// If the pager's scroll view can't be found it falls back to a short slide when the page changes.
-private struct PagerTabBarLink: UIViewRepresentable {
-    let page: Int
-
-    func makeCoordinator() -> Coordinator { Coordinator() }
-
-    func makeUIView(context: Context) -> ProbeView {
-        let v = ProbeView()
-        v.isUserInteractionEnabled = false
-        v.backgroundColor = .clear
-        let c = context.coordinator
-        c.desiredPage = page
-        v.windowChanged = { [weak c, weak v] in
-            guard let c, let v else { return }
-            if v.window != nil { c.attach(from: v, tries: 6) } else { c.release() }
-        }
-        return v
-    }
-
-    func updateUIView(_ v: ProbeView, context: Context) {
-        context.coordinator.settle(page: page)
-    }
-
-    static func dismantleUIView(_ v: ProbeView, coordinator: Coordinator) { coordinator.release() }
-
-    final class ProbeView: UIView {
-        var windowChanged: (() -> Void)?
-        override func didMoveToWindow() {
-            super.didMoveToWindow()
-            windowChanged?()
-        }
-    }
-
-    final class Coordinator {
-        var desiredPage = 1
-        private weak var tabBar: UITabBar?
-        private weak var pager: UIScrollView?
-        private var observation: NSKeyValueObservation?
-        private var index = 1            // page the pager rests on (0 = Daily summary, 1 = My courses)
-        private var lastDelta: CGFloat = 0
-
-        func attach(from view: UIView, tries: Int) {
-            guard let window = view.window else { return }
-            // the window's own black must match the page colour, or any gap shows as a black band
-            window.backgroundColor = UIColor(Theme.bg)
-            tabBar = Self.find(UITabBar.self, in: window) { _ in true }
-            pager = Self.find(UIScrollView.self, in: window) { sv in
-                sv.isPagingEnabled
-                    && abs(sv.bounds.width - window.bounds.width) < 2
-                    && sv.contentSize.width > sv.bounds.width * 1.5
-                    && sv.contentSize.height <= sv.bounds.height + 1
-            }
-            index = desiredPage
-            lastDelta = 0
-            observation = nil
-            if let pager {
-                observation = pager.observe(\.contentOffset, options: [.new]) { [weak self] sv, _ in
-                    self?.scrolled(sv)
-                }
-            } else if tries > 0 {
-                // the pager isn't laid out yet: look again shortly
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self, weak view] in
-                    guard let self, let view else { return }
-                    self.attach(from: view, tries: tries - 1)
-                }
-            }
-            apply(CGFloat(index))
-        }
-
-        /// The SwiftUI page changed (swipe finished): make sure the bar rests exactly where it belongs.
-        func settle(page: Int) {
-            desiredPage = page
-            if observation == nil {
-                // fallback, no live tracking: short slide
-                UIView.animate(withDuration: 0.2) { self.apply(CGFloat(page)) }
-            } else if abs(lastDelta) < 0.001 {
-                index = page
-                apply(CGFloat(page))
-            }
-        }
-
-        func release() {
-            observation = nil
-            apply(1)
-        }
-
-        private func scrolled(_ sv: UIScrollView) {
-            let w = sv.bounds.width
-            guard w > 0 else { return }
-            // -1...1 around the resting position; negative = dragging towards the page on the left
-            let delta = (sv.contentOffset.x - w) / w
-            // When a page change finishes the pager re-centres itself and the offset jumps by about one page
-            let jump = delta - lastDelta
-            if jump > 0.5 { index -= 1 } else if jump < -0.5 { index += 1 }
-            lastDelta = delta
-            apply(CGFloat(index) + delta)
-        }
-
-        private func apply(_ progress: CGFloat) {
-            guard let bar = tabBar else { return }
-            let p = min(max(progress, 0), 1)
-            bar.alpha = p
-            bar.transform = CGAffineTransform(translationX: 0, y: (1 - p) * (bar.bounds.height + 40))
-            bar.isUserInteractionEnabled = p > 0.99
-            bar.accessibilityElementsHidden = p < 0.5
-        }
-
-        private static func find<T: UIView>(_ type: T.Type, in root: UIView, where ok: (T) -> Bool) -> T? {
-            if let t = root as? T, ok(t) { return t }
-            for s in root.subviews { if let f = find(type, in: s, where: ok) { return f } }
-            return nil
+    var id: String { rawValue }
+    var classification: String {
+        switch self {
+        case .all: return "all"
+        case .inprogress: return "inprogress"
+        case .future: return "future"
+        case .past: return "past"
+        case .favourites: return "favourites"
+        case .hidden: return "hidden"
         }
     }
 }
 
-// MARK: - Daily Summary screen
+struct CoursesView: View {
+    @EnvironmentObject var app: AppState
+    @ObservedObject private var daily = DailyInfoStore.shared
+    @State private var filter: CourseFilter = .all
+    @State private var courses: [Course] = []
+    @State private var favOverride: [Int: Bool] = [:]
+    @State private var loading = false
+    @State private var error: String?
+    @State private var query = ""
+    @State private var allCourses: [Course] = []     // every enrolled course, used for search suggestions
+    @State private var openCourse: Course?
+    @FocusState private var searchFocused: Bool
 
-struct DailyInfoView: View {
-    @EnvironmentObject var catalog: CourseCatalog
-    @ObservedObject private var store = DailyInfoStore.shared
-    @State private var kindFilter: DailyKind?
-    @State private var courseFilter: Int?
-    @State private var showPast = false
-    @State private var showRemoved = false
-    @State private var editing: DailyEntry?
-    @State private var showAdd = false
-    @State private var highlight: Set<String> = []     // what was new when the page opened
+    // ---- search ----
 
-    private var visible: [DailyEntry] {
-        store.entries.filter { e in
-            (showRemoved ? e.hidden == true : e.hidden != true)
-                && (kindFilter == nil || e.kind == kindFilter)
-                && (courseFilter == nil || e.courseId == courseFilter)
-                && (showRemoved || e.isPast() == showPast)
+    private var cleanQuery: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    // 0 = every typed word starts a word in the course name, 1 = just contained somewhere, nil = no match
+    private func rank(_ c: Course, _ q: String) -> Int? {
+        let words = q.split(separator: " ").map(String.init)
+        guard !words.isEmpty else { return 0 }
+        let hay = c.fullname + " " + (c.shortname ?? "")
+        let hayWords = hay.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+            .split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init)
+        var prefixAll = true
+        for w in words {
+            let f = w.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+            if !hayWords.contains(where: { $0.hasPrefix(f) }) { prefixAll = false }
+            if hay.range(of: w, options: [.caseInsensitive, .diacriticInsensitive]) == nil { return nil }
         }
+        return prefixAll ? 0 : 1
     }
 
-    /// Upcoming: soonest day first. Past: latest first. Entries without a date go under "No date".
-    private var groups: [(title: String, items: [DailyEntry])] {
-        let cal = Calendar.current
-        var dict: [Date: [DailyEntry]] = [:]
-        var undated: [DailyEntry] = []
-        for e in visible {
-            if let d = e.relevantDate { dict[cal.startOfDay(for: d), default: []].append(e) } else { undated.append(e) }
-        }
-        let days = dict.keys.sorted { showPast ? $0 > $1 : $0 < $1 }
-        var out = days.map { d in
-            (title: dayText(d), items: dict[d]!.sorted { ($0.startMin ?? 0) < ($1.startMin ?? 0) })
-        }
-        if !undated.isEmpty { out.append((title: "No date", items: undated.sorted { $0.postedAt > $1.postedAt })) }
-        return out
+    // Suggestions come from all enrolled courses (plus whatever the current filter loaded)
+    private var suggestions: [Course] {
+        guard !cleanQuery.isEmpty else { return [] }
+        var seen = Set<Int>()
+        let pool = (allCourses + courses).filter { seen.insert($0.id).inserted }
+        return pool.compactMap { c in rank(c, cleanQuery).map { (c, $0) } }
+            .sorted { $0.1 != $1.1 ? $0.1 < $1.1 : $0.0.fullname < $1.0.fullname }
+            .prefix(5).map { $0.0 }
+    }
+
+    private var visibleCourses: [Course] {
+        cleanQuery.isEmpty ? courses : courses.filter { rank($0, cleanQuery) != nil }
+    }
+
+    private func openFromSearch(_ c: Course) {
+        searchFocused = false
+        query = ""
+        openCourse = c
+    }
+
+    private var firstTwoNames: String {
+        (app.site?.fullname ?? "")
+            .split(separator: " ").prefix(2)
+            .map { w -> String in
+                let s = String(w)
+                return s == s.uppercased() ? s.prefix(1) + s.dropFirst().lowercased() : s
+            }
+            .joined(separator: " ")
     }
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                header
-                filters
-                if let n = store.scanNote {
-                    Text(n).font(Theme.font(.footnote)).foregroundColor(Theme.muted)
-                }
-                ForEach(groups, id: \.title) { g in
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(g.title).font(Theme.font(.subheadline).weight(.semibold)).foregroundColor(Theme.muted)
-                        VStack(spacing: 0) {
-                            ForEach(g.items) { e in
-                                DailyRow(entry: e, isNew: highlight.contains(e.id))
-                                    .onTapGesture { editing = e }
-                                    .contextMenu { menu(e) }
-                            }
-                        }
-                        .glowCard(radius: 12)
+            VStack(alignment: .leading, spacing: 18) {
+                // intro animation per theme (Themes.swift): gunshot, Pac-Man or decoding symbols
+                HStack(spacing: 8) {
+                    // new class changes in Daily summary that you haven't looked at yet: a plain accent dot, no number
+                    if daily.unseenCount > 0 {
+                        Circle().fill(Theme.accent).frame(width: 9, height: 9)
+                            .transition(.scale.combined(with: .opacity))
+                            .accessibilityLabel("New in Daily summary")
+                    }
+                    GreetingBar(hello: "Hello,", name: firstTwoNames) {
+                        MessagesButton()   // chat icon + unread badge (Messages.swift)
                     }
                 }
-                if visible.isEmpty { emptyState }
-                Spacer(minLength: 50)
+                .animation(.easeInOut(duration: 0.25), value: daily.unseenCount > 0)
+
+                searchBar
+                suggestionList
+
+                filterBar
+
+                if let error { Text(error).font(Theme.font(.footnote)).foregroundColor(Theme.muted) }
+
+                LazyVStack(spacing: 22) {
+                    ForEach(visibleCourses) { c in
+                        let starred = favOverride[c.id] ?? c.isfavourite ?? false
+                        ZStack(alignment: .topTrailing) {
+                            NavigationLink { CourseDetailView(course: c) } label: { CourseCard(course: c) }
+                                .buttonStyle(.plain)
+                            if filter == .hidden {
+                                Button { Task { await toggleHide(c) } } label: {
+                                    Label("Show again", systemImage: "eye")
+                                        .font(Theme.font(.footnote).weight(.semibold))
+                                        .foregroundColor(Theme.onAccent)
+                                        .padding(.horizontal, 12).padding(.vertical, 7)
+                                        .background(Theme.accent)
+                                        .clipShape(Capsule())
+                                }
+                                .padding(10)
+                            } else {
+                                Button { Task { await toggleStar(c) } } label: {
+                                    Image(systemName: starred ? "star.fill" : "star")
+                                        .foregroundColor(starred ? Color(hex: ThemeStore.shared.theme.onCoverAccent) : Color.white.opacity(0.85))
+                                        .padding(10)
+                                        .background(Color.black.opacity(0.45))
+                                        .clipShape(Circle())
+                                }
+                                .padding(10)
+                            }
+                        }
+                        .contextMenu {
+                            Button { Task { await toggleStar(c) } } label: {
+                                Label(starred ? "Unstar" : "Star", systemImage: starred ? "star.slash" : "star")
+                            }
+                            Button { Task { await toggleHide(c) } } label: {
+                                Label(filter == .hidden ? "Show again" : "Remove from view",
+                                      systemImage: filter == .hidden ? "eye" : "eye.slash")
+                            }
+                        }
+                    }
+                }
+                if !loading && visibleCourses.isEmpty && error == nil {
+                    Text(cleanQuery.isEmpty ? "No courses here." : "No courses match \u{201C}\(cleanQuery)\u{201D}.")
+                        .foregroundColor(Theme.muted)
+                }
+                if loading { ProgressView().tint(Theme.accent).frame(maxWidth: .infinity) }
             }
             .padding(16)
         }
         .background(Theme.bg.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
-        .refreshable { await store.scan(courses: catalog.courses, force: true) }
-        .sheet(isPresented: $showAdd) { DailyEditSheet() }
-        .sheet(item: $editing) { DailyEditSheet(existing: $0) }
-        .task {
-            await catalog.loadIfNeeded()
-            highlight = store.unseenIDs
+        .scrollDismissesKeyboard(.interactively)
+        .navigationDestination(isPresented: Binding(get: { openCourse != nil },
+                                                    set: { if !$0 { openCourse = nil } })) {
+            if let c = openCourse { CourseDetailView(course: c) }
         }
-        .onDisappear { store.markAllSeen() }
+        .refreshable { await load(); await loadAll() }
+        .task(id: filter) {
+            await OfflineCache.paintFromCache { await load() }   // last download first, instantly
+            await load()                                          // then the online version
+        }
+        .task { await loadAll() }
+        .onReceive(NotificationCenter.default.publisher(for: .offlineBackOnline)) { _ in Task { await load(); await loadAll() } }
+        .onFreshData { await load(); await loadAll() }
+    }
+
+    private var searchBar: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass").foregroundColor(Theme.muted)
+            TextField("", text: $query, prompt: Text("Search my courses").foregroundColor(Theme.muted))
+                .foregroundColor(Theme.txt)
+                .tint(Theme.accent)
+                .focused($searchFocused)
+                .submitLabel(.search)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .onSubmit { if let c = suggestions.first { openFromSearch(c) } }
+            if !query.isEmpty {
+                Button { query = "" } label: {
+                    Image(systemName: "xmark.circle.fill").foregroundColor(Theme.muted)
+                }
+            }
+        }
+        .padding(12)
+        .background(Theme.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .stroke(searchFocused ? Theme.accent.opacity(0.6) : Theme.line))
+    }
+
+    @ViewBuilder private var suggestionList: some View {
+        let s = suggestions
+        if searchFocused && !s.isEmpty {
+            VStack(spacing: 0) {
+                ForEach(s) { c in
+                    Button { openFromSearch(c) } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "book.closed").font(Theme.font(.footnote)).foregroundColor(Theme.accent)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(c.prettyFull).foregroundColor(Theme.txt).multilineTextAlignment(.leading)
+                                if let sn = c.prettyShort, !sn.isEmpty {
+                                    Text(sn).font(Theme.font(.caption)).foregroundColor(Theme.muted)
+                                }
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right").font(Theme.font(.caption)).foregroundColor(Theme.muted)
+                        }
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                        .overlay(Rectangle().fill(Theme.line).frame(height: 1), alignment: .bottom)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .glowCard()
+        }
+    }
+
+    private var filterBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 22) {
+                ForEach(CourseFilter.allCases) { f in
+                    Button { filter = f } label: {
+                        Text(f.rawValue)
+                            .fontWeight(filter == f ? .semibold : .regular)
+                            .foregroundColor(filter == f ? Theme.accent : Theme.txt)
+                            .rocks(17)
+                    }
+                }
+            }
+            .padding(.horizontal, 16)      // starts at the page margin, scrolls to the screen edge
+        }
+        .padding(.horizontal, -16)
+    }
+
+    private func load() async {
+        loading = true; error = nil
+        do {
+            let r: CourseList = try await MoodleAPI.shared.call(
+                "core_course_get_enrolled_courses_by_timeline_classification",
+                ["classification": filter.classification, "limit": 0, "offset": 0, "sort": "fullname"])
+            var list = r.courses
+            if filter == .hidden && list.isEmpty {
+                let a: CourseList? = try? await MoodleAPI.shared.call(
+                    "core_course_get_enrolled_courses_by_timeline_classification",
+                    ["classification": "allincludinghidden", "limit": 0, "offset": 0, "sort": "fullname"])
+                let b: CourseList? = try? await MoodleAPI.shared.call(
+                    "core_course_get_enrolled_courses_by_timeline_classification",
+                    ["classification": "all", "limit": 0, "offset": 0, "sort": "fullname"])
+                if let a, let b {
+                    let visible = Set(b.courses.map { $0.id })
+                    list = a.courses.filter { !visible.contains($0.id) }
+                }
+            }
+            courses = list
+            favOverride = [:]
+        } catch {
+            if !(error is CancellationError), (error as? URLError)?.code != .cancelled {
+                self.error = error.localizedDescription
+            }
+        }
+        loading = false
+    }
+
+    // All enrolled courses, loaded once in the background to power the search suggestions
+    private func loadAll() async {
+        let r: CourseList? = try? await MoodleAPI.shared.call(
+            "core_course_get_enrolled_courses_by_timeline_classification",
+            ["classification": "all", "limit": 0, "offset": 0, "sort": "fullname"])
+        if let r { allCourses = r.courses }
+    }
+
+    // Star / unstar. Updates the card immediately and rolls back if Moodle refuses.
+    private func toggleStar(_ c: Course) async {
+        let now = !(favOverride[c.id] ?? c.isfavourite ?? false)
+        favOverride[c.id] = now
+        do {
+            try await MoodleAPI.shared.setFavourite(c.id, now)
+            if filter == .favourites && !now { courses.removeAll { $0.id == c.id } }
+        } catch {
+            favOverride[c.id] = !now
+            self.error = error.localizedDescription
+        }
+    }
+
+    // "Removed from view" = Moodle's own hide-course preference, so it also applies on the website.
+    private func toggleHide(_ c: Course) async {
+        let hide = filter != .hidden
+        do {
+            try await MoodleAPI.shared.setHidden(c.id, hide, userid: app.site?.userid ?? 0)
+            courses.removeAll { $0.id == c.id }
+            if hide { allCourses.removeAll { $0.id == c.id } } else { await loadAll() }
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+}
+
+struct CourseCard: View {
+    let course: Course
+    @ObservedObject private var themes = ThemeStore.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            cover.frame(height: 110).frame(maxWidth: .infinity).clipped()
+            VStack(alignment: .leading, spacing: 8) {
+                Text(course.prettyFull)
+                    .foregroundColor(Theme.txt)
+                    .multilineTextAlignment(.leading)
+                    .textGlow(radius: 3)
+                    .pixelHeading(12, normal: .subheadline.weight(.semibold), pt: 15)
+                if let p = course.progress {
+                    ProgressView(value: min(max(p, 0), 100), total: 100).tint(Theme.accent)
+                    Text("\(Int(p))% complete").font(Theme.font(.caption)).foregroundColor(Theme.muted)
+                }
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .glowCard()
+    }
+
+    @ViewBuilder private var cover: some View {
+        if let str = course.courseimage, str.hasPrefix("http"), !str.lowercased().contains(".svg"),
+           let u = MoodleAPI.shared.fileURL(str) {
+            AsyncImage(url: u) { phase in
+                switch phase {
+                case .success(let img):
+                    img.resizable().scaledToFill()
+                        .saturation(themes.theme.coverSaturation)
+                        .brightness(themes.theme.coverBrightness)
+                        .overlay {
+                            if let t = themes.theme.coverTint { Color(hex: t).opacity(0.4).blendMode(.multiply) }
+                        }
+                default: DefaultCover(course: course)
+                }
+            }
+        } else {
+            DefaultCover(course: course)
+        }
+    }
+}
+
+// Used when a course has no (usable) image: a tonal gradient picked per course, in the colours of the theme
+struct DefaultCover: View {
+    let course: Course
+    @ObservedObject private var themes = ThemeStore.shared
+
+    var body: some View {
+        let covers = themes.theme.covers
+        let p = covers[abs(course.id) % covers.count]
+        ZStack(alignment: .bottomLeading) {
+            LinearGradient(colors: [Color(hex: p.0), Color(hex: p.1)],
+                           startPoint: .topLeading, endPoint: .bottomTrailing)
+            Image(systemName: "book.closed.fill")
+                .font(.system(size: 64))
+                .foregroundColor(Theme.accent.opacity(0.16))
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                .padding(14)
+            Text(course.prettyShort ?? "")
+                .foregroundColor(themes.theme.westernHeadings ? Color.white : Theme.accent.opacity(0.92))
+                .textGlow()
+                .pixelHeading(16, normal: .system(size: 22, weight: .bold), pt: 22)
+                .lineLimit(1).minimumScaleFactor(0.5)
+                .padding(14)
+        }
+    }
+}
+
+// MARK: - Alerts
+
+// Unread-notification count shown on the Alerts tab icon
+@MainActor
+final class NotifBadgeModel: ObservableObject {
+    @Published var count = 0
+
+    func refresh(uid: Int) async {
+        do {
+            let n: Int = try await MoodleAPI.shared.call(
+                "message_popup_get_unread_popup_notification_count", ["useridto": uid])
+            count = n
+        } catch {
+            if error is CancellationError { return }
+            // Site doesn't expose the count function: count unread items in the list instead
+            if let r: NotifResp = try? await MoodleAPI.shared.call(
+                "message_popup_get_popup_notifications", ["useridto": uid]) {
+                count = r.notifications.filter { $0.read != true }.count
+            }
+        }
+    }
+}
+
+extension Notif {
+    /// Forum discussion id taken from the link (".../mod/forum/discuss.php?d=123#p456"), if it is one
+    var discussionId: Int? {
+        guard let s = contexturl, s.contains("forum/discuss.php"),
+              let items = URLComponents(string: s)?.queryItems,
+              let d = items.first(where: { $0.name == "d" })?.value else { return nil }
+        return Int(d)
+    }
+    /// Activity id from ".../mod/<type>/view.php?id=123" (assignments, pages/announcements, ...)
+    var cmid: Int? {
+        guard let s = contexturl, s.contains("/mod/"),
+              let items = URLComponents(string: s)?.queryItems,
+              let v = items.first(where: { $0.name == "id" })?.value else { return nil }
+        return Int(v)
+    }
+}
+
+struct AlertsView: View {
+    @ObservedObject var badge: NotifBadgeModel
+    @EnvironmentObject var app: AppState
+    @State private var items: [Notif] = []
+    @State private var readIds: Set<Int> = []
+    @State private var loading = true
+    @State private var error: String?
+
+    private var uid: Int { app.site?.userid ?? 0 }
+    private func isRead(_ n: Notif) -> Bool { n.read == true || readIds.contains(n.id) }
+    private var unread: Int { items.filter { !isRead($0) }.count }
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(spacing: 14) {
+                if let error { Text(error).font(Theme.font(.footnote)).foregroundColor(Theme.muted) }
+                ForEach(items) { n in
+                    let card = VStack(alignment: .leading, spacing: 4) {
+                        Text(n.subject ?? "Notification")
+                            .foregroundColor(Theme.txt).fontWeight(isRead(n) ? .regular : .semibold)
+                        if let m = n.smallmessage, !m.isEmpty {
+                            Text(m.plainText).font(Theme.font(.caption)).foregroundColor(Theme.muted).lineLimit(3)
+                        }
+                        Text(fmt(n.timecreated)).font(Theme.font(.caption2)).foregroundColor(Theme.muted)
+                    }
+                    .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(isRead(n) ? Theme.bg : Theme.surface2)
+                    .glowCard()
+
+                    if let d = n.discussionId {
+                        // Announcements / forum posts open inside the app, not the website
+                        NavigationLink { PostsView(discussionId: d, title: n.subject ?? "Announcement") } label: { card }
+                            .buttonStyle(.plain)
+                            .simultaneousGesture(TapGesture().onEnded { Task { await markRead(n) } })
+                    } else if let cm = n.cmid {
+                        // Announcements, assignments, pages...: opened with the app's own screens
+                        NavigationLink { ModuleLoaderView(cmid: cm, url: n.contexturl.flatMap { URL(string: $0) },
+                                                          title: n.subject ?? "Notification") } label: { card }
+                            .buttonStyle(.plain)
+                            .simultaneousGesture(TapGesture().onEnded { Task { await markRead(n) } })
+                    } else if let s = n.contexturl, let u = URL(string: s) {
+                        NavigationLink { WebActivityView(url: u, title: n.subject ?? "Notification") } label: { card }
+                            .buttonStyle(.plain)
+                            .simultaneousGesture(TapGesture().onEnded { Task { await markRead(n) } })
+                    } else {
+                        card.onTapGesture { Task { await markRead(n) } }
+                    }
+                }
+                if loading { ProgressView().tint(Theme.accent) }
+                else if items.isEmpty && error == nil { Text("You have no notifications").foregroundColor(Theme.muted) }
+            }
+            .padding(16)
+            .padding(.bottom, unread > 0 ? 56 : 0)   // room so the floating button never covers the last card
+        }
+        .background(Theme.bg.ignoresSafeArea())
+        .navigationTitle("Notifications")
+        .navigationBarTitleDisplayMode(.inline)
+        .overlay(alignment: .bottom) {
+            if unread > 0 {
+                Button { Task { await markAllRead() } } label: {
+                    Label("Mark all read", systemImage: "checkmark.circle.fill")
+                        .fontWeight(.semibold)
+                        .padding(.horizontal, 22)
+                        .padding(.vertical, 12)
+                        .foregroundColor(Theme.bg)
+                        .background(Theme.accent)
+                        .clipShape(Capsule())
+                        .shadow(color: .black.opacity(0.45), radius: 8, y: 3)
+                }
+                .padding(.bottom, 14)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: unread > 0)
+        .refreshable { await load() }
+        .task {
+            await OfflineCache.paintFromCache { await load() }
+            await load()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .offlineBackOnline)) { _ in Task { await load() } }
+        .onFreshData { await load() }
+    }
+
+    private func load() async {
+        guard app.site?.userid != nil else { loading = false; return }
+        do {
+            let r: NotifResp = try await MoodleAPI.shared.call(
+                "message_popup_get_popup_notifications", ["useridto": uid])
+            items = r.notifications
+            await badge.refresh(uid: uid)
+        } catch {
+            if !(error is CancellationError) { self.error = error.localizedDescription }
+        }
+        loading = false
+    }
+
+    // Opening a notification marks it read (on the server too), so the tab badge goes down
+    private func markRead(_ n: Notif) async {
+        guard !isRead(n) else { return }
+        readIds.insert(n.id)
+        badge.count = max(badge.count - 1, 0)
+        _ = try? await MoodleAPI.shared.raw("core_message_mark_notification_read", ["notificationid": n.id])
+    }
+
+    private func markAllRead() async {
+        for n in items { readIds.insert(n.id) }
+        badge.count = 0
+        _ = try? await MoodleAPI.shared.raw("core_message_mark_all_notifications_as_read", ["useridto": uid])
+    }
+}
+
+// MARK: - Profile
+
+/// Screens in Others that are opened by value, so the open one can be kept when the tabs are rebuilt for a new theme
+enum OthersRoute: Hashable { case themes }
+
+struct ProfileView: View {
+    @EnvironmentObject var app: AppState
+    @EnvironmentObject var todos: TodoStore
+    @EnvironmentObject var driveAuth: DriveAuth
+    @ObservedObject private var themes = ThemeStore.shared
+    @ObservedObject private var autoAtt = AutoAttendance.shared
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 18) {
+                VStack(spacing: 0) {
+                    NavigationLink {
+                        UserProfileView(userid: app.site?.userid ?? 0,
+                                        name: app.site?.fullname ?? "My Profile",
+                                        imageURL: app.site?.userpictureurl)
+                    } label: {
+                        ProfileRow(icon: "person.crop.circle", title: "My Profile",
+                                   subtitle: app.site?.fullname ?? "Your details", showLine: true)
+                    }
+                    NavigationLink { TodoListView() } label: {
+                        let n = todos.pending.count
+                        ProfileRow(icon: "checklist", title: "To-Do List",
+                                   subtitle: n == 0 ? "Nothing to do" : "\(n) to do", badge: n, showLine: true)
+                    }
+                    NavigationLink { CAMSCalculatorScreen() } label: {
+                        ProfileRow(icon: "function", title: "Final Exam Calculator",
+                                   subtitle: "Marks needed in the final exam", showLine: true)
+                    }
+                    NavigationLink { AutoAttendanceView() } label: {
+                        ProfileRow(icon: "checkmark.circle", title: "Auto Attendance",
+                                   subtitle: autoAtt.state.master ? "On · \(autoAtt.enabledCount) subject\(autoAtt.enabledCount == 1 ? "" : "s")" : "Off",
+                                   showLine: true)
+                    }
+                    NavigationLink { MyDriveView() } label: {
+                        ProfileRow(icon: "externaldrive", title: "My Drive",
+                                   subtitle: driveAuth.email ?? "Browse your Google Drive", showLine: true)
+                    }
+                    NavigationLink(value: OthersRoute.themes) {
+                        ProfileRow(icon: "paintpalette", title: "Themes",
+                                   subtitle: themes.theme.name, showLine: true)
+                    }
+                    OfflineSupportRow()
+                    SyncStatusRow()
+                }
+                .buttonStyle(.plain)
+                .glowCard()
+            }
+            .padding(24)
+        }
+        .background(Theme.bg.ignoresSafeArea())
+        .navigationTitle("Others")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+struct ProfileRow: View {
+    let icon: String
+    let title: String
+    let subtitle: String
+    var badge = 0
+    var showLine = true
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Image(systemName: icon).foregroundColor(Theme.accent).frame(width: 26).textGlow()
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).foregroundColor(Theme.txt).fontWeight(.semibold).textGlow(radius: 3).rocksHeading(12, pt: 18)
+                Text(subtitle).font(Theme.font(.caption)).foregroundColor(Theme.muted).lineLimit(1)
+            }
+            Spacer()
+            if badge > 0 {
+                Text("\(badge)").font(Theme.font(.caption).weight(.bold)).foregroundColor(Theme.onAccent)
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(Theme.accent).clipShape(Capsule())
+            }
+            Image(systemName: "chevron.right").font(Theme.font(.caption)).foregroundColor(Theme.muted)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .overlay(Rectangle().fill(Theme.line).frame(height: showLine ? 1 : 0), alignment: .bottom)
+    }
+}
+
+// The calculator lives on its own screen (Others > Final Exam Calculator)
+struct CAMSCalculatorScreen: View {
+    var body: some View {
+        ScrollView {
+            FinalExamCalculator().padding(16)
+        }
+        .scrollDismissesKeyboard(.interactively)
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") { hideKeyboard() }.foregroundColor(Theme.accent)
+            }
+        }
+        .background(Theme.bg.ignoresSafeArea())
+        .navigationTitle("Final Exam Calculator")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+func hideKeyboard() {
+    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+}
+
+// MARK: - Final exam calculator
+
+struct FinalExamCalculator: View {
+    private enum Weight: Hashable { case sixty, fifty, custom }
+    private enum Field { case cams, custom }
+
+    private struct GradeRow: Identifiable {
+        let id: String
+        let letter: String
+        let threshold: Double
+        let remark: String
+    }
+
+    // Lowest grade shown is B-
+    private let grades: [GradeRow] = [
+        .init(id: "A",  letter: "A",  threshold: 80, remark: "Excellent"),
+        .init(id: "A-", letter: "A-", threshold: 75, remark: "Extremely Good"),
+        .init(id: "B+", letter: "B+", threshold: 70, remark: "Very Good"),
+        .init(id: "B",  letter: "B",  threshold: 65, remark: "Good"),
+        .init(id: "B-", letter: "B-", threshold: 60, remark: "Fairly Good")
+    ]
+
+    @State private var weight: Weight = .sixty
+    @State private var customText = ""
+    @State private var camsText = ""
+    @FocusState private var focus: Field?
+
+    private func number(_ s: String) -> Double? {
+        Double(s.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: ",", with: "."))
+    }
+
+    /// CAMS total (what the coursework is marked out of)
+    private var camsTotal: Double? {
+        switch weight {
+        case .sixty: return 60
+        case .fifty: return 50
+        case .custom:
+            guard let v = number(customText), v > 0, v < 100 else { return nil }
+            return v
+        }
+    }
+    private var examTotal: Double? { camsTotal.map { 100 - $0 } }
+    private var cams: Double? { number(camsText) }
+
+    private var customInvalid: Bool {
+        weight == .custom && !customText.isEmpty && camsTotal == nil
+    }
+    private var camsInvalid: Bool {
+        guard let c = cams, let t = camsTotal else { return !camsText.isEmpty && cams == nil }
+        return c < 0 || c > t
+    }
+    private var ready: Bool { camsTotal != nil && cams != nil && !camsInvalid }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            header
+
+            weightPicker
+
+            if weight == .custom {
+                inputRow(title: "CAMS total", suffix: "marks", placeholder: "e.g. 70",
+                         text: $customText, field: .custom, invalid: customInvalid)
+            }
+
+            inputRow(title: "Your CAMS mark",
+                     suffix: camsTotal.map { "/ \(clean($0))" } ?? "/ ?",
+                     placeholder: "0", text: $camsText, field: .cams, invalid: camsInvalid)
+
+            if customInvalid {
+                hint("CAMS total must be between 1 and 99.")
+            } else if camsInvalid, let t = camsTotal {
+                hint("CAMS mark must be between 0 and \(clean(t)).")
+            }
+
+            Rectangle().fill(Theme.line).frame(height: 1)
+
+            if ready, let c = cams, let e = examTotal {
+                results(cams: c, exam: e)
+            } else {
+                Text("Enter your CAMS mark to see what you need in the final exam.")
+                    .font(Theme.font(.footnote)).foregroundColor(Theme.muted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .padding(16)
+        .glowCard()
     }
 
     // MARK: pieces
 
     private var header: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
+            Image(systemName: "function").foregroundColor(Theme.accent)
             VStack(alignment: .leading, spacing: 2) {
-                Text("Daily summary").font(Theme.font(.largeTitle).weight(.bold)).foregroundColor(Theme.txt)
-                Text("Class changes from your announcements")
-                    .font(Theme.font(.footnote)).foregroundColor(Theme.muted)
+                Text("Final Exam Calculator").font(Theme.font(.headline)).foregroundColor(Theme.txt)
+                Text("Marks needed for each grade").font(Theme.font(.caption)).foregroundColor(Theme.muted)
             }
             Spacer()
-            if store.scanning { ProgressView().tint(Theme.accent) }
-            else {
-                Button { Task { await store.scan(courses: catalog.courses, force: true) } } label: {
-                    Image(systemName: "arrow.clockwise").foregroundColor(Theme.accent)
-                }
-            }
-            Button { showAdd = true } label: {
-                Image(systemName: "plus").font(Theme.font(.body).weight(.bold))
-                    .foregroundColor(Theme.onAccent)
-                    .frame(width: 34, height: 34).background(Theme.accent).clipShape(Circle())
-            }
-        }
-    }
-
-    private var filters: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    pill("All", icon: nil, on: kindFilter == nil) { kindFilter = nil }
-                    ForEach(DailyKind.allCases) { k in
-                        pill(k.title, icon: k.icon, on: kindFilter == k) { kindFilter = (kindFilter == k ? nil : k) }
-                    }
-                }
-                .padding(.horizontal, 16)      // chips start at the page margin...
-            }
-            .padding(.horizontal, -16)         // ...but scroll all the way to the screen edge instead of being cut early
-            HStack(spacing: 10) {
-                segment("Upcoming", on: !showPast && !showRemoved) { showPast = false; showRemoved = false }
-                segment("Past", on: showPast && !showRemoved) { showPast = true; showRemoved = false }
-                segment("Removed", on: showRemoved) { showRemoved = true }
-                Spacer()
-                Menu {
-                    Button("All subjects") { courseFilter = nil }
-                    ForEach(catalog.courses) { c in
-                        Button { courseFilter = c.id } label: {
-                            if courseFilter == c.id { Label(c.subjectName, systemImage: "checkmark") }
-                            else { Text(c.subjectName) }
-                        }
-                    }
-                } label: {
-                    Image(systemName: courseFilter == nil ? "line.3.horizontal.decrease.circle"
-                                                          : "line.3.horizontal.decrease.circle.fill")
-                        .font(Theme.font(.title3)).foregroundColor(Theme.accent)
+            if focus != nil {
+                Button { focus = nil; hideKeyboard() } label: {
+                    Label("Hide keyboard", systemImage: "keyboard.chevron.compact.down")
+                        .labelStyle(.iconOnly).font(Theme.font(.title3)).foregroundColor(Theme.accent)
                 }
             }
         }
     }
 
-    private func pill(_ title: String, icon: String?, on: Bool, _ tap: @escaping () -> Void) -> some View {
-        Button(action: tap) {
-            HStack(spacing: 5) {
-                if let icon { Image(systemName: icon) }
-                Text(title)
-            }
-            .font(Theme.font(.footnote).weight(.semibold))
-            .padding(.horizontal, 12).padding(.vertical, 7)
-            .background(on ? Theme.accent : Theme.surface2)
-            .foregroundColor(on ? Theme.onAccent : Theme.txt)
-            .clipShape(Capsule())
-            .overlay(Capsule().stroke(on ? Theme.accent : Theme.line, lineWidth: 1))
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func segment(_ title: String, on: Bool, _ tap: @escaping () -> Void) -> some View {
-        Button(action: tap) {
-            Text(title).font(Theme.font(.subheadline).weight(on ? .bold : .regular))
-                .foregroundColor(on ? Theme.accent : Theme.muted)
-                .padding(.vertical, 4)
-                .overlay(Rectangle().fill(on ? Theme.accent : Color.clear).frame(height: 2), alignment: .bottom)
-        }
-        .buttonStyle(.plain)
-    }
-
-    @ViewBuilder private func menu(_ e: DailyEntry) -> some View {
-        Button { editing = e } label: { Label("Edit", systemImage: "pencil") }
-        if e.hidden == true {
-            Button { store.unhide(e.id) } label: { Label("Restore", systemImage: "arrow.uturn.backward") }
-        } else {
-            Button(role: .destructive) { withAnimation { store.remove(e.id) } } label: {
-                Label(e.source == .manual ? "Delete" : "Remove", systemImage: "trash")
+    private var weightPicker: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("CAMS is out of").font(Theme.font(.caption).weight(.medium)).foregroundColor(Theme.muted)
+            HStack(spacing: 8) {
+                chip("60", .sixty)
+                chip("50", .fifty)
+                chip("Custom", .custom)
             }
         }
     }
 
-    private var emptyState: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "calendar.badge.checkmark").font(Theme.font(.largeTitle)).foregroundColor(Theme.accent)
-            Text(showRemoved ? "Nothing removed" : (showPast ? "Nothing in the past" : "No class changes"))
-                .fontWeight(.semibold).foregroundColor(Theme.txt)
-            Text("Cancelled, online, moved or rescheduled classes found in your announcements show up here. Tap + to add your own.")
-                .font(Theme.font(.footnote)).foregroundColor(Theme.muted).multilineTextAlignment(.center)
-        }
-        .padding(.vertical, 40).frame(maxWidth: .infinity)
-    }
-}
-
-// MARK: - Row
-
-struct DailyRow: View {
-    let entry: DailyEntry
-    var isNew = false
-
-    private var when: String? {
-        var parts: [String] = []
-        if entry.kind == .rescheduled, let nd = entry.newDate {
-            if let cd = entry.classDate {
-                parts.append("From \(dayText(cd))" + (clockText(entry.startMin).map { " \($0)" } ?? ""))
-            }
-            parts.append("To \(dayText(nd))" + (clockText(entry.newStartMin).map { " \($0)" } ?? ""))
-        } else if let cd = entry.classDate {
-            parts.append(dayText(cd) + (clockText(entry.startMin).map { " · \($0)" } ?? ""))
-        } else if let t = clockText(entry.startMin) {
-            parts.append(t)
-        }
-        return parts.isEmpty ? nil : parts.joined(separator: "  →  ")
-    }
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: entry.kind.icon)
-                .font(Theme.font(.body).weight(.semibold))
-                .foregroundColor(entry.kind.color)
-                .frame(width: 34, height: 34)
-                .background(entry.kind.color.opacity(0.16))
-                .clipShape(Circle())
-
-            VStack(alignment: .leading, spacing: 5) {
-                HStack(spacing: 6) {
-                    Text(entry.kind.title).font(Theme.font(.caption).weight(.bold)).foregroundColor(entry.kind.color)
-                    if isNew {
-                        Text("NEW").font(Theme.font(.caption2).weight(.bold)).foregroundColor(Theme.onAccent)
-                            .padding(.horizontal, 5).padding(.vertical, 1).background(Theme.accent).clipShape(Capsule())
-                    }
-                    Spacer(minLength: 0)
-                    Text(entry.source == .manual ? "Added by you" : (entry.byAI == true ? "AI" : "Auto"))
-                        .font(Theme.font(.caption2)).foregroundColor(Theme.muted)
-                }
-                if let n = entry.courseName {
-                    Text(n).fontWeight(.semibold).foregroundColor(Theme.txt).multilineTextAlignment(.leading)
-                }
-                if let w = when {
-                    Label(w, systemImage: "clock").font(Theme.font(.footnote)).foregroundColor(Theme.txt)
-                }
-                if let v = entry.venue, !v.isEmpty {
-                    Label(v, systemImage: entry.kind == .online ? "video" : "mappin.and.ellipse")
-                        .font(Theme.font(.footnote)).foregroundColor(Theme.txt)
-                }
-                Text(entry.summary).font(Theme.read(.footnote)).foregroundColor(Theme.muted)
-                    .lineLimit(3).multilineTextAlignment(.leading)
-                if let n = entry.notes, !n.isEmpty {
-                    Text(n).font(Theme.read(.footnote)).foregroundColor(Theme.muted).italic()
-                }
-            }
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay(Rectangle().fill(Theme.line).frame(height: 1), alignment: .bottom)
-        .contentShape(Rectangle())
-    }
-}
-
-// MARK: - Add / edit
-
-struct DailyEditSheet: View {
-    var existing: DailyEntry? = nil
-
-    @EnvironmentObject var catalog: CourseCatalog
-    @Environment(\.dismiss) private var dismiss
-    @FocusState private var focus: Bool
-
-    @State private var kind: DailyKind
-    @State private var courseId: Int?
-    @State private var summary: String
-    @State private var notes: String
-    @State private var venue: String
-    @State private var hasDate: Bool
-    @State private var classDate: Date
-    @State private var hasTime: Bool
-    @State private var time: Date
-    @State private var hasNewDate: Bool
-    @State private var newDate: Date
-    @State private var hasNewTime: Bool
-    @State private var newTime: Date
-
-    init(existing: DailyEntry? = nil) {
-        self.existing = existing
-        let base = Calendar.current.startOfDay(for: Date())
-        _kind = State(initialValue: existing?.kind ?? .cancelled)
-        _courseId = State(initialValue: existing?.courseId)
-        _summary = State(initialValue: existing?.summary ?? "")
-        _notes = State(initialValue: existing?.notes ?? "")
-        _venue = State(initialValue: existing?.venue ?? "")
-        _hasDate = State(initialValue: existing == nil ? true : existing?.classDate != nil)
-        _classDate = State(initialValue: existing?.classDate ?? Calendar.current.date(byAdding: .day, value: 1, to: base) ?? base)
-        _hasTime = State(initialValue: existing?.startMin != nil)
-        _time = State(initialValue: minutesToDate(existing?.startMin ?? 540))
-        _hasNewDate = State(initialValue: existing?.newDate != nil)
-        _newDate = State(initialValue: existing?.newDate ?? Calendar.current.date(byAdding: .day, value: 2, to: base) ?? base)
-        _hasNewTime = State(initialValue: existing?.newStartMin != nil)
-        _newTime = State(initialValue: minutesToDate(existing?.newStartMin ?? 540))
-    }
-
-    private var subjectName: String? {
-        guard let id = courseId else { return nil }
-        if let c = catalog.courses.first(where: { $0.id == id }) { return c.subjectName }
-        return existing?.courseId == id ? existing?.courseName : nil
-    }
-    private var canSave: Bool { courseId != nil || !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    label("Type")
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-                        ForEach(DailyKind.allCases) { chip($0) }
-                    }
-
-                    label("Subject")
-                    subjectMenu
-
-                    label(kind == .rescheduled ? "Original class" : "Class on")
-                    dateRow(on: $hasDate, date: $classDate, optionalLabel: "Set date")
-                    timeRow(on: $hasTime, time: $time, optionalLabel: "Set time")
-
-                    if kind == .rescheduled {
-                        label("Moved to")
-                        dateRow(on: $hasNewDate, date: $newDate, optionalLabel: "Set new date")
-                        timeRow(on: $hasNewTime, time: $newTime, optionalLabel: "Set new time")
-                    }
-
-                    if kind == .venue || kind == .online || kind == .rescheduled {
-                        label(kind == .online ? "Platform / link (optional)" : "Room / venue (optional)")
-                        TextField("", text: $venue,
-                                  prompt: Text(kind == .online ? "e.g. Zoom, Google Meet" : "e.g. Room 3.12, KICT")
-                                      .foregroundColor(Theme.muted.opacity(0.6)))
-                            .foregroundColor(Theme.txt).focused($focus).dailyBox(focused: focus)
-                    }
-
-                    label("What changed")
-                    TextField("", text: $summary,
-                              prompt: Text("e.g. Lecture cancelled, lecturer is away").foregroundColor(Theme.muted.opacity(0.6)),
-                              axis: .vertical)
-                        .lineLimit(2...5).foregroundColor(Theme.txt).dailyBox()
-
-                    label("Notes (optional)")
-                    TextField("", text: $notes,
-                              prompt: Text("Anything else to remember").foregroundColor(Theme.muted.opacity(0.6)),
-                              axis: .vertical)
-                        .lineLimit(2...6).foregroundColor(Theme.txt).dailyBox()
-
-                    if let e = existing, e.source == .announcement, let t = e.announcementTitle {
-                        Text("From the announcement: \(t)").font(Theme.font(.caption)).foregroundColor(Theme.muted)
-                    }
-                }
-                .padding(16)
-            }
-            .scrollDismissesKeyboard(.interactively)
-            .background(Theme.bg.ignoresSafeArea())
-            .navigationTitle(existing == nil ? "Add class change" : "Edit class change")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") { dismiss() }.foregroundColor(Theme.muted)
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Save") { save() }.fontWeight(.semibold).disabled(!canSave)
-                }
-            }
-        }
-        .preferredColorScheme(ThemeStore.shared.theme.scheme)
-        .task { await catalog.loadIfNeeded() }
-    }
-
-    private func label(_ s: String) -> some View {
-        Text(s).font(Theme.font(.caption).weight(.medium)).foregroundColor(Theme.muted)
-    }
-
-    private func chip(_ k: DailyKind) -> some View {
-        let on = kind == k
-        return Button { kind = k } label: {
-            Label(k.title, systemImage: k.icon)
+    private func chip(_ title: String, _ value: Weight) -> some View {
+        let on = weight == value
+        return Button {
+            weight = value
+            focus = nil
+        } label: {
+            Text(title)
                 .font(Theme.font(.subheadline).weight(.semibold))
                 .frame(maxWidth: .infinity).padding(.vertical, 10)
                 .background(on ? Theme.accent : Theme.surface2)
@@ -608,69 +883,78 @@ struct DailyEditSheet: View {
         .buttonStyle(.plain)
     }
 
-    private var subjectMenu: some View {
-        Menu {
-            Button("No subject") { courseId = nil }
-            ForEach(catalog.courses) { c in
-                Button { courseId = c.id } label: {
-                    if courseId == c.id { Label(c.subjectName, systemImage: "checkmark") }
-                    else { Text(c.subjectName) }
+    private func inputRow(title: String, suffix: String, placeholder: String,
+                          text: Binding<String>, field: Field, invalid: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title).font(Theme.font(.caption).weight(.medium)).foregroundColor(Theme.muted)
+            HStack {
+                TextField("", text: text, prompt: Text(placeholder).foregroundColor(Theme.muted.opacity(0.6)))
+                    .keyboardType(.decimalPad)
+                    .focused($focus, equals: field)
+                    .foregroundColor(Theme.txt)
+                Text(suffix).foregroundColor(Theme.muted).font(Theme.font(.subheadline))
+            }
+            .padding(.horizontal, 12).padding(.vertical, 12)
+            .background(Theme.surface2)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(invalid ? Color.red.opacity(0.7) : (focus == field ? Theme.accent : Theme.line), lineWidth: 1))
+        }
+    }
+
+    private func hint(_ s: String) -> some View {
+        Text(s).font(Theme.font(.footnote)).foregroundColor(.red.opacity(0.85))
+    }
+
+    private func results(cams: Double, exam: Double) -> some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Grade").frame(width: 56, alignment: .leading)
+                Text("Remark")
+                Spacer()
+                Text("Exam needed (/\(clean(exam)))")
+            }
+            .font(Theme.font(.caption).weight(.medium)).foregroundColor(Theme.muted)
+            .padding(.horizontal, 12).padding(.vertical, 8)
+            .background(Theme.titleBar)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+            ForEach(Array(grades.enumerated()), id: \.element.id) { i, g in
+                let needed = ceil((g.threshold - cams) * 100) / 100
+                HStack {
+                    Text(g.letter).font(Theme.font(.headline)).foregroundColor(Theme.accent)
+                        .frame(width: 56, alignment: .leading)
+                    Text(g.remark).font(Theme.font(.footnote)).foregroundColor(Theme.muted)
+                    Spacer()
+                    outcome(needed: needed, exam: exam)
+                }
+                .padding(.horizontal, 12).padding(.vertical, 12)
+                if i < grades.count - 1 {
+                    Rectangle().fill(Theme.line).frame(height: 1)
                 }
             }
-        } label: {
-            HStack {
-                Text(subjectName ?? (catalog.loaded ? "Choose subject" : "Loading subjects…"))
-                    .foregroundColor(subjectName == nil ? Theme.muted : Theme.txt)
-                Spacer()
-                Image(systemName: "chevron.up.chevron.down").font(Theme.font(.caption)).foregroundColor(Theme.muted)
-            }
-            .dailyBox()
         }
     }
 
-    private func dateRow(on: Binding<Bool>, date: Binding<Date>, optionalLabel: String) -> some View {
-        HStack {
-            Toggle(optionalLabel, isOn: on).tint(Theme.accent).foregroundColor(Theme.txt)
-            if on.wrappedValue {
-                DatePicker("", selection: date, displayedComponents: .date).labelsHidden().tint(Theme.accent)
+    @ViewBuilder
+    private func outcome(needed: Double, exam: Double) -> some View {
+        if needed <= 0 {
+            Label("Secured", systemImage: "checkmark.circle.fill")
+                .font(Theme.font(.subheadline).weight(.semibold)).foregroundColor(Theme.accent)
+        } else if needed > exam {
+            Text("Not achievable").font(Theme.font(.subheadline)).foregroundColor(.red.opacity(0.8))
+        } else {
+            VStack(alignment: .trailing, spacing: 1) {
+                Text("\(clean(needed / exam * 100))%")
+                    .font(Theme.font(.subheadline).weight(.semibold)).foregroundColor(Theme.txt)
+                Text("\(clean(needed)) / \(clean(exam))")
+                    .font(Theme.font(.caption2)).foregroundColor(Theme.muted)
             }
         }
-        .dailyBox()
     }
 
-    private func timeRow(on: Binding<Bool>, time: Binding<Date>, optionalLabel: String) -> some View {
-        HStack {
-            Toggle(optionalLabel, isOn: on).tint(Theme.accent).foregroundColor(Theme.txt)
-            if on.wrappedValue {
-                DatePicker("", selection: time, displayedComponents: .hourAndMinute).labelsHidden().tint(Theme.accent)
-            }
-        }
-        .dailyBox()
-    }
-
-    private func save() {
-        let cal = Calendar.current
-        let s = summary.trimmingCharacters(in: .whitespacesAndNewlines)
-        let n = notes.trimmingCharacters(in: .whitespacesAndNewlines)
-        let v = venue.trimmingCharacters(in: .whitespacesAndNewlines)
-        let cd = hasDate ? cal.startOfDay(for: classDate) : nil
-        let nd = (kind == .rescheduled && hasNewDate) ? cal.startOfDay(for: newDate) : nil
-        var e = existing ?? DailyEntry(
-            id: "m" + UUID().uuidString, kind: kind, courseId: nil, courseName: nil, summary: "",
-            classDate: nil, startMin: nil, newDate: nil, newStartMin: nil, venue: nil, notes: nil,
-            source: .manual, byAI: nil, discussionId: nil, announcementTitle: nil, postedAt: Date(),
-            edited: nil, hidden: nil, updated: Date())
-        e.kind = kind
-        e.courseId = courseId
-        e.courseName = subjectName
-        e.summary = s.isEmpty ? kind.title : s
-        e.classDate = cd
-        e.startMin = hasTime ? dateToMinutes(time) : nil
-        e.newDate = nd
-        e.newStartMin = (kind == .rescheduled && hasNewTime) ? dateToMinutes(newTime) : nil
-        e.venue = (kind == .venue || kind == .online || kind == .rescheduled) && !v.isEmpty ? v : nil
-        e.notes = n.isEmpty ? nil : n
-        if existing == nil { DailyInfoStore.shared.add(e) } else { DailyInfoStore.shared.update(e) }
-        dismiss()
+    private func clean(_ v: Double) -> String {
+        let r = (v * 100).rounded() / 100
+        return r == r.rounded() ? String(Int(r)) : String(format: "%.2f", r).replacingOccurrences(of: "0+$", with: "", options: .regularExpression)
     }
 }
