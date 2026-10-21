@@ -2,7 +2,7 @@ import SwiftUI
 
 // MARK: - Daily Summary
 //
-// A page next to "My courses" (swipe left) listing changes to classes: cancelled, online, another venue,
+// A page next to "My courses" (swipe right) listing changes to classes: cancelled, online, another venue,
 // rescheduled (and other short notices). Entries come from two places:
 //   1. The announcements of every subject. Each new announcement is read by AI (Workers AI, through the same
 //      free Cloudflare server as Auto Attendance: Server/worker.js, POST /classify). When the server isn't set up,

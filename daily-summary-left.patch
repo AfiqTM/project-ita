@@ -1,0 +1,93 @@
+diff --git a/Sources/DailyInfo.swift b/Sources/DailyInfo.swift
+--- a/Sources/DailyInfo.swift	2026-10-21 17:22:02.000000000 +0000
++++ b/Sources/DailyInfo.swift	2026-10-21 17:32:59.783076312 +0000
+@@ -2,7 +2,7 @@
+ 
+ // MARK: - Daily Summary
+ //
+-// A page next to "My courses" (swipe left) listing changes to classes: cancelled, online, another venue,
++// A page next to "My courses" (swipe right) listing changes to classes: cancelled, online, another venue,
+ // rescheduled (and other short notices). Entries come from two places:
+ //   1. The announcements of every subject. Each new announcement is read by AI (Workers AI, through the same
+ //      free Cloudflare server as Auto Attendance: Server/worker.js, POST /classify). When the server isn't set up,
+diff --git a/Sources/DailyInfoView.swift b/Sources/DailyInfoView.swift
+--- a/Sources/DailyInfoView.swift	2026-10-21 17:22:02.000000000 +0000
++++ b/Sources/DailyInfoView.swift	2026-10-21 17:32:59.782139968 +0000
+@@ -32,40 +32,57 @@
+     }
+ }
+ 
+-// MARK: - Page container: My courses (left)  <-  swipe right to left  ->  Daily summary (right)
++// MARK: - Page container: Daily summary (left)  <-  swipe left to right  ->  My courses (right)
+ //
+-// A paged view inside the first tab. Swipe right-to-left on My courses to open Daily summary; swipe left-to-right
+-// to come back. The tab bar slides away while Daily summary is open and returns with My courses.
++// A paged view inside the first tab. My courses is the home page; swipe left-to-right on it to open Daily summary,
++// which sits to its left. Swipe right-to-left to come back. The tab bar slides away while Daily summary is open
++// and returns with My courses.
+ //
+ // Why the pager ignores the bottom safe area: if it did not, showing/hiding the tab bar would change the
+ // pager's height and both pages would re-layout in the middle of the transition (that was the lag), and My courses
+ // would stop just above the floating tab bar with the window's black showing underneath. Now the pager always
+ // fills the screen, pages scroll underneath the bar, and My courses leaves its own room at the bottom.
++//
++// The tab bar is only hidden once the swipe has finished. Hiding it the moment the page index flips (halfway
++// through the swipe) made the bar collapse into an empty pill and flashed black behind the sliding pages.
+ 
+ struct CoursesHome: View {
+     @EnvironmentObject var catalog: CourseCatalog
+     @ObservedObject private var store = DailyInfoStore.shared
+     @Environment(\.scenePhase) private var scenePhase
+-    @State private var page = 0
++    @State private var page = 1            // 0 = Daily summary (left), 1 = My courses (right, home)
+     @State private var barHidden = false
++    @State private var hideTask: Task<Void, Never>?
+ 
+     /// Room kept free at the bottom of My courses so the last card can scroll up clear of the tab bar
+     private let tabBarClearance: CGFloat = 96
+ 
+     var body: some View {
+         TabView(selection: $page) {
++            DailyInfoView().tag(0)
+             CoursesView()
+                 .safeAreaInset(edge: .bottom, spacing: 0) { Color.clear.frame(height: tabBarClearance) }
+-                .tag(0)
+-            DailyInfoView().tag(1)
++                .tag(1)
+         }
+         .tabViewStyle(.page(indexDisplayMode: .never))
+         .ignoresSafeArea(.container, edges: .bottom)   // pager size never depends on the tab bar
+         .background(Theme.bg.ignoresSafeArea())
+         .toolbar(barHidden ? .hidden : .visible, for: .tabBar)
+         .onChange(of: page) { new in
+-            if new == 0 { store.markAllSeen() }
+-            withAnimation(.easeInOut(duration: 0.25)) { barHidden = (new == 1) }
++            hideTask?.cancel()
++            if new == 1 {
++                store.markAllSeen()
++                var t = Transaction(); t.disablesAnimations = true
++                withTransaction(t) { barHidden = false }      // back on My courses: bar returns at once
++            } else {
++                // Daily summary: wait for the swipe to settle, then drop the bar (no extra animation)
++                hideTask = Task { @MainActor in
++                    try? await Task.sleep(nanoseconds: 350_000_000)
++                    guard !Task.isCancelled, page == 0 else { return }
++                    var t = Transaction(); t.disablesAnimations = true
++                    withTransaction(t) { barHidden = true }
++                }
++            }
+         }
+         .task {
+             await catalog.loadIfNeeded()
+diff --git a/Sources/MainViews.swift b/Sources/MainViews.swift
+--- a/Sources/MainViews.swift	2026-10-21 17:22:02.000000000 +0000
++++ b/Sources/MainViews.swift	2026-10-21 17:32:59.782716350 +0000
+@@ -17,7 +17,7 @@
+ 
+     var body: some View {
+         TabView(selection: $tab) {
+-            NavigationStack { CoursesHome() }   // My courses, swipe left for Daily summary (DailyInfoView.swift)
++            NavigationStack { CoursesHome() }   // My courses, swipe right for Daily summary (DailyInfoView.swift)
+                 .tabItem { Label("My courses", systemImage: "books.vertical") }
+                 .tag(0)
+             NavigationStack { AssignmentsTabView(model: assignments) }

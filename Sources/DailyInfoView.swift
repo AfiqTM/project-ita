@@ -32,40 +32,57 @@ private extension View {
     }
 }
 
-// MARK: - Page container: My courses (left)  <-  swipe right to left  ->  Daily summary (right)
+// MARK: - Page container: Daily summary (left)  <-  swipe left to right  ->  My courses (right)
 //
-// A paged view inside the first tab. Swipe right-to-left on My courses to open Daily summary; swipe left-to-right
-// to come back. The tab bar slides away while Daily summary is open and returns with My courses.
+// A paged view inside the first tab. My courses is the home page; swipe left-to-right on it to open Daily summary,
+// which sits to its left. Swipe right-to-left to come back. The tab bar slides away while Daily summary is open
+// and returns with My courses.
 //
 // Why the pager ignores the bottom safe area: if it did not, showing/hiding the tab bar would change the
 // pager's height and both pages would re-layout in the middle of the transition (that was the lag), and My courses
 // would stop just above the floating tab bar with the window's black showing underneath. Now the pager always
 // fills the screen, pages scroll underneath the bar, and My courses leaves its own room at the bottom.
+//
+// The tab bar is only hidden once the swipe has finished. Hiding it the moment the page index flips (halfway
+// through the swipe) made the bar collapse into an empty pill and flashed black behind the sliding pages.
 
 struct CoursesHome: View {
     @EnvironmentObject var catalog: CourseCatalog
     @ObservedObject private var store = DailyInfoStore.shared
     @Environment(\.scenePhase) private var scenePhase
-    @State private var page = 0
+    @State private var page = 1            // 0 = Daily summary (left), 1 = My courses (right, home)
     @State private var barHidden = false
+    @State private var hideTask: Task<Void, Never>?
 
     /// Room kept free at the bottom of My courses so the last card can scroll up clear of the tab bar
     private let tabBarClearance: CGFloat = 96
 
     var body: some View {
         TabView(selection: $page) {
+            DailyInfoView().tag(0)
             CoursesView()
                 .safeAreaInset(edge: .bottom, spacing: 0) { Color.clear.frame(height: tabBarClearance) }
-                .tag(0)
-            DailyInfoView().tag(1)
+                .tag(1)
         }
         .tabViewStyle(.page(indexDisplayMode: .never))
         .ignoresSafeArea(.container, edges: .bottom)   // pager size never depends on the tab bar
         .background(Theme.bg.ignoresSafeArea())
         .toolbar(barHidden ? .hidden : .visible, for: .tabBar)
         .onChange(of: page) { new in
-            if new == 0 { store.markAllSeen() }
-            withAnimation(.easeInOut(duration: 0.25)) { barHidden = (new == 1) }
+            hideTask?.cancel()
+            if new == 1 {
+                store.markAllSeen()
+                var t = Transaction(); t.disablesAnimations = true
+                withTransaction(t) { barHidden = false }      // back on My courses: bar returns at once
+            } else {
+                // Daily summary: wait for the swipe to settle, then drop the bar (no extra animation)
+                hideTask = Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 350_000_000)
+                    guard !Task.isCancelled, page == 0 else { return }
+                    var t = Transaction(); t.disablesAnimations = true
+                    withTransaction(t) { barHidden = true }
+                }
+            }
         }
         .task {
             await catalog.loadIfNeeded()
