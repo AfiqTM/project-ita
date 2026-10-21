@@ -35,33 +35,26 @@ private extension View {
 // MARK: - Page container: Daily summary (left)  <-  swipe left to right  ->  My courses (right)
 //
 // A paged view inside the first tab. My courses is the home page; swipe left-to-right on it to open Daily summary,
-// which sits to its left. Swipe right-to-left to come back. The tab bar slides away while Daily summary is open
-// and returns with My courses.
+// which sits to its left. Swipe right-to-left to come back.
 //
-// Why the pager ignores the bottom safe area: if it did not, showing/hiding the tab bar would change the
-// pager's height and both pages would re-layout in the middle of the transition (that was the lag), and My courses
-// would stop just above the floating tab bar with the window's black showing underneath. Now the pager always
-// fills the screen, pages scroll underneath the bar, and My courses leaves its own room at the bottom.
+// The tab bar is NOT hidden through SwiftUI's .toolbar(.hidden, for: .tabBar). That changes the page's safe area,
+// so after the swipe had finished the bar disappeared late (a fixed wait) and Daily summary jumped down by the
+// bar's inset the moment it did. Instead PagerTabBarLink (below) slides and fades the UIKit tab bar by the pager's
+// own scroll offset: the bar leaves exactly with the finger, and no layout ever changes.
 //
-// The tab bar is only hidden once the swipe has finished. Hiding it the moment the page index flips (halfway
-// through the swipe) made the bar collapse into an empty pill and flashed black behind the sliding pages.
+// The pager ignores the top and bottom safe area and always fills the screen; pages scroll underneath the status
+// bar (soft fade) and the tab bar, and My courses keeps its own room at the bottom.
 
 struct CoursesHome: View {
     @EnvironmentObject var catalog: CourseCatalog
     @ObservedObject private var store = DailyInfoStore.shared
     @Environment(\.scenePhase) private var scenePhase
     @State private var page = 1            // 0 = Daily summary (left), 1 = My courses (right, home)
-    @State private var barHidden = false
-    @State private var hideTask: Task<Void, Never>?
 
     /// Room kept free at the bottom of My courses so the last card can scroll up clear of the tab bar
     private let tabBarClearance: CGFloat = 96
 
     var body: some View {
-        // The pager fills the whole screen, top included, so scrolling content slides up under the status bar and
-        // fades out. Before, the pager stopped at the safe area, which cut the greeting ("Hello, ...") off along a
-        // hard line just below the status bar while scrolling. Each page keeps its resting position with its own
-        // top room, measured here before the safe area is ignored.
         GeometryReader { geo in
             let top = geo.safeAreaInsets.top
             TabView(selection: $page) {
@@ -74,8 +67,10 @@ struct CoursesHome: View {
                     .tag(1)
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
+            .noBottomEdgeEffect()                                   // no system band behind the floating tab bar
             .ignoresSafeArea(.container, edges: [.top, .bottom])   // pager size never depends on the bars
             .background(Theme.bg.ignoresSafeArea())
+            .background(PagerTabBarLink(page: page).allowsHitTesting(false))
             .overlay(alignment: .top) {
                 // soft fade under the status bar instead of a hard cut
                 LinearGradient(colors: [Theme.bg.opacity(0.92), Theme.bg.opacity(0)], startPoint: .top, endPoint: .bottom)
@@ -84,22 +79,8 @@ struct CoursesHome: View {
                     .allowsHitTesting(false)
             }
         }
-        .toolbar(barHidden ? .hidden : .visible, for: .tabBar)
         .onChange(of: page) { new in
-            hideTask?.cancel()
-            if new == 1 {
-                store.markAllSeen()
-                var t = Transaction(); t.disablesAnimations = true
-                withTransaction(t) { barHidden = false }      // back on My courses: bar returns at once
-            } else {
-                // Daily summary: wait for the swipe to settle, then drop the bar (no extra animation)
-                hideTask = Task { @MainActor in
-                    try? await Task.sleep(nanoseconds: 350_000_000)
-                    guard !Task.isCancelled, page == 0 else { return }
-                    var t = Transaction(); t.disablesAnimations = true
-                    withTransaction(t) { barHidden = true }
-                }
-            }
+            if new == 1 { store.markAllSeen() }
         }
         .task {
             await catalog.loadIfNeeded()
@@ -111,6 +92,138 @@ struct CoursesHome: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .offlineBackOnline)) { _ in
             Task { await store.scan(courses: catalog.courses, force: true) }
+        }
+    }
+}
+
+extension View {
+    /// iOS 26 puts a system "edge effect" under floating bars. On this app's pure-black pages it showed up as a thin
+    /// black band at the very bottom, behind the tab bar. Hidden for the bottom edge only (iOS 26+, Xcode 26+).
+    @ViewBuilder func noBottomEdgeEffect() -> some View {
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *) { self.scrollEdgeEffectHidden(true, for: .bottom) } else { self }
+        #else
+        self
+        #endif
+    }
+}
+
+// MARK: - Tab bar follows the pager
+
+/// Slides and fades the system tab bar in step with the pager's swipe (0 = Daily summary: gone, 1 = My courses:
+/// shown). It watches the contentOffset of the pager's paging scroll view. Only the bar's transform and alpha are
+/// touched (never the SwiftUI toolbar visibility), so nothing is re-laid out and no page moves.
+/// If the pager's scroll view can't be found it falls back to a short slide when the page changes.
+private struct PagerTabBarLink: UIViewRepresentable {
+    let page: Int
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeUIView(context: Context) -> ProbeView {
+        let v = ProbeView()
+        v.isUserInteractionEnabled = false
+        v.backgroundColor = .clear
+        let c = context.coordinator
+        c.desiredPage = page
+        v.windowChanged = { [weak c, weak v] in
+            guard let c, let v else { return }
+            if v.window != nil { c.attach(from: v, tries: 6) } else { c.release() }
+        }
+        return v
+    }
+
+    func updateUIView(_ v: ProbeView, context: Context) {
+        context.coordinator.settle(page: page)
+    }
+
+    static func dismantleUIView(_ v: ProbeView, coordinator: Coordinator) { coordinator.release() }
+
+    final class ProbeView: UIView {
+        var windowChanged: (() -> Void)?
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            windowChanged?()
+        }
+    }
+
+    final class Coordinator {
+        var desiredPage = 1
+        private weak var tabBar: UITabBar?
+        private weak var pager: UIScrollView?
+        private var observation: NSKeyValueObservation?
+        private var index = 1            // page the pager rests on (0 = Daily summary, 1 = My courses)
+        private var lastDelta: CGFloat = 0
+
+        func attach(from view: UIView, tries: Int) {
+            guard let window = view.window else { return }
+            // the window's own black must match the page colour, or any gap shows as a black band
+            window.backgroundColor = UIColor(Theme.bg)
+            tabBar = Self.find(UITabBar.self, in: window) { _ in true }
+            pager = Self.find(UIScrollView.self, in: window) { sv in
+                sv.isPagingEnabled
+                    && abs(sv.bounds.width - window.bounds.width) < 2
+                    && sv.contentSize.width > sv.bounds.width * 1.5
+                    && sv.contentSize.height <= sv.bounds.height + 1
+            }
+            index = desiredPage
+            lastDelta = 0
+            observation = nil
+            if let pager {
+                observation = pager.observe(\.contentOffset, options: [.new]) { [weak self] sv, _ in
+                    self?.scrolled(sv)
+                }
+            } else if tries > 0 {
+                // the pager isn't laid out yet: look again shortly
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self, weak view] in
+                    guard let self, let view else { return }
+                    self.attach(from: view, tries: tries - 1)
+                }
+            }
+            apply(CGFloat(index))
+        }
+
+        /// The SwiftUI page changed (swipe finished): make sure the bar rests exactly where it belongs.
+        func settle(page: Int) {
+            desiredPage = page
+            if observation == nil {
+                // fallback, no live tracking: short slide
+                UIView.animate(withDuration: 0.2) { self.apply(CGFloat(page)) }
+            } else if abs(lastDelta) < 0.001 {
+                index = page
+                apply(CGFloat(page))
+            }
+        }
+
+        func release() {
+            observation = nil
+            apply(1)
+        }
+
+        private func scrolled(_ sv: UIScrollView) {
+            let w = sv.bounds.width
+            guard w > 0 else { return }
+            // -1...1 around the resting position; negative = dragging towards the page on the left
+            let delta = (sv.contentOffset.x - w) / w
+            // When a page change finishes the pager re-centres itself and the offset jumps by about one page
+            let jump = delta - lastDelta
+            if jump > 0.5 { index -= 1 } else if jump < -0.5 { index += 1 }
+            lastDelta = delta
+            apply(CGFloat(index) + delta)
+        }
+
+        private func apply(_ progress: CGFloat) {
+            guard let bar = tabBar else { return }
+            let p = min(max(progress, 0), 1)
+            bar.alpha = p
+            bar.transform = CGAffineTransform(translationX: 0, y: (1 - p) * (bar.bounds.height + 40))
+            bar.isUserInteractionEnabled = p > 0.99
+            bar.accessibilityElementsHidden = p < 0.5
+        }
+
+        private static func find<T: UIView>(_ type: T.Type, in root: UIView, where ok: (T) -> Bool) -> T? {
+            if let t = root as? T, ok(t) { return t }
+            for s in root.subviews { if let f = find(type, in: s, where: ok) { return f } }
+            return nil
         }
     }
 }
@@ -224,7 +337,9 @@ struct DailyInfoView: View {
                         pill(k.title, icon: k.icon, on: kindFilter == k) { kindFilter = (kindFilter == k ? nil : k) }
                     }
                 }
+                .padding(.horizontal, 16)      // chips start at the page margin...
             }
+            .padding(.horizontal, -16)         // ...but scroll all the way to the screen edge instead of being cut early
             HStack(spacing: 10) {
                 segment("Upcoming", on: !showPast && !showRemoved) { showPast = false; showRemoved = false }
                 segment("Past", on: showPast && !showRemoved) { showPast = true; showRemoved = false }
