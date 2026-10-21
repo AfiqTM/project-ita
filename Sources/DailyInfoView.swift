@@ -198,8 +198,12 @@ private struct PagerTabBarLink: UIViewRepresentable {
         func settle(page: Int) {
             desiredPage = page
             if observation == nil {
-                // fallback, no live tracking: short slide
-                UIView.animate(withDuration: 0.2) { self.apply(CGFloat(page)) }
+                // fallback, no live tracking: short slide. Only the transform is animated: animating alpha too
+                // left the glass bar half see-through (grey ghost) while it moved.
+                let p = CGFloat(page)
+                if page == 1 { tabBar?.alpha = 1 }
+                UIView.animate(withDuration: 0.2, animations: { self.slide(p) },
+                               completion: { _ in self.apply(p) })
             } else if abs(lastDelta) < 0.001 {
                 index = page
                 apply(CGFloat(page))
@@ -221,6 +225,12 @@ private struct PagerTabBarLink: UIViewRepresentable {
             if jump > 0.5 { index -= 1 } else if jump < -0.5 { index += 1 }
             lastDelta = delta
             apply(CGFloat(index) + delta)
+        }
+
+        private func slide(_ progress: CGFloat) {
+            guard let bar = tabBar else { return }
+            let p = min(max(progress, 0), 1)
+            bar.transform = CGAffineTransform(translationX: 0, y: (1 - p) * (bar.bounds.height + 40))
         }
 
         private func apply(_ progress: CGFloat) {
