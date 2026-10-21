@@ -37,10 +37,11 @@ private extension View {
 // A paged view inside the first tab. My courses is the home page; swipe left-to-right on it to open Daily summary,
 // which sits to its left. Swipe right-to-left to come back.
 //
-// The tab bar is NOT hidden through SwiftUI's .toolbar(.hidden, for: .tabBar) (that re-lays out the page), and it
-// is NOT tracked frame by frame against the pager (that lost track of the page and made the bar jump). Instead
-// PagerTabBarLink (below) slides the UIKit tab bar down / up with one ordinary timed animation whenever the page
-// changes. The animation can be interrupted by a quick swipe back, and it always ends in the right place.
+// The tab bar is NOT hidden through SwiftUI's .toolbar(.hidden, for: .tabBar) (that re-lays out the page).
+// PagerTabBarLink (below) owns the bar's position instead: it keeps its own progress value (0 = hidden, 1 = shown),
+// eases it towards the current page on every screen refresh, and writes the result to the bar each time. Because
+// the bar is rewritten every frame, nothing else (UIKit layout, SwiftUI updates, the view moving in and out of the
+// window) can leave it in a wrong spot for even one frame, and a quick swipe back simply reverses the motion.
 //
 // The pager ignores the top and bottom safe area and always fills the screen; pages scroll underneath the status
 // bar (soft fade) and the tab bar, and My courses keeps its own room at the bottom.
@@ -122,7 +123,7 @@ extension View {
 
 // MARK: - Tab bar slides with the page
 
-/// Slides the system tab bar away when Daily summary (page 0) is showing and back when My courses (page 1) is.
+/// Moves the system tab bar away when Daily summary (page 0) is showing and back when My courses (page 1) is.
 /// Only the bar's transform and alpha are touched (never the SwiftUI toolbar visibility), so nothing is re-laid
 /// out and no page moves.
 private struct PagerTabBarLink: UIViewRepresentable {
@@ -135,17 +136,15 @@ private struct PagerTabBarLink: UIViewRepresentable {
         v.isUserInteractionEnabled = false
         v.backgroundColor = .clear
         let c = context.coordinator
-        c.page = page
-        v.windowChanged = { [weak c, weak v] in
-            guard let c, let v else { return }
-            if v.window != nil { c.attach(from: v) } else { c.release() }
-        }
+        c.probe = v
+        c.set(page: page)
+        v.windowChanged = { [weak c] in c?.windowChanged() }
         return v
     }
 
     func updateUIView(_ v: ProbeView, context: Context) { context.coordinator.set(page: page) }
 
-    static func dismantleUIView(_ v: ProbeView, coordinator: Coordinator) { coordinator.release() }
+    static func dismantleUIView(_ v: ProbeView, coordinator: Coordinator) { coordinator.stop(restoreBar: true) }
 
     final class ProbeView: UIView {
         var windowChanged: (() -> Void)?
@@ -155,74 +154,108 @@ private struct PagerTabBarLink: UIViewRepresentable {
         }
     }
 
+    /// CADisplayLink keeps its target alive: this lets the coordinator go away normally.
+    private final class LinkProxy: NSObject {
+        weak var owner: Coordinator?
+        init(_ owner: Coordinator) { self.owner = owner }
+        @objc func tick(_ link: CADisplayLink) { owner?.tick(link) }
+    }
+
     final class Coordinator {
-        var page = 1                          // what SwiftUI says is showing: 0 = Daily summary, 1 = My courses
-        private weak var tabBar: UITabBar?
+        weak var probe: UIView?
         private weak var window: UIWindow?
-        private var shownPage: Int?           // the page the bar was last sent to (nil = not placed yet)
+        private weak var tabBar: UITabBar?
+        private var link: CADisplayLink?
 
-        func attach(from view: UIView) {
-            guard let window = view.window else { return }
-            self.window = window
-            // the window's own black must match the page colour, or any gap shows as a black band
-            window.backgroundColor = UIColor(Theme.bg)
-            findBar(tries: 8)
+        private var target: CGFloat = 1          // 0 = Daily summary (bar hidden), 1 = My courses (bar shown)
+        private var progress: CGFloat = 1        // where the bar is now, 0...1
+        private var attached = false             // false until the first time the view is in a window
+        private var detachedFor: CGFloat = 0     // seconds the view has been out of its window
+        private var busyFrames = 0               // frames left at full speed after a change
+
+        private let slideSeconds: CGFloat = 0.28
+
+        /// SwiftUI says which page is showing.
+        func set(page: Int) {
+            let t: CGFloat = page == 0 ? 0 : 1
+            if t == target { return }
+            target = t
+            if !attached { progress = t }        // before first appearance: no slide, just start in the right state
+            wake()
         }
 
-        private func findBar(tries: Int) {
-            guard let window else { return }
-            if let bar = Self.findTabBar(in: window) {
-                tabBar = bar
-                shownPage = nil
-                place(page, animated: false)     // right state at once, no slide on first appearance
-            } else if tries > 0 {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
-                    self?.findBar(tries: tries - 1)
-                }
+        func windowChanged() {
+            if let w = probe?.window {
+                window = w
+                // the window's own black must match the page colour, or any gap shows as a black band
+                w.backgroundColor = UIColor(Theme.bg)
+                if !attached { attached = true; progress = target }
+                detachedFor = 0
+                startLink()
+                wake()
             }
+            // Out of the window: keep running; tick() restores the bar if it stays away
         }
 
-        /// SwiftUI's page changed (or SwiftUI refreshed the view): move the bar only if it isn't already there.
-        func set(page new: Int) {
-            page = new
-            guard tabBar != nil, shownPage != new else { return }
-            place(new, animated: true)
+        private func startLink() {
+            guard link == nil else { return }
+            let l = CADisplayLink(target: LinkProxy(self), selector: #selector(LinkProxy.tick(_:)))
+            l.add(to: .main, forMode: .common)
+            link = l
         }
 
-        /// Leaving the screen (another tab, a pushed screen, a theme change): give the bar back.
-        func release() {
-            place(1, animated: false)
-            shownPage = nil
+        private func wake() {
+            busyFrames = 90
+            link?.preferredFramesPerSecond = 0   // display's full rate
         }
 
-        private func place(_ target: Int, animated: Bool) {
+        func stop(restoreBar: Bool) {
+            link?.invalidate()
+            link = nil
+            if restoreBar { progress = 1; target = 1; write(1) }
+        }
+
+        fileprivate func tick(_ link: CADisplayLink) {
+            let dt = CGFloat(max(link.targetTimestamp - link.timestamp, 1.0 / 120.0))
+
+            // Out of the window for a while (another tab, a pushed screen): hand the bar back and rest.
+            if probe?.window == nil {
+                detachedFor += dt
+                if detachedFor > 0.4 { stop(restoreBar: true); return }
+            } else {
+                detachedFor = 0
+            }
+
+            // Find the bar (it may not exist yet, or may have been rebuilt)
+            if tabBar == nil || tabBar?.window == nil, let w = window ?? probe?.window {
+                tabBar = Self.findTabBar(in: w)
+            }
+
+            if progress != target {
+                let step = dt / slideSeconds
+                progress = target > progress ? min(progress + step, target) : max(progress - step, target)
+                busyFrames = 90
+            }
+            write(progress)
+
+            // Settled: drop to a light rate that still keeps the bar where it belongs
+            if busyFrames > 0 { busyFrames -= 1 } else { link.preferredFramesPerSecond = 15 }
+        }
+
+        /// Puts the bar at `p` (0 = fully away, 1 = resting). Written every refresh, only changed when different.
+        private func write(_ p: CGFloat) {
             guard let bar = tabBar else { return }
-            shownPage = target
-            let hide = (target == 0)
-            let away = CGAffineTransform(translationX: 0, y: bar.bounds.height + 40)
-            bar.layer.removeAllAnimations()
-
-            if !animated {
-                bar.transform = hide ? away : .identity
-                bar.alpha = hide ? 0 : 1
-                bar.isUserInteractionEnabled = !hide
-                bar.accessibilityElementsHidden = hide
-                return
+            let e = p * p * (3 - 2 * p)          // ease in and out
+            let ty: CGFloat = e > 0.999 ? 0 : (1 - e) * (bar.bounds.height + 40)
+            if abs(bar.transform.ty - ty) > 0.01 || bar.transform.tx != 0 {
+                bar.transform = ty == 0 ? .identity : CGAffineTransform(translationX: 0, y: ty)
             }
-
-            if !hide { bar.alpha = 1 }           // visible before it slides in
-            bar.isUserInteractionEnabled = false
-            bar.accessibilityElementsHidden = hide
-            // Only the transform is animated: animating alpha too left the glass bar half see-through (grey ghost).
-            UIView.animate(withDuration: 0.28, delay: 0,
-                           options: [.curveEaseInOut, .beginFromCurrentState, .allowUserInteraction],
-                           animations: { bar.transform = hide ? away : .identity },
-                           completion: { [weak self, weak bar] _ in
-                               guard let self, let bar, self.shownPage == target else { return }   // a newer move took over
-                               bar.transform = hide ? away : .identity
-                               bar.alpha = hide ? 0 : 1
-                               bar.isUserInteractionEnabled = !hide
-                           })
+            // slide only: the glass bar looks grey and broken at partial opacity. Fully off only once it has left.
+            let alpha: CGFloat = e < 0.02 ? 0 : 1
+            if bar.alpha != alpha { bar.alpha = alpha }
+            let interactive = p > 0.99
+            if bar.isUserInteractionEnabled != interactive { bar.isUserInteractionEnabled = interactive }
+            bar.accessibilityElementsHidden = p < 0.5
         }
 
         private static func findTabBar(in root: UIView) -> UITabBar? {
