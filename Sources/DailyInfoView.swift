@@ -31,31 +31,21 @@ private extension View {
             .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .stroke(focused ? Theme.accent : Theme.line, lineWidth: 1))
     }
+
+    /// Attaches an invisible coordinate probe to a page inside the TabView so PagerTabBarLink can measure its live X offset.
+    func pagerPageProbe(_ index: Int) -> some View {
+        self.background(PagerPageProbe(index: index).allowsHitTesting(false))
+    }
 }
 
 // MARK: - Page container: Daily summary (left)  <-  swipe left to right  ->  My courses (right)
-//
-// The tab bar is hidden with SwiftUI's own .toolbar(.hidden, for: .tabBar): hidden on Daily summary, shown on
-// My courses. SwiftUI/UIKit own the bar and animate it themselves.
-//
-// Why not move the UIKit tab bar by hand (transform / alpha, live with the swipe)? UIKit's tab bar controller
-// lays the bar out again whenever SwiftUI updates (the page changing, tab badges, the offline banner, ...) and
-// that puts the bar back at its resting place. For one frame the full bar showed up in the middle of the swipe
-// ("another navbar"), every time. Nothing outside this file touches the bar (MainViews only declares the tabs).
-//
-// Hiding the bar must not move the pages. That is why the pager and each page ignore the top and bottom safe
-// area (the bar's inset never reaches them), pages scroll underneath the status bar (soft fade) and the tab bar,
-// and My courses keeps its own room at the bottom.
 
 struct CoursesHome: View {
     @EnvironmentObject var catalog: CourseCatalog
     @ObservedObject private var store = DailyInfoStore.shared
     @Environment(\.scenePhase) private var scenePhase
     @State private var page = 1            // 0 = Daily summary (left), 1 = My courses (right, home)
-    @State private var barHidden = false
-    @State private var fadeToken = 0       // lets a quick swipe back cancel a fade that is still running
 
-    /// Room kept free at the bottom of My courses so the last card can scroll up clear of the tab bar
     private let tabBarClearance: CGFloat = 96
 
     private var windowTopInset: CGFloat {
@@ -72,49 +62,37 @@ struct CoursesHome: View {
                 DailyInfoView()
                     .safeAreaInset(edge: .top, spacing: 0) { Color.clear.frame(height: top) }
                     .ignoresSafeArea(.container, edges: [.top, .bottom])
+                    .pagerPageProbe(0)
                     .tag(0)
                 CoursesView()
                     .safeAreaInset(edge: .top, spacing: 0) { Color.clear.frame(height: top) }
                     .safeAreaInset(edge: .bottom, spacing: 0) { Color.clear.frame(height: tabBarClearance) }
                     .ignoresSafeArea(.container, edges: [.top, .bottom])
+                    .pagerPageProbe(1)
                     .tag(1)
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
-            .noBottomEdgeEffect()                                  // no system band behind the floating tab bar
-            .ignoresSafeArea(.container, edges: [.top, .bottom])   // pager size never depends on the bars
+            .noBottomEdgeEffect()
+            .ignoresSafeArea(.container, edges: [.top, .bottom])
+            // Apply hidden toolbars to the ROOT container to prevent SwiftUI transition ghosting
+            .toolbar(.hidden, for: .navigationBar)
+            .toolbar(.hidden, for: .tabBar)
             .background(Theme.bg.ignoresSafeArea())
-            .background(WindowBackground().allowsHitTesting(false))
+            .background(PagerTabBarLink(page: page).allowsHitTesting(false))
             .overlay(alignment: .top) {
-                // soft fade under the status bar instead of a hard cut
                 LinearGradient(colors: [Theme.bg.opacity(0.92), Theme.bg.opacity(0)], startPoint: .top, endPoint: .bottom)
                     .frame(height: top + 8)
                     .ignoresSafeArea(.container, edges: .top)
                     .allowsHitTesting(false)
             }
         }
-        .toolbar(barHidden ? .hidden : .visible, for: .tabBar)
         .onChange(of: page) { new in
-            fadeToken += 1
-            let token = fadeToken
-            if new == 0 {
-                // Daily summary: fade the bar out first, and only then let SwiftUI hide it (already invisible by
-                // then, so the system's own quick hide is never seen)
-                TabBarFade.fadeOut {
-                    guard token == fadeToken, page == 0 else { return }
-                    var t = Transaction(); t.disablesAnimations = true
-                    withTransaction(t) { barHidden = true }
-                }
-            } else {
-                TabBarFade.setAlpha(1)
-                withAnimation(.easeInOut(duration: 0.25)) { barHidden = false }
-                // Wait for the paging deceleration to settle before mutating @ObservedObject state
-                Task { @MainActor in
-                    try? await Task.sleep(nanoseconds: 350_000_000)
-                    if page == 1 { store.markAllSeen() }
-                }
+            guard new == 1 else { return }
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 350_000_000)
+                if page == 1 { store.markAllSeen() }
             }
         }
-        .onDisappear { TabBarFade.setAlpha(1) }      // never leave the bar see-through when leaving this screen
         .task {
             await catalog.loadIfNeeded()
             await store.scan(courses: catalog.courses)
@@ -130,8 +108,6 @@ struct CoursesHome: View {
 }
 
 extension View {
-    /// iOS 26 puts a system "edge effect" under floating bars. On this app's pure-black pages it showed up as a thin
-    /// black band at the very bottom, behind the tab bar. Hidden for the bottom edge only (iOS 26+, Xcode 26+).
     @ViewBuilder func noBottomEdgeEffect() -> some View {
         #if compiler(>=6.2)
         if #available(iOS 26.0, *) { self.scrollEdgeEffectHidden(true, for: .bottom) } else { self }
@@ -141,62 +117,240 @@ extension View {
     }
 }
 
-// MARK: - Tab bar fade
+// MARK: - Tab bar slides 1:1 with the page swipe
 
-/// A plain fade of the system tab bar, used only for the moment before SwiftUI hides it. Only alpha is touched:
-/// UIKit re-lays the bar out now and then and would undo a transform, but it never changes alpha.
-@MainActor
-private enum TabBarFade {
-    static let duration: TimeInterval = 0.32
+private struct PagerPageProbe: UIViewRepresentable {
+    let index: Int
 
-    private static func bars() -> [UITabBar] {
-        let windows = UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .flatMap { $0.windows }
-        var found: [UITabBar] = []
-        func walk(_ v: UIView) {
-            if let t = v as? UITabBar { found.append(t) }
-            v.subviews.forEach(walk)
-        }
-        windows.forEach(walk)
-        return found
+    func makeUIView(context: Context) -> UIView {
+        let v = UIView()
+        v.isUserInteractionEnabled = false
+        v.backgroundColor = .clear
+        v.tag = PagerTabBarLink.probeTag(for: index)
+        return v
     }
 
-    static func fadeOut(_ done: @escaping () -> Void) {
-        let all = bars()
-        guard !all.isEmpty else { done(); return }
-        UIView.animate(withDuration: duration, delay: 0,
-                       options: [.curveEaseInOut, .allowUserInteraction],
-                       animations: { all.forEach { $0.alpha = 0 } },
-                       completion: { finished in if finished { done() } })
-    }
-
-    /// Stops any fade in progress and puts the bar at this alpha at once.
-    static func setAlpha(_ a: CGFloat) {
-        for b in bars() {
-            b.layer.removeAllAnimations()
-            b.alpha = a
-        }
+    func updateUIView(_ uiView: UIView, context: Context) {
+        uiView.tag = PagerTabBarLink.probeTag(for: index)
     }
 }
 
-// MARK: - Window colour
+private struct PagerTabBarLink: UIViewRepresentable {
+    let page: Int
 
-/// Paints the window the page colour, so no black shows behind the pages while they slide or the bar is going.
-private struct WindowBackground: UIViewRepresentable {
+    static func probeTag(for index: Int) -> Int { 77_100 + index }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
     func makeUIView(context: Context) -> ProbeView {
         let v = ProbeView()
         v.isUserInteractionEnabled = false
         v.backgroundColor = .clear
+        let c = context.coordinator
+        c.probe = v
+        c.set(page: page)
+        v.windowChanged = { [weak c] in c?.windowChanged() }
         return v
     }
 
-    func updateUIView(_ v: ProbeView, context: Context) { v.window?.backgroundColor = UIColor(Theme.bg) }
+    func updateUIView(_ v: ProbeView, context: Context) {
+        context.coordinator.set(page: page)
+    }
+
+    static func dismantleUIView(_ v: ProbeView, coordinator: Coordinator) {
+        coordinator.stop(restoreBar: true)
+    }
 
     final class ProbeView: UIView {
+        var windowChanged: (() -> Void)?
         override func didMoveToWindow() {
             super.didMoveToWindow()
-            window?.backgroundColor = UIColor(Theme.bg)
+            windowChanged?()
+        }
+    }
+
+    private final class LinkProxy: NSObject {
+        weak var owner: Coordinator?
+        init(_ owner: Coordinator) { self.owner = owner }
+        @objc func tick(_ link: CADisplayLink) { owner?.tick(link) }
+    }
+
+    final class Coordinator {
+        weak var probe: UIView?
+        private weak var window: UIWindow?
+        private weak var page0Probe: UIView?
+        private weak var page1Probe: UIView?
+        private weak var pagingScrollView: UIScrollView?
+
+        private var offsetObservation: NSKeyValueObservation?
+        private var link: CADisplayLink?
+
+        private var target: CGFloat = 1
+        private var progress: CGFloat = 1
+        private var attached = false
+        private var detachedFor: CGFloat = 0
+        private var busyFrames = 0
+        private var lastTimestamp: CFTimeInterval?
+
+        func set(page: Int) {
+            let t: CGFloat = page == 0 ? 0 : 1
+            target = t
+            if !attached { progress = t }
+            wake()
+            syncFromScroll()
+        }
+
+        func windowChanged() {
+            if let w = probe?.window {
+                window = w
+                w.backgroundColor = UIColor(Theme.bg)
+                if !attached { attached = true; progress = target }
+                detachedFor = 0
+                startLink()
+                wake()
+                syncFromScroll()
+            }
+        }
+
+        private func startLink() {
+            guard link == nil else { return }
+            let l = CADisplayLink(target: LinkProxy(self), selector: #selector(LinkProxy.tick(_:)))
+            l.add(to: .main, forMode: .common)
+            link = l
+        }
+
+        private func wake() {
+            busyFrames = 90
+            lastTimestamp = nil
+            link?.preferredFramesPerSecond = 0
+        }
+
+        func stop(restoreBar: Bool) {
+            offsetObservation?.invalidate()
+            offsetObservation = nil
+            link?.invalidate()
+            link = nil
+            lastTimestamp = nil
+            if restoreBar { progress = 1; target = 1; write(1) }
+        }
+
+        private func syncFromScroll() {
+            guard let w = window ?? probe?.window else { return }
+            if let live = sampledProgress(in: w) {
+                progress = live
+                busyFrames = 90
+                link?.preferredFramesPerSecond = 0
+                write(progress)
+            }
+        }
+
+        fileprivate func tick(_ link: CADisplayLink) {
+            let now = link.timestamp
+            let rawDt = lastTimestamp.map { now - $0 } ?? (1.0 / 60.0)
+            let dt = CGFloat(min(max(rawDt, 1.0 / 120.0), 1.0 / 30.0))
+            lastTimestamp = now
+
+            if probe?.window == nil {
+                detachedFor += dt
+                if detachedFor > 0.4 { stop(restoreBar: true); return }
+            } else {
+                detachedFor = 0
+            }
+
+            guard let w = window ?? probe?.window else { return }
+
+            if let live = sampledProgress(in: w) {
+                progress = live
+                if abs(live - target) > 0.001 { busyFrames = 90 }
+            } else if progress != target {
+                let step = dt / 0.25
+                progress = target > progress ? min(progress + step, target) : max(progress - step, target)
+                busyFrames = 90
+            }
+
+            write(progress)
+
+            if busyFrames > 0 {
+                busyFrames -= 1
+            } else {
+                link.preferredFramesPerSecond = 15
+            }
+        }
+
+        private func sampledProgress(in w: UIWindow) -> CGFloat? {
+            let width = w.bounds.width
+            guard width > 0 else { return nil }
+
+            if page0Probe == nil || page0Probe?.window == nil {
+                page0Probe = w.viewWithTag(PagerTabBarLink.probeTag(for: 0))
+            }
+            if page1Probe == nil || page1Probe?.window == nil {
+                page1Probe = w.viewWithTag(PagerTabBarLink.probeTag(for: 1))
+            }
+
+            if pagingScrollView == nil || pagingScrollView?.window == nil {
+                if let sv = (page1Probe ?? page0Probe).flatMap(Self.findPagingScrollView(from:)) {
+                    attachScrollObserver(to: sv)
+                }
+            }
+
+            if let x1 = page1Probe?.window != nil ? page1Probe!.convert(.zero, to: w).x : nil {
+                return min(max(1 - (x1 / width), 0), 1)
+            } else if let x0 = page0Probe?.window != nil ? page0Probe!.convert(.zero, to: w).x : nil {
+                return min(max(-x0 / width, 0), 1)
+            }
+            return nil
+        }
+
+        private func attachScrollObserver(to scrollView: UIScrollView) {
+            pagingScrollView = scrollView
+            offsetObservation?.invalidate()
+            offsetObservation = scrollView.observe(\.contentOffset, options: [.new]) { [weak self] _, _ in
+                self?.syncFromScroll()
+            }
+        }
+
+        private func write(_ p: CGFloat) {
+            guard let w = window ?? probe?.window else { return }
+            let allBars = Self.findAllTabBars(in: w)
+            guard !allBars.isEmpty else { return }
+
+            let clamped = min(max(p, 0), 1)
+            let bottomInset = w.safeAreaInsets.bottom > 0 ? w.safeAreaInsets.bottom : 34
+            let travel = (allBars.first?.bounds.height ?? 50) + bottomInset + 32
+            
+            let ty: CGFloat = clamped > 0.999 ? 0 : (1 - clamped) * travel
+            let transform = ty == 0 ? .identity : CGAffineTransform(translationX: 0, y: ty)
+            let alpha: CGFloat = clamped < 0.01 ? 0 : 1
+            let interactive = clamped > 0.99
+
+            for bar in allBars {
+                if abs(bar.transform.ty - ty) > 0.01 || bar.transform.tx != 0 {
+                    bar.transform = transform
+                }
+                if bar.alpha != alpha { bar.alpha = alpha }
+                if bar.isUserInteractionEnabled != interactive { bar.isUserInteractionEnabled = interactive }
+                bar.accessibilityElementsHidden = clamped < 0.5
+            }
+        }
+
+        private static func findPagingScrollView(from view: UIView) -> UIScrollView? {
+            var current = view.superview
+            while let v = current {
+                if let sv = v as? UIScrollView,
+                   sv.isPagingEnabled || String(describing: type(of: sv)).contains("Queuing") || sv.alwaysBounceHorizontal {
+                    return sv
+                }
+                current = v.superview
+            }
+            return nil
+        }
+
+        private static func findAllTabBars(in root: UIView) -> [UITabBar] {
+            var bars: [UITabBar] = []
+            if let t = root as? UITabBar { bars.append(t) }
+            for s in root.subviews { bars.append(contentsOf: findAllTabBars(in: s)) }
+            return bars
         }
     }
 }
@@ -212,7 +366,7 @@ struct DailyInfoView: View {
     @State private var showRemoved = false
     @State private var editing: DailyEntry?
     @State private var showAdd = false
-    @State private var highlight: Set<String> = []     // what was new when the page opened
+    @State private var highlight: Set<String> = []
 
     private var visible: [DailyEntry] {
         store.entries.filter { e in
@@ -223,7 +377,6 @@ struct DailyInfoView: View {
         }
     }
 
-    /// Upcoming: soonest day first. Past: latest first. Entries without a date go under "No date".
     private var groups: [(title: String, items: [DailyEntry])] {
         let cal = Calendar.current
         var dict: [Date: [DailyEntry]] = [:]
@@ -266,7 +419,6 @@ struct DailyInfoView: View {
             .padding(16)
         }
         .background(Theme.bg.ignoresSafeArea())
-        .toolbar(.hidden, for: .navigationBar)
         .refreshable { await store.scan(courses: catalog.courses, force: true) }
         .sheet(isPresented: $showAdd) { DailyEditSheet() }
         .sheet(item: $editing) { DailyEditSheet(existing: $0) }
@@ -309,9 +461,9 @@ struct DailyInfoView: View {
                         pill(k.title, icon: k.icon, on: kindFilter == k) { kindFilter = (kindFilter == k ? nil : k) }
                     }
                 }
-                .padding(.horizontal, 16)      // chips start at the page margin...
+                .padding(.horizontal, 16)
             }
-            .padding(.horizontal, -16)         // ...but scroll all the way to the screen edge instead of being cut early
+            .padding(.horizontal, -16)
             HStack(spacing: 10) {
                 segment("Upcoming", on: !showPast && !showRemoved) { showPast = false; showRemoved = false }
                 segment("Past", on: showPast && !showRemoved) { showPast = true; showRemoved = false }
