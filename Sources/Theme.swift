@@ -156,8 +156,14 @@ enum Theme {
         UINavigationBar.appearance().compactAppearance = nav
 
         let tab = UITabBarAppearance()
-        tab.configureWithOpaqueBackground()
-        tab.backgroundColor = uiBg
+        if #available(iOS 26.0, *) {
+            // iOS 26's tab bar is a floating glass pill: no painted background behind it, so screens
+            // scroll underneath instead of ending in a solid band (the pill itself stays glass)
+            tab.configureWithTransparentBackground()
+        } else {
+            tab.configureWithOpaqueBackground()
+            tab.backgroundColor = uiBg
+        }
         tab.shadowColor = .clear
         // Tab badges in the app's accent colour with contrasting text. SwiftUI's .badge ignores
         // UITabBarItem.appearance().badgeColor, so it is set through UITabBarAppearance instead.

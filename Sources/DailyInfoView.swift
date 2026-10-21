@@ -32,10 +32,15 @@ private extension View {
     }
 }
 
-// MARK: - Page container: My courses  <-  swipe left  ->  Daily summary
+// MARK: - Page container: My courses (left)  <-  swipe right to left  ->  Daily summary (right)
 //
-// A paged view inside the first tab. Swipe right-to-left on My courses to open Daily summary; the tab bar
-// slides away while it is open and fades back when you swipe back to My courses.
+// A paged view inside the first tab. Swipe right-to-left on My courses to open Daily summary; swipe left-to-right
+// to come back. The tab bar slides away while Daily summary is open and returns with My courses.
+//
+// Why the pager ignores the bottom safe area: if it did not, showing/hiding the tab bar would change the
+// pager's height and both pages would re-layout in the middle of the transition (that was the lag), and My courses
+// would stop just above the floating tab bar with the window's black showing underneath. Now the pager always
+// fills the screen, pages scroll underneath the bar, and My courses leaves its own room at the bottom.
 
 struct CoursesHome: View {
     @EnvironmentObject var catalog: CourseCatalog
@@ -44,17 +49,23 @@ struct CoursesHome: View {
     @State private var page = 0
     @State private var barHidden = false
 
+    /// Room kept free at the bottom of My courses so the last card can scroll up clear of the tab bar
+    private let tabBarClearance: CGFloat = 96
+
     var body: some View {
         TabView(selection: $page) {
-            CoursesView().tag(0)
+            CoursesView()
+                .safeAreaInset(edge: .bottom, spacing: 0) { Color.clear.frame(height: tabBarClearance) }
+                .tag(0)
             DailyInfoView().tag(1)
         }
         .tabViewStyle(.page(indexDisplayMode: .never))
+        .ignoresSafeArea(.container, edges: .bottom)   // pager size never depends on the tab bar
         .background(Theme.bg.ignoresSafeArea())
         .toolbar(barHidden ? .hidden : .visible, for: .tabBar)
         .onChange(of: page) { new in
             if new == 0 { store.markAllSeen() }
-            withAnimation(.easeInOut(duration: 0.3)) { barHidden = (new == 1) }
+            withAnimation(.easeInOut(duration: 0.25)) { barHidden = (new == 1) }
         }
         .task {
             await catalog.loadIfNeeded()
