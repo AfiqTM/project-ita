@@ -73,7 +73,7 @@ private struct Avatar: View {
     var size: CGFloat = 30
     var body: some View {
         // tries the sharper sizes and the other address forms, and shows the initials when no picture loads
-        ProfilePhoto(name: person.fullname, urls: [person.profileimageurlsmall], size: size, sizeKey: "f1", outline: false)
+        ProfilePhoto(name: person.fullname, urls: [person.profileimageurlsmall, person.profileimageurl], size: size, sizeKey: "f1", outline: false)
     }
 }
 
@@ -158,7 +158,8 @@ struct GroupChoiceView: View {
     @State private var leaving: GroupEntry?
     @State private var open: Set<Int> = []
     @State private var query = ""
-    @State private var webAction: URL?        // join / leave runs on the site's own page (group select plugin)
+    @State private var webAction: URL?        // the site's own page, shown only when the quiet join / leave needs you
+    @State private var bgAction: BackgroundGroupAction?   // join / leave of a group-select group, running out of sight
 
     private var myId: Int { app.site?.userid ?? 0 }
     private var instance: Int { module.instance ?? 0 }
@@ -278,6 +279,14 @@ struct GroupChoiceView: View {
         .task { await load() }
         .onReceive(NotificationCenter.default.publisher(for: .offlineBackOnline)) { _ in Task { await load() } }
         .onFreshData { await load() }
+        .background {
+            // the site's select / unselect page is confirmed in a hidden web view: nothing opens, the group just changes
+            if let a = bgAction {
+                HiddenGroupAction(url: a.url) { finishBackground(a, $0) }
+                    .id(a.id)
+                    .frame(width: 2, height: 2).opacity(0.01).allowsHitTesting(false).accessibilityHidden(true)
+            }
+        }
         .navigationDestination(isPresented: Binding(get: { webAction != nil }, set: { if !$0 { webAction = nil } })) {
             if let u = webAction { GroupWebActionView(url: u, title: module.name) }
         }
@@ -399,7 +408,7 @@ struct GroupChoiceView: View {
     }
 
     private func join(_ e: GroupEntry) async {
-        if isGroupSelect { webAction = actionURL("select", e.id); return }
+        if isGroupSelect { await runQuietly("select", e, joining: true); return }
         busy = e.id; message = nil
         defer { busy = nil }
         do {
@@ -413,8 +422,33 @@ struct GroupChoiceView: View {
         }
     }
 
+    /// Group-select groups: the plugin has no app functions, so its own page is loaded (logged in) in a hidden web view
+    /// and confirmed there. Only if that cannot be done (password, full group, signed out) is the page shown.
+    private func runQuietly(_ key: String, _ e: GroupEntry, joining: Bool) async {
+        busy = e.id; message = nil
+        let target = actionURL(key, e.id)
+        let resolved = await MoodleAPI.shared.autologin(target, userid: myId)
+        bgAction = BackgroundGroupAction(url: resolved, fallback: target, name: e.name, groupId: e.id, joining: joining)
+    }
+
+    private func finishBackground(_ a: BackgroundGroupAction, _ r: GroupActionResult) {
+        guard bgAction?.id == a.id else { return }
+        bgAction = nil
+        busy = nil
+        switch r {
+        case .done:
+            overridden = false
+            if a.joining { open.insert(a.groupId) }
+            message = a.joining ? "You joined \(a.name)." : "You left \(a.name)."
+            Task { await load() }
+        case .manual(let why):
+            message = why
+            webAction = a.fallback
+        }
+    }
+
     private func leave(_ e: GroupEntry) async {
-        if isGroupSelect { webAction = actionURL("unselect", e.id); return }
+        if isGroupSelect { await runQuietly("unselect", e, joining: false); return }
         busy = e.id; message = nil
         defer { busy = nil }
         do {
@@ -429,6 +463,80 @@ struct GroupChoiceView: View {
     }
 }
 
+
+// MARK: - Quiet join / leave (group select plugin)
+
+struct BackgroundGroupAction: Equatable {
+    let id = UUID()
+    let url: URL
+    let fallback: URL
+    let name: String
+    let groupId: Int
+    let joining: Bool
+}
+
+enum GroupActionResult { case done, manual(String) }
+
+/// A web view nobody sees: loads the select / unselect page, presses its confirm button and reports back when the
+/// site has accepted it. Gives up after 25 seconds, or when the page needs something it cannot do (a group
+/// password, a full group, a signed-out session) and hands over to the visible page.
+private struct HiddenGroupAction: UIViewRepresentable {
+    let url: URL
+    let onResult: (GroupActionResult) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(onResult: onResult) }
+
+    func makeUIView(context: Context) -> WKWebView {
+        let w = WKWebView(frame: CGRect(x: 0, y: 0, width: 320, height: 480), configuration: WKWebViewConfiguration())
+        w.navigationDelegate = context.coordinator
+        w.isUserInteractionEnabled = false
+        w.load(URLRequest(url: url))
+        context.coordinator.startTimeout()
+        return w
+    }
+    func updateUIView(_ uiView: WKWebView, context: Context) {}
+
+    final class Coordinator: NSObject, WKNavigationDelegate {
+        let onResult: (GroupActionResult) -> Void
+        private var submitted = false
+        private var finished = false
+        private var timeout: DispatchWorkItem?
+        init(onResult: @escaping (GroupActionResult) -> Void) { self.onResult = onResult }
+
+        func startTimeout() {
+            let t = DispatchWorkItem { [weak self] in self?.finish(.manual("The site is slow to answer. Finish it on this page.")) }
+            timeout = t
+            DispatchQueue.main.asyncAfter(deadline: .now() + 25, execute: t)
+        }
+        private func finish(_ r: GroupActionResult) {
+            guard !finished else { return }
+            finished = true
+            timeout?.cancel()
+            DispatchQueue.main.async { self.onResult(r) }
+        }
+
+        private static let js = GroupWebAction.Coordinator.js
+
+        func webView(_ w: WKWebView, didFinish navigation: WKNavigation!) {
+            if w.url?.path.contains("/login/") == true {
+                finish(.manual("You're signed out. Sign in on the Website tab, then try again."))
+                return
+            }
+            if submitted { finish(.done); return }
+            w.evaluateJavaScript(Self.js) { [weak self] r, _ in
+                guard let self = self else { return }
+                if (r as? String) == "ok" { self.submitted = true }
+                else { self.finish(.manual("This group needs one more step. Finish it on this page.")) }
+            }
+        }
+        func webView(_ w: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            finish(.manual("Couldn't reach the site (\(error.localizedDescription))."))
+        }
+        func webView(_ w: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+            finish(.manual("Couldn't reach the site (\(error.localizedDescription))."))
+        }
+    }
+}
 
 // MARK: - Join / leave through the site's own page (group select plugin)
 //
@@ -463,7 +571,7 @@ struct GroupWebActionView: View {
     }
 }
 
-private struct GroupWebAction: UIViewRepresentable {
+fileprivate struct GroupWebAction: UIViewRepresentable {
     let url: URL
     let onStatus: (String) -> Void
     let onDone: () -> Void
@@ -488,7 +596,7 @@ private struct GroupWebAction: UIViewRepresentable {
         }
 
         // presses the confirm button of the select / unselect page (not a password form, not a log-out form)
-        private static let js = """
+        fileprivate static let js = """
         (function(){
           var fs = [].slice.call(document.forms).filter(function(f){
             return /groupselect/.test(f.action || '') && f.querySelector('input[name=sesskey]')

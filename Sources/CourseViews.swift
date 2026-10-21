@@ -470,7 +470,7 @@ struct ParticipantsView: View {
                                             imageURL: p.profileimageurlsmall)
                         } label: {
                             HStack(spacing: 12) {
-                                ProfilePhoto(name: p.fullname, urls: [p.profileimageurlsmall], size: 34, sizeKey: "f1", outline: false)
+                                ProfilePhoto(name: p.fullname, urls: [p.profileimageurlsmall, p.profileimageurl], size: 34, sizeKey: "f1", outline: false)
                                 Text(p.fullname).foregroundColor(Theme.txt)
                                 Spacer()
                                 Image(systemName: "chevron.right").font(Theme.font(.caption)).foregroundColor(Theme.muted)

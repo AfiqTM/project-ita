@@ -421,6 +421,7 @@ struct Person: Decodable, Identifiable {
     let id: Int
     let fullname: String
     let profileimageurlsmall: String?
+    var profileimageurl: String? = nil    // the larger picture: tried too when the small one doesn't load
     var groups: [PersonGroup]?   // the groups this person is in (core_enrol_get_enrolled_users)
 }
 
