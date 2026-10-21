@@ -54,16 +54,28 @@ struct CoursesHome: View {
     /// Room kept free at the bottom of My courses so the last card can scroll up clear of the tab bar
     private let tabBarClearance: CGFloat = 96
 
+    private var windowTopInset: CGFloat {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+            .first { $0.isKeyWindow }?.safeAreaInsets.top ?? 0
+    }
+
     var body: some View {
         GeometryReader { geo in
-            let top = geo.safeAreaInsets.top
+            // The status-bar room is taken from the window (a constant), not from SwiftUI's safe area, which changes
+            // with the bars and was being counted twice. Each page also ignores the safe area itself (outside its
+            // own insets), so the only top/bottom room it ever has is the one added here.
+            let top = windowTopInset > 0 ? windowTopInset : geo.safeAreaInsets.top
             TabView(selection: $page) {
                 DailyInfoView()
                     .safeAreaInset(edge: .top, spacing: 0) { Color.clear.frame(height: top) }
+                    .ignoresSafeArea(.container, edges: [.top, .bottom])
                     .tag(0)
                 CoursesView()
                     .safeAreaInset(edge: .top, spacing: 0) { Color.clear.frame(height: top) }
                     .safeAreaInset(edge: .bottom, spacing: 0) { Color.clear.frame(height: tabBarClearance) }
+                    .ignoresSafeArea(.container, edges: [.top, .bottom])
                     .tag(1)
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
@@ -110,7 +122,7 @@ extension View {
 
 // MARK: - Tab bar follows the pager
 
-/// Slides and fades the system tab bar in step with the pager's swipe (0 = Daily summary: gone, 1 = My courses:
+/// Slides the system tab bar in step with the pager's swipe (0 = Daily summary: gone, 1 = My courses:
 /// shown). It watches the contentOffset of the pager's paging scroll view. Only the bar's transform and alpha are
 /// touched (never the SwiftUI toolbar visibility), so nothing is re-laid out and no page moves.
 /// If the pager's scroll view can't be found it falls back to a short slide when the page changes.
@@ -214,7 +226,8 @@ private struct PagerTabBarLink: UIViewRepresentable {
         private func apply(_ progress: CGFloat) {
             guard let bar = tabBar else { return }
             let p = min(max(progress, 0), 1)
-            bar.alpha = p
+            // slide only: the glass bar looks grey and broken at partial opacity. Fully off only once it has left.
+            bar.alpha = p < 0.02 ? 0 : 1
             bar.transform = CGAffineTransform(translationX: 0, y: (1 - p) * (bar.bounds.height + 40))
             bar.isUserInteractionEnabled = p > 0.99
             bar.accessibilityElementsHidden = p < 0.5
