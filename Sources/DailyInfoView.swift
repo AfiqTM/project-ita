@@ -53,6 +53,7 @@ struct CoursesHome: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var page = 1            // 0 = Daily summary (left), 1 = My courses (right, home)
     @State private var barHidden = false
+    @State private var fadeToken = 0       // lets a quick swipe back cancel a fade that is still running
 
     /// Room kept free at the bottom of My courses so the last card can scroll up clear of the tab bar
     private let tabBarClearance: CGFloat = 96
@@ -93,14 +94,27 @@ struct CoursesHome: View {
         }
         .toolbar(barHidden ? .hidden : .visible, for: .tabBar)
         .onChange(of: page) { new in
-            withAnimation(.easeInOut(duration: 0.25)) { barHidden = (new == 0) }
-            guard new == 1 else { return }
-            // Wait for the paging deceleration to settle before mutating @ObservedObject state
-            Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 350_000_000)
-                if page == 1 { store.markAllSeen() }
+            fadeToken += 1
+            let token = fadeToken
+            if new == 0 {
+                // Daily summary: fade the bar out first, and only then let SwiftUI hide it (already invisible by
+                // then, so the system's own quick hide is never seen)
+                TabBarFade.fadeOut {
+                    guard token == fadeToken, page == 0 else { return }
+                    var t = Transaction(); t.disablesAnimations = true
+                    withTransaction(t) { barHidden = true }
+                }
+            } else {
+                TabBarFade.setAlpha(1)
+                withAnimation(.easeInOut(duration: 0.25)) { barHidden = false }
+                // Wait for the paging deceleration to settle before mutating @ObservedObject state
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 350_000_000)
+                    if page == 1 { store.markAllSeen() }
+                }
             }
         }
+        .onDisappear { TabBarFade.setAlpha(1) }      // never leave the bar see-through when leaving this screen
         .task {
             await catalog.loadIfNeeded()
             await store.scan(courses: catalog.courses)
@@ -124,6 +138,45 @@ extension View {
         #else
         self
         #endif
+    }
+}
+
+// MARK: - Tab bar fade
+
+/// A plain fade of the system tab bar, used only for the moment before SwiftUI hides it. Only alpha is touched:
+/// UIKit re-lays the bar out now and then and would undo a transform, but it never changes alpha.
+@MainActor
+private enum TabBarFade {
+    static let duration: TimeInterval = 0.32
+
+    private static func bars() -> [UITabBar] {
+        let windows = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+        var found: [UITabBar] = []
+        func walk(_ v: UIView) {
+            if let t = v as? UITabBar { found.append(t) }
+            v.subviews.forEach(walk)
+        }
+        windows.forEach(walk)
+        return found
+    }
+
+    static func fadeOut(_ done: @escaping () -> Void) {
+        let all = bars()
+        guard !all.isEmpty else { done(); return }
+        UIView.animate(withDuration: duration, delay: 0,
+                       options: [.curveEaseInOut, .allowUserInteraction],
+                       animations: { all.forEach { $0.alpha = 0 } },
+                       completion: { finished in if finished { done() } })
+    }
+
+    /// Stops any fade in progress and puts the bar at this alpha at once.
+    static func setAlpha(_ a: CGFloat) {
+        for b in bars() {
+            b.layer.removeAllAnimations()
+            b.alpha = a
+        }
     }
 }
 
