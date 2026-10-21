@@ -58,15 +58,32 @@ struct CoursesHome: View {
     private let tabBarClearance: CGFloat = 96
 
     var body: some View {
-        TabView(selection: $page) {
-            DailyInfoView().tag(0)
-            CoursesView()
-                .safeAreaInset(edge: .bottom, spacing: 0) { Color.clear.frame(height: tabBarClearance) }
-                .tag(1)
+        // The pager fills the whole screen, top included, so scrolling content slides up under the status bar and
+        // fades out. Before, the pager stopped at the safe area, which cut the greeting ("Hello, ...") off along a
+        // hard line just below the status bar while scrolling. Each page keeps its resting position with its own
+        // top room, measured here before the safe area is ignored.
+        GeometryReader { geo in
+            let top = geo.safeAreaInsets.top
+            TabView(selection: $page) {
+                DailyInfoView()
+                    .safeAreaInset(edge: .top, spacing: 0) { Color.clear.frame(height: top) }
+                    .tag(0)
+                CoursesView()
+                    .safeAreaInset(edge: .top, spacing: 0) { Color.clear.frame(height: top) }
+                    .safeAreaInset(edge: .bottom, spacing: 0) { Color.clear.frame(height: tabBarClearance) }
+                    .tag(1)
+            }
+            .tabViewStyle(.page(indexDisplayMode: .never))
+            .ignoresSafeArea(.container, edges: [.top, .bottom])   // pager size never depends on the bars
+            .background(Theme.bg.ignoresSafeArea())
+            .overlay(alignment: .top) {
+                // soft fade under the status bar instead of a hard cut
+                LinearGradient(colors: [Theme.bg.opacity(0.92), Theme.bg.opacity(0)], startPoint: .top, endPoint: .bottom)
+                    .frame(height: top + 8)
+                    .ignoresSafeArea(.container, edges: .top)
+                    .allowsHitTesting(false)
+            }
         }
-        .tabViewStyle(.page(indexDisplayMode: .never))
-        .ignoresSafeArea(.container, edges: .bottom)   // pager size never depends on the tab bar
-        .background(Theme.bg.ignoresSafeArea())
         .toolbar(barHidden ? .hidden : .visible, for: .tabBar)
         .onChange(of: page) { new in
             hideTask?.cancel()
