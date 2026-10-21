@@ -425,6 +425,38 @@ struct Person: Decodable, Identifiable {
     var groups: [PersonGroup]?   // the groups this person is in (core_enrol_get_enrolled_users)
 }
 
+/// People whose list entry only has the site's default picture: asks the site for their profile pictures directly
+/// (the same call the profile page uses), since the participant list sometimes lacks them.
+enum ProfileImages {
+    private struct Row: Decodable { let id: Int; let profileimageurl: String?; let profileimageurlsmall: String? }
+
+    private static func looksDefault(_ s: String?) -> Bool {
+        guard let s, !s.isEmpty else { return true }
+        return s.contains("/theme/image.php") || s.contains("/pix/u/") || s.contains("/u/f")
+    }
+
+    static func upgraded(_ people: [Person]) async -> [Person] {
+        let missing = people.filter { looksDefault($0.profileimageurlsmall) && looksDefault($0.profileimageurl) }.map(\.id)
+        guard !missing.isEmpty else { return people }
+        var found: [Int: Row] = [:]
+        var i = 0
+        while i < missing.count {
+            let chunk = Array(missing[i..<min(i + 60, missing.count)])
+            i += 60
+            if let rows: [Row] = try? await MoodleAPI.shared.call("core_user_get_users_by_field", ["field": "id", "values": chunk]) {
+                for r in rows where !looksDefault(r.profileimageurl) || !looksDefault(r.profileimageurlsmall) { found[r.id] = r }
+            }
+        }
+        guard !found.isEmpty else { return people }
+        return people.map { p in
+            guard let r = found[p.id] else { return p }
+            var q = p
+            q.profileimageurl = r.profileimageurl ?? p.profileimageurl
+            return q
+        }
+    }
+}
+
 struct AssignResp: Decodable { let courses: [AssignCourse] }
 struct AssignCourse: Decodable { let id: Int; let assignments: [Assign] }
 struct AssignCfg: Decodable { let subtype: String?; let plugin: String?; let name: String?; let value: String? }

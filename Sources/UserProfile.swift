@@ -1,4 +1,5 @@
 import SwiftUI
+import CryptoKit
 import UserNotifications
 
 // Profile screen for another student (opened from a course's Participants list), modelled on the
@@ -352,7 +353,28 @@ enum PhotoURL {
     }
 }
 
-private enum PhotoCache { static let store = NSCache<NSURL, UIImage>() }
+private enum PhotoCache {
+    static let store = NSCache<NSURL, UIImage>()
+
+    // The site's grey "no picture" silhouette is a normal image, so it has to be recognised by its content: it is
+    // the theme's default picture, or the same picture that several different people's addresses return.
+    private static let lock = NSLock()
+    private static var seen: [String: Set<URL>] = [:]
+    private static var defaults = Set<String>()
+    private static var genericURLs = Set<URL>()
+
+    /// Records a downloaded picture; true when it is the generic silhouette
+    static func noteGeneric(_ data: Data, from u: URL) -> Bool {
+        let h = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        lock.lock(); defer { lock.unlock() }
+        seen[h, default: []].insert(u)
+        if u.path.contains("/theme/image.php") || u.path.contains("/pix/u/") { defaults.insert(h) }
+        let generic = defaults.contains(h) || (seen[h]?.count ?? 0) >= 3
+        if generic { genericURLs.insert(u) }
+        return generic
+    }
+    static func isGeneric(_ u: URL) -> Bool { lock.lock(); defer { lock.unlock() }; return genericURLs.contains(u) }
+}
 
 /// Loads the first candidate URL that really returns an image (a failed one just moves on to the next).
 struct RemoteImage<Placeholder: View>: View {
@@ -389,8 +411,10 @@ struct RemoteImage<Placeholder: View>: View {
     private func load() async {
         image = nil; failed = false
         var best: UIImage?
+        var generic: UIImage?      // the grey silhouette: only shown when no candidate has a real picture
         for u in candidates {
             var img = PhotoCache.store.object(forKey: u as NSURL)
+            var isGeneric = img != nil && PhotoCache.isGeneric(u)
             if img == nil {
                 do {
                     let (d, r) = try await MoodleAPI.session.data(from: u)
@@ -398,16 +422,18 @@ struct RemoteImage<Placeholder: View>: View {
                     if let got = UIImage(data: d) {
                         PhotoCache.store.setObject(got, forKey: u as NSURL)
                         img = got
+                        isGeneric = PhotoCache.noteGeneric(d, from: u)
                     }
                 } catch {
                     if error is CancellationError || (error as? URLError)?.code == .cancelled { return }
                 }
             }
             guard let img else { continue }
+            if isGeneric { if generic == nil { generic = img }; continue }
             if pixelWidth(img) >= minPixels { image = img; return }
             if best == nil || pixelWidth(img) > pixelWidth(best!) { best = img }
         }
-        if let best { image = best } else { failed = true }
+        if let best { image = best } else if let generic { image = generic } else { failed = true }
     }
 }
 
@@ -429,7 +455,8 @@ struct ProfilePhoto: View {
             Circle().fill(Theme.surface2)
             Text(initials).font(.system(size: size * 0.36, weight: .semibold)).foregroundColor(Theme.accent)
             // f3 (large) first so it stays sharp on 3x screens; f1 / the list thumbnail are fallbacks
-            RemoteImage(candidates: PhotoURL.candidates(urls, size: sizeKey) + PhotoURL.candidates(urls, size: "f1"),
+            RemoteImage(candidates: PhotoURL.candidates(urls, size: sizeKey) + PhotoURL.candidates(urls, size: "f1")
+                            + PhotoURL.candidates(urls, size: "f3") + PhotoURL.candidates(urls, size: "f2"),
                         minPixels: size * UIScreen.main.scale) { _ in Color.clear }
                 .frame(width: size, height: size)
                 .clipped()

@@ -123,6 +123,9 @@ private struct Pill: View {
         do {
             people = try await MoodleAPI.shared.call("core_enrol_get_enrolled_users", ["courseid": courseId])
             groups = GroupBuilder.build(people, myId: myId)
+            let better = await ProfileImages.upgraded(people)     // pictures the participant list left out
+            people = better
+            groups = GroupBuilder.build(people, myId: myId)
             error = nil
         } catch {
             if !(error is CancellationError) {

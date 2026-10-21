@@ -488,7 +488,10 @@ struct ParticipantsView: View {
             .padding(16)
         }
         .task {
-            do { people = try await MoodleAPI.shared.call("core_enrol_get_enrolled_users", ["courseid": courseId]) }
+            do {
+                people = try await MoodleAPI.shared.call("core_enrol_get_enrolled_users", ["courseid": courseId])
+                people = await ProfileImages.upgraded(people)    // pictures the participant list left out
+            }
             catch {
                 if !(error is CancellationError) {
                     self.error = "Participant list isn't available for this course (\(error.localizedDescription))"
