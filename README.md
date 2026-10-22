@@ -27,12 +27,8 @@ Native client for iTa'leem (IIUM Moodle) using Moodle's mobile web-service API, 
 - Tick a subject: its class time is read from the attendance page and can be corrected; pick the 15-minute window (or shuffle one) and the server submits at a random moment inside it, as Present
 - iOS can't run an app at an exact time, so a small free server does the submitting: see `Server/README.md`
 
-### Daily summary (swipe left on My courses)
-- A second page next to My courses (swipe right to left; the tab bar hides while it is open and returns when you swipe back). Lists class changes: **Cancelled, Online, New venue, Rescheduled, Notice**, grouped by day, with Upcoming / Past / Removed views and a filter by type and by subject
-- Filled from the announcements of every current subject. The newest announcements (last 21 days) are read by AI; each is read once and again only if edited. Pull down or tap the refresh icon to scan now
-- AI runs on the same free Cloudflare server as Auto Attendance (`POST /classify`, Workers AI, see `Server/README.md`). Without the server, or when it doesn't answer, a built-in keyword reader (English and common Malay words) is used, and the entry is labelled "Auto" instead of "AI"
-- Add your own with **+**; tap any entry to correct it (a corrected entry is never overwritten by a later scan). Detected entries you remove stay removed; your own are deleted. Long-press for Edit / Remove
-- A small accent-coloured dot left of "Hello, …" on My courses shows there are new upcoming changes you haven't looked at yet (it goes away once you open Daily summary). Everything is saved on the phone
+### Daily summary (archived)
+- Not part of the app any more. The code is kept in `Archive/DailyInfo/` (outside `Sources`, so it is not built) with notes on how to bring it back. The server's `POST /classify` endpoint (`Server/README.md`) is unchanged
 
 ### Alerts and messages
 - Alerts tab (notifications) with an unread badge; the app icon badge = unread alerts + unread chats
