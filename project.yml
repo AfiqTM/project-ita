@@ -33,8 +33,6 @@ targets:
             INAlternativeAppNamePronunciationHint: eye tah leem
           - INAlternativeAppName: Italeem
             INAlternativeAppNamePronunciationHint: eye tah leem
-          - INAlternativeAppName: Ita Leem
-            INAlternativeAppNamePronunciationHint: eye tah leem
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.afiq.italeem
