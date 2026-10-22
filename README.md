@@ -14,7 +14,7 @@ Native client for iTa'leem (IIUM Moodle) using Moodle's mobile web-service API, 
 - Any activity without a native screen (quiz, ...) opens in the dark-themed web view
 
 ### Assignments
-- Assignments tab = timeline (next 30 days + 7 days overdue) with a count badge
+- Tasks tab = timeline (next 30 days + 7 days overdue) with a count badge
 - Built-in submission: submit, edit and remove, with the lecturer's attached files and a share button
 - Changes made with no internet are kept and sent when the connection returns; if the site refuses one (deadline passed, locked) it stays on the assignment with the reason, Retry and Discard
 

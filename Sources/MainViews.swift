@@ -22,7 +22,7 @@ struct RootView: View {
                 .tabItem { Label("Courses", systemImage: "books.vertical") }
                 .tag(0)
             NavigationStack { AssignmentsTabView(model: assignments) }
-                .tabItem { Label("Due", systemImage: "checklist") }
+                .tabItem { Label("Tasks", systemImage: "checklist") }
                 .badge(assignments.badgeCount)   // to-do items due inside the range chosen in the tab
                 .tag(1)
             NavigationStack { AlertsView(badge: notifs) }
@@ -952,7 +952,7 @@ struct FinalExamCalculator: View {
 
 // MARK: - Tab badge colour
 
-// Colours the tab badges (Assignments, Alerts) in the app's accent without a custom UITabBarAppearance.
+// Colours the tab badges (Tasks, Alerts) in the app's accent without a custom UITabBarAppearance.
 //
 // On iOS 26 a custom UITabBarAppearance makes the glass tab bar lay its items out unevenly, so there the
 // appearance is left alone (see Theme.applyAppearance) and the badge colour is set on the UITabBarItems here.

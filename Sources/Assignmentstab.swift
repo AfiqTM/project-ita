@@ -201,7 +201,7 @@ final class AssignmentsModel: ObservableObject {
     }
 }
 
-// MARK: - Assignments tab
+// MARK: - Tasks tab
 
 struct AssignmentsTabView: View {
     @ObservedObject var model: AssignmentsModel
@@ -228,7 +228,7 @@ struct AssignmentsTabView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                Text("Assignments").foregroundColor(Theme.txt).textGlow(radius: 4).rocksHeading(16, normal: .title3.weight(.semibold), pt: 20)
+                Text("Tasks").foregroundColor(Theme.txt).textGlow(radius: 4).rocksHeading(16, normal: .title3.weight(.semibold), pt: 20)
                 filterBar
                 rangeBar
                 if let error = model.error { Text(error).font(Theme.font(.footnote)).foregroundColor(Theme.muted) }
