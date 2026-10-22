@@ -57,9 +57,20 @@ struct CourseDetailView: View {
                     .animation(.easeInOut(duration: 0.25), value: tab)
             }
             content
+            if photoOn {
+                GeometryReader { geo in
+                    Theme.bg
+                        .frame(height: geo.safeAreaInsets.top)
+                        .ignoresSafeArea(edges: .top)
+                        .opacity(tab == .course && atTop ? 0 : 1)
+                        .animation(.easeInOut(duration: 0.25), value: tab == .course && atTop)
+                }
+                .allowsHitTesting(false)
+            }
         }
-        // the photo shows through the navigation bar while the Course tab is at the top
-        .toolbarBackground(photoOn && tab == .course && atTop ? Visibility.hidden : Visibility.automatic, for: .navigationBar)
+        // the photo shows through the navigation bar while the Course tab is at the top; the bar's own background is
+        // always hidden and a cover fades in over the status/nav area instead, so switching tabs doesn't flash
+        .toolbarBackground(photoOn ? Visibility.hidden : Visibility.automatic, for: .navigationBar)
         .navigationTitle(course.prettyShort ?? course.prettyFull)
         .navigationBarTitleDisplayMode(.inline)
         // the open tab goes away when its last item is removed
@@ -105,6 +116,7 @@ struct CourseDetailView: View {
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
+            .background(Theme.bg)        // pages never show black while they load
         }
     }
 }
@@ -158,44 +170,33 @@ struct SectionCard: View {
     let courseId: Int
     let section: CourseSection
     @State private var open = true
-    @ObservedObject private var themes = ThemeStore.shared
-    private var glass: Bool { themes.theme.scheme == .dark }      // dark themes: the photo page's see-through cards
 
     var body: some View {
-        let mods = section.modules.filter { $0.uservisible != false }
-        let card = VStack(spacing: 0) {
-            Button { withAnimation(.easeInOut(duration: 0.2)) { open.toggle() } } label: {
+        VStack(spacing: 0) {
+            Button { open.toggle() } label: {
                 HStack {
                     Text(section.name.isEmpty ? "General" : section.name)
                         .fontWeight(.semibold).foregroundColor(Theme.txt)
                         .rocks(20)
                     Spacer()
-                    Image(systemName: open ? "chevron.up" : "chevron.down")
-                        .font(glass ? .system(size: 13, weight: .semibold) : nil)
-                        .foregroundColor(glass ? Theme.muted : Theme.accent)
+                    Image(systemName: open ? "chevron.up" : "chevron.down").foregroundColor(Theme.accent)
                 }
-                .padding(glass ? 16 : 14)
-                .background(glass ? Color.clear : Theme.titleBar)
-                .contentShape(Rectangle())
+                .padding(14)
+                .background(Theme.titleBar)
             }
-            .buttonStyle(.plain)
             if open {
-                if glass && !mods.isEmpty { Rectangle().fill(Theme.line.opacity(0.8)).frame(height: 1) }
-                ForEach(Array(mods.enumerated()), id: \.element.id) { i, m in
-                    ModuleRow(courseId: courseId, module: m, divider: glass && i > 0)
+                ForEach(section.modules.filter { $0.uservisible != false }) { m in
+                    ModuleRow(courseId: courseId, module: m)
                 }
             }
         }
-        if glass { card.glassCard() } else { card.glowCard() }
+        .glowCard()
     }
 }
 
 struct ModuleRow: View {
     let courseId: Int
     let module: Module
-    var divider = false                // a fine line above the row (photo page cards)
-    @ObservedObject private var themes = ThemeStore.shared
-    private var glass: Bool { themes.theme.scheme == .dark }
 
     private var icon: String {
         switch module.modname {
@@ -250,27 +251,13 @@ struct ModuleRow: View {
         } else {
             NavigationLink { destination } label: {
                 HStack(spacing: 12) {
-                    if glass {
-                        // icon on a soft accent tile
-                        Image(systemName: icon).font(.system(size: 16, weight: .medium)).foregroundColor(Theme.accent)
-                            .frame(width: 34, height: 34)
-                            .background(Theme.accent.opacity(0.13))
-                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    } else {
-                        Image(systemName: icon).foregroundColor(Theme.accent).frame(width: 24)
-                    }
+                    Image(systemName: icon).foregroundColor(Theme.accent).frame(width: 24)
                     Text(module.name).foregroundColor(Theme.txt).multilineTextAlignment(.leading)
                     Spacer()
                     if module.modname == "resource" { FileStateIcon(file: module.contents?.first) }
-                    if glass {
-                        Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundColor(Theme.muted)
-                    }
                 }
-                .padding(.horizontal, 14).padding(.vertical, glass ? 11 : 14)
+                .padding(14)
                 .contentShape(Rectangle())
-                .overlay(alignment: .top) {
-                    if divider { Rectangle().fill(Theme.line.opacity(0.6)).frame(height: 1).padding(.leading, 60) }
-                }
             }
             .buttonStyle(.plain)
             .fileDownloadMenu(module.modname == "resource" ? module.contents?.first : nil)   // press and hold: Download
