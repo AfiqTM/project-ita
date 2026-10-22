@@ -13,13 +13,9 @@ struct CourseDetailView: View {
     @EnvironmentObject var todos: TodoStore
     @EnvironmentObject var drive: DriveLibrary
     @State private var tab: CourseTab = .course
-    @State private var coverTab: CourseTab = .course         // the tab the top cover is drawn for. Follows `tab`, except on a jump over
-                                                             // several tabs, where the cover must not sweep across the tabs in between
     @State private var scroll = CourseScrollModel()          // how far the Course tab has scrolled (moves the header photo);
                                                              // a reference held in @State so scrolling doesn't redraw this view
-    @State private var pager = CoursePagerModel()            // how far a swipe between tabs has moved (slides the top cover with the pages)
-    @State private var pageW: CGFloat = 390                  // width of the page area (for the swipe)
-    @State private var bottomInset: CGFloat = 0              // height of the floating tab bar's safe area (pages scroll under it)
+    @State private var anticipated: CourseTab?               // the tab a swipe is heading for, so the top fade starts with the swipe
     @ObservedObject private var themes = ThemeStore.shared
 
     private var todoCount: Int { todos.count(for: course.id) }
@@ -38,14 +34,9 @@ struct CourseDetailView: View {
 
     @ViewBuilder private func page(_ t: CourseTab) -> some View {
         switch t {
-        case .course: CourseContentView(courseId: course.id, course: course, onScroll: { y in
+        case .course: CourseContentView(courseId: course.id, course: course) { y in
             scroll.y = max(0, y)
-        }, onUnload: {
-            // The paged TabView drops pages that are not next to the open one. When the Course list is dropped while another
-            // tab is open, its position is gone (it comes back at the top), so the photo and cover go back to "top" too.
-            // Without this they kept the old scroll position (a solid black header) until the new list reported in.
-            if tab != .course { scroll.y = 0 }
-        })
+        }
         case .participants: ParticipantsView(courseId: course.id)
         case .drive: CourseDriveTab(courseId: course.id)
         case .todo: CourseTodoTab(courseId: course.id)
@@ -53,50 +44,32 @@ struct CourseDetailView: View {
         }
     }
 
-    private var photoOn: Bool { true }      // the photo header is on in every theme (Light washes it out, see CourseBackdrop)
+    private var photoOn: Bool { themes.theme.scheme == .dark }
 
-    /// A tap on the tab strip. The pager only slides ONE page when the tab is several places away, but the cover strips are
-    /// laid out one per tab, so animating them would sweep every tab in between across the header (solid black strips over
-    /// the photo). A far jump therefore moves the cover straight to the new tab; a neighbour still slides with its page.
-    private func select(_ t: CourseTab) {
-        guard t != tab else { return }
-        let from = tabs.firstIndex(of: tab) ?? 0
-        let to = tabs.firstIndex(of: t) ?? 0
-        // coming back to Course from further than the next tab: its list was dropped and is rebuilt at the top
-        if t == .course && from > 1 { scroll.y = 0 }
-        if abs(to - from) > 1 {
-            var tr = Transaction(); tr.disablesAnimations = true
-            withTransaction(tr) { coverTab = t }
-            withAnimation(.easeInOut(duration: 0.25)) { tab = t }
-        } else {
-            withAnimation(.easeInOut(duration: 0.25)) { tab = t; coverTab = t }
-        }
-    }
+    /// The photo is only shown while the Course tab is open and no swipe toward another tab is under way
+    private var photoVisible: Bool { tab == .course && anticipated == nil }
 
     var body: some View {
         ZStack(alignment: .top) {
             Theme.bg.ignoresSafeArea()
             if photoOn {
-                CourseBackdrop(scroll: scroll)      // moves up with the Course list; the other tabs' opaque pages slide over it
+                // moves up with the Course list. It is ONE layer behind the status bar, nav bar, tab strip and page, and it
+                // fades out as soon as you leave the Course tab or start a swipe (so pages never slide over a half-visible
+                // photo), and fades back in once the Course tab has settled
+                CourseBackdrop(scroll: scroll)
+                    .opacity(photoVisible ? 1 : 0)
+                    .animation(.easeOut(duration: photoVisible ? 0.25 : 0.14), value: photoVisible)
             }
             content
         }
-        // the photo shows through the navigation bar and the tab strip while the Course tab is at the top. The bar's own
-        // background is always hidden; the tab strip carries ONE cover (see CourseChromeBackground) that reaches up over
-        // the status bar and navigation bar, so the whole top area fades together
+        // the photo shows through the navigation bar and the tab strip while the Course tab is at the top; the bar's own
+        // background is always hidden, so everything up there fades together with the photo
         .toolbarBackground(photoOn ? Visibility.hidden : Visibility.automatic, for: .navigationBar)
         .navigationTitle(course.prettyShort ?? course.prettyFull)
         .navigationBarTitleDisplayMode(.inline)
         // the open tab goes away when its last item is removed
         .onChange(of: tabs) { new in if !new.contains(tab) { tab = .course } }
-        // the swipe is finished: the strips now sit in their new places, so the swipe offset goes back to 0 (no animation)
-        .onChange(of: tab) { newTab in
-            var t = Transaction(); t.disablesAnimations = true
-            withTransaction(t) {
-                pager.dragX = 0
-                coverTab = newTab       // swipes (and removed tabs) change `tab` directly: the cover catches up here
-            }
-        }
+        .onChange(of: tab) { _ in anticipated = nil }
     }
 
     private var content: some View {
@@ -105,7 +78,7 @@ struct CourseDetailView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 26) {
                     ForEach(tabs) { t in
-                        Button { select(t) } label: {
+                        Button { withAnimation(.easeInOut(duration: 0.25)) { tab = t } } label: {
                             HStack(spacing: 6) {
                                 Text(t.rawValue)
                                     .fontWeight(tab == t ? .semibold : .regular)
@@ -125,9 +98,6 @@ struct CourseDetailView: View {
                 .padding(.horizontal, 16).padding(.vertical, 12)
             }
             .noTopEdgeEffect(photoOn)
-            // clear over the photo at the top of the Course tab, solid everywhere else; extends up over the nav bar.
-            // One strip per tab that slides with the pages while swiping (see CourseChromeCover)
-            .background { if photoOn { CourseChromeCover(scroll: scroll, pager: pager, tabs: tabs, current: coverTab) } }
             // keep the selected tab visible when swiping between pages
             .onChange(of: tab) { t in withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(t, anchor: .center) } }
             }
@@ -136,79 +106,26 @@ struct CourseDetailView: View {
             // On the first tab (Course) a left-to-right swipe from the screen edge still goes back.
             TabView(selection: $tab) {
                 ForEach(tabs) { t in
-                    page(t)
-                        // the pages run under the floating tab bar (see below), so the list gets that height as bottom room
-                        .safeAreaInset(edge: .bottom, spacing: 0) { Color.clear.frame(height: bottomInset) }
-                        // the list is cut off where it meets the header (pure black), and the cards' glow is a faint grey:
-                        // fade the first few points out so there is no hard line between the two
-                        .mask(TopFade())
-                        .background(t == .course ? Color.clear : Theme.bg)
-                        // reads where the pager really is, so the top cover slides exactly as far as the pages
-                        .background(CoursePagerProbe(pager: pager, index: tabs.firstIndex(of: tab) ?? 0, count: tabs.count, page: tabs.firstIndex(of: t) ?? 0))
-                        .tag(t)
+                    page(t).background(t == .course ? Color.clear : Theme.bg).tag(t)
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
-            // The pager stopped at the tab bar's safe area and left a black band behind the floating bar (the page content was
-            // cut off along the band's top edge). `.ignoresSafeArea` does not reliably widen a page-style TabView, so its
-            // frame is grown by the bar's height instead: the pages now run all the way down, underneath the bar.
-            .padding(.bottom, -bottomInset)
-            .background(GeometryReader { g in
-                Color.clear
-                    .onAppear { pageW = g.size.width }
-                    .onChange(of: g.size.width) { pageW = $0 }
-            })
-            // fallback only: CoursePagerProbe normally drives the top cover from the pages' real position (the finger runs
-            // slightly ahead of the pager, which left the cover misaligned with the page next to it)
+            // start the top fade as soon as a swipe heads for another tab, not once the page has settled
             .simultaneousGesture(
                 DragGesture(minimumDistance: 12)
                     .onChanged { v in
-                        guard !pager.followsPages,
-                              abs(v.translation.width) > abs(v.translation.height),
-                              let i = tabs.firstIndex(of: tab) else { return }
-                        var dx = v.translation.width
-                        if i == 0 { dx = min(dx, 0) }                    // no page before the first tab
-                        if i == tabs.count - 1 { dx = max(dx, 0) }       // none after the last
-                        pager.dragX = max(-pageW, min(pageW, dx))
-                    }
-                    .onEnded { v in
-                        if pager.followsPages { return }
                         guard abs(v.translation.width) > abs(v.translation.height),
-                              let i = tabs.firstIndex(of: tab) else {
-                            withAnimation(.easeOut(duration: 0.2)) { pager.dragX = 0 }
-                            return
-                        }
-                        // does the page go on to the next / previous tab? (past half way, counting the flick)
-                        let p = v.predictedEndTranslation.width
-                        let dir = p < -pageW / 2 ? 1 : (p > pageW / 2 ? -1 : 0)
-                        if dir != 0, tabs.indices.contains(i + dir) {
-                            withAnimation(.easeOut(duration: 0.25)) { pager.dragX = dir == 1 ? -pageW : pageW }
-                        } else {
-                            withAnimation(.easeOut(duration: 0.25)) { pager.dragX = 0 }
-                        }
-                        // the page change itself resets this; if the swipe did not change the tab, put the cover back
+                              let i = tabs.firstIndex(of: tab) else { return }
+                        let j = v.translation.width < 0 ? i + 1 : i - 1
+                        guard tabs.indices.contains(j), anticipated != tabs[j] else { return }
+                        anticipated = tabs[j]
+                    }
+                    .onEnded { _ in
+                        // the page change itself clears this; if the swipe was cancelled, put the top area back
                         let at = tab
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
-                            if tab == at { withAnimation(.easeOut(duration: 0.2)) { pager.dragX = 0 } }
-                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { if tab == at { anticipated = nil } }
                     }
             )
-        }
-        .background(GeometryReader { g in
-            Color.clear
-                .onAppear { bottomInset = g.safeAreaInsets.bottom }
-                .onChange(of: g.safeAreaInsets.bottom) { bottomInset = $0 }
-        })
-    }
-}
-
-/// Hides the first few points of a page and fades them in, so list content melts into the header above it instead of
-/// being cut off in a straight line. Kept shorter than the pages' top padding (16) so nothing at rest is dimmed.
-private struct TopFade: View {
-    var body: some View {
-        VStack(spacing: 0) {
-            LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom).frame(height: 14)
-            Rectangle().fill(Color.black)
         }
     }
 }
@@ -217,12 +134,10 @@ struct CourseContentView: View {
     let courseId: Int
     var course: Course? = nil
     var onScroll: (CGFloat) -> Void = { _ in }
-    var onUnload: () -> Void = {}                   // the list left the screen for good (page unloaded): its position is gone
     @State private var sections: [CourseSection] = []
     @State private var loading = true
     @State private var error: String?
     @State private var box = CourseScrollBox()      // last scroll position (a plain reference: no redraw while scrolling)
-    @State private var born = Date()                // when this list was built (a list the pager rebuilt starts at the top)
 
     var body: some View {
         ScrollView {
@@ -235,20 +150,12 @@ struct CourseContentView: View {
                 if loading { ProgressView().tint(Theme.accent) }
             }
             .padding(16)
-            // the list's real scroll position (read from its UIScrollView), so the header photo moves up with it
-            .background(CourseScrollProbe(onChange: { y in
-                // A list that was just built always sits at the top. Its scroll view reports a wrong offset (the safe-area
-                // inset, before its first layout) for a moment, which drew the header solid black with the photo scrolled
-                // away until the content came in. Reports in that first moment count as "top".
-                let v: CGFloat = Date().timeIntervalSince(born) < 0.8 ? 0 : y
-                box.y = v
-                onScroll(v)
-            }, onDetach: {
-                // a list that comes back starts at the top again
-                box.y = 0
-                onUnload()
-            }))
+            .background(GeometryReader { g in
+                Color.clear.preference(key: CourseScrollKey.self, value: -g.frame(in: .named("courseScroll")).minY)
+            })
         }
+        .coordinateSpace(name: "courseScroll")
+        .onPreferenceChange(CourseScrollKey.self) { box.y = $0; onScroll($0) }
         // coming back to this page (from another tab): put the photo where the list really is
         .onAppear { onScroll(box.y) }
         .noTopEdgeEffect(course != nil)
