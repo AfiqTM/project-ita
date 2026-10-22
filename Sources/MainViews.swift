@@ -14,10 +14,20 @@ struct RootView: View {
     @ObservedObject private var themes = ThemeStore.shared
     @State private var tab = 0
     @State private var othersPath: [OthersRoute] = []
+    @State private var coursesReset = 0     // bumped when the Courses tab is tapped again: back to the list of all courses
+
+    /// The tab selection; tapping the tab that is already open sends Courses back to its main list
+    private var selection: Binding<Int> {
+        Binding(get: { tab }, set: { new in
+            if new == tab && new == 0 { coursesReset += 1 }
+            tab = new
+        })
+    }
 
     var body: some View {
-        TabView(selection: $tab) {
+        TabView(selection: selection) {
             NavigationStack { CoursesView() }
+                .id(coursesReset)       // a new identity pops every screen opened inside Courses
                 .background(TabBadgeTint(color: Theme.uiAccent, text: Theme.uiOnAccent))   // accent badges (TabBadgeTint.swift)
                 .tabItem { Label("Courses", systemImage: "books.vertical") }
                 .tag(0)
