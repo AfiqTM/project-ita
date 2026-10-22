@@ -18,6 +18,7 @@ struct CourseDetailView: View {
     @State private var anticipated: CourseTab?               // the tab a swipe is heading for, so the top fade starts with the swipe
     @State private var photoReady = true                     // false while pages are sliding after leaving / returning to Course
     @State private var tapped = false                       // the last tab change came from tapping a tab (pages slide the whole way)
+    @State private var bottomInset: CGFloat = 0             // height of the floating bottom bar (+ home indicator)
     @ObservedObject private var themes = ThemeStore.shared
 
     private var todoCount: Int { todos.count(for: course.id) }
@@ -63,6 +64,14 @@ struct CourseDetailView: View {
                     .animation(.easeOut(duration: photoVisible ? 0.25 : 0.14), value: photoVisible)
             }
             content
+        }
+        // measure the floating bottom bar, so the pages can run underneath it (no black band) and still scroll clear of it
+        .background {
+            GeometryReader { g in
+                Color.clear
+                    .onAppear { bottomInset = g.safeAreaInsets.bottom }
+                    .onChange(of: g.safeAreaInsets.bottom) { v in bottomInset = v }
+            }
         }
         // the photo shows through the navigation bar and the tab strip while the Course tab is at the top; the bar's own
         // background is always hidden, so everything up there fades together with the photo
@@ -119,10 +128,15 @@ struct CourseDetailView: View {
             // On the first tab (Course) a left-to-right swipe from the screen edge still goes back.
             TabView(selection: $tab) {
                 ForEach(tabs) { t in
-                    page(t).background(t == .course ? Color.clear : Theme.bg).tag(t)
+                    page(t)
+                        // keep the last row reachable above the floating bar now that the pages extend under it
+                        .safeAreaInset(edge: .bottom, spacing: 0) { Color.clear.frame(height: bottomInset) }
+                        .background(t == .course ? Color.clear : Theme.bg).tag(t)
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
+            // let the pages run under the floating bottom bar instead of stopping above it (that left a black band behind it)
+            .ignoresSafeArea(.container, edges: .bottom)
             // start the top fade as soon as a swipe heads for another tab, not once the page has settled
             .simultaneousGesture(
                 DragGesture(minimumDistance: 12)
