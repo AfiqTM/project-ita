@@ -108,6 +108,9 @@ struct CourseDetailView: View {
             TabView(selection: $tab) {
                 ForEach(tabs) { t in
                     page(t)
+                        // the list is cut off where it meets the header (pure black), and the cards' glow is a faint grey:
+                        // fade the first few points out so there is no hard line between the two
+                        .mask(TopFade())
                         .background(t == .course ? Color.clear : Theme.bg)
                         // reads where the pager really is, so the top cover slides exactly as far as the pages
                         .background(CoursePagerProbe(pager: pager, index: tabs.firstIndex(of: tab) ?? 0, count: tabs.count))
@@ -155,6 +158,17 @@ struct CourseDetailView: View {
                         }
                     }
             )
+        }
+    }
+}
+
+/// Hides the first few points of a page and fades them in, so list content melts into the header above it instead of
+/// being cut off in a straight line. Kept shorter than the pages' top padding (16) so nothing at rest is dimmed.
+private struct TopFade: View {
+    var body: some View {
+        VStack(spacing: 0) {
+            LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom).frame(height: 14)
+            Rectangle().fill(Color.black)
         }
     }
 }
