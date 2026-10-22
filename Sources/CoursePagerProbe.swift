@@ -146,6 +146,14 @@ final class PagerFollower: NSObject {
         }
         last = x
         pager.swipeMoved(x, from: startIndex, count: count, width: w)
+        // the next page has fully arrived: hand the cover back to the open tab right now (no waiting for the timer), so the
+        // old tab's solid strip doesn't linger over the Course photo
+        if !touching && abs(abs(x) - w) < 1 {
+            fromTouch = false
+            endWork?.cancel()
+            pager.swipeEnded()
+            return
+        }
         if !touching { scheduleEnd() }                      // finger is up: the end comes once the pages stop moving
     }
 
@@ -154,6 +162,6 @@ final class PagerFollower: NSObject {
         endWork?.cancel()
         let work = DispatchWorkItem { [weak self] in self?.pager.swipeEnded() }
         endWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: work)
     }
 }
