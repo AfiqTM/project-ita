@@ -164,6 +164,7 @@ enum AppIcon {
         UserDefaults.standard.object(forKey: followsThemeKey) as? Bool ?? true
     }
 
+    /// Each theme has its own icon set: Dark, Light, Terminal, Retro and Red Dead.
     static func name(for theme: AppTheme) -> String {
         switch theme {
         case .dark: return "AppIcon-Dark"
@@ -179,7 +180,19 @@ enum AppIcon {
         let app = UIApplication.shared
         let wanted = name(for: theme)
         guard app.supportsAlternateIcons, app.alternateIconName != wanted else { return }
-        app.setAlternateIconName(wanted) { _ in }   // a failure just leaves the old icon
+        app.setAlternateIconName(wanted) { error in
+            // a failed switch must not leave the placeholder: fall back to the primary icon
+            guard error != nil, app.alternateIconName != nil else { return }
+            DispatchQueue.main.async { app.setAlternateIconName(nil) { _ in } }
+        }
+    }
+
+    /// Re-checks the icon against the theme when the app comes to the front, so a half-switched or
+    /// missing icon repairs itself.
+    @MainActor
+    static func syncWithTheme() {
+        guard followsTheme else { return }
+        apply(for: ThemeStore.shared.theme)
     }
 }
 

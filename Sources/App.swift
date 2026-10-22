@@ -31,7 +31,7 @@ struct iTaleemApp: App {
             .environmentObject(catalog)
             .environmentObject(sync)
             .onAppear { sync.configure(todos: todos, lib: driveLib, auth: driveAuth) }
-            .onChange(of: scenePhase) { phase in if phase == .active { sync.syncNow() } }
+            .onChange(of: scenePhase) { phase in if phase == .active { sync.syncNow(); AppIcon.syncWithTheme() } }
             .modifier(ThemeFont(mono: themes.theme.mono))
             .environment(\.font, themes.theme.westernHeadings ? Theme.font(.body) : nil)   // Red Dead: Chinese Rocks everywhere   // Terminal theme: monospaced font
             .preferredColorScheme(themes.theme.scheme)
