@@ -5,7 +5,7 @@ import SwiftUI
 // A blurred photo behind the navigation bar, the tab strip and the top of the Course tab, fading into the page.
 // Under it: the course code in large letters, "Subject • Section 02 • Semester 1", and the lecturer(s).
 // The photo is Assets.xcassets/CourseHeader.imageset/header.jpg: replace that file to change it.
-// Dark themes dim the photo; the Light theme washes it toward the page's off-white (see CourseBackdrop) so the dark text stays readable.
+// Dark themes dim the photo; the Light theme uses its own bright version (Assets.xcassets/CourseHeaderLight.imageset) so the dark text stays readable.
 
 extension Course {
     /// "BICS 1306 04 SEM1" -> "BICS 1306 04"
@@ -196,12 +196,11 @@ struct CourseBackdrop: View {
         Color.clear
             .frame(maxWidth: .infinity).frame(height: height)
             .overlay {
-                Image("CourseHeader").resizable().scaledToFill()
+                // Light theme: a bright, warm version of the same photo (CourseHeaderLight) so the dark text stays readable
+                Image(light ? "CourseHeaderLight" : "CourseHeader").resizable().scaledToFill()
                     .saturation(t.coverSaturation)
                     .brightness(light ? 0 : t.coverBrightness * 0.5)
                     .overlay { if let c = t.coverTint { Color(hex: c).opacity(0.35).blendMode(.multiply) } }
-                    // Light theme: wash the photo toward the page's off-white so the dark text on top stays readable
-                    .overlay { if light { Theme.bg.opacity(0.62) } }
             }
             .clipped()
             // no dark band at the top: the photo goes straight up under the status bar and navigation bar
