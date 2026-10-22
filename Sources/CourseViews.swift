@@ -13,6 +13,8 @@ struct CourseDetailView: View {
     @EnvironmentObject var todos: TodoStore
     @EnvironmentObject var drive: DriveLibrary
     @State private var tab: CourseTab = .course
+    @State private var coverTab: CourseTab = .course         // the tab the top cover is drawn for. Follows `tab`, except on a jump over
+                                                             // several tabs, where the cover must not sweep across the tabs in between
     @State private var scroll = CourseScrollModel()          // how far the Course tab has scrolled (moves the header photo);
                                                              // a reference held in @State so scrolling doesn't redraw this view
     @State private var pager = CoursePagerModel()            // how far a swipe between tabs has moved (slides the top cover with the pages)
@@ -36,9 +38,14 @@ struct CourseDetailView: View {
 
     @ViewBuilder private func page(_ t: CourseTab) -> some View {
         switch t {
-        case .course: CourseContentView(courseId: course.id, course: course) { y in
+        case .course: CourseContentView(courseId: course.id, course: course, onScroll: { y in
             scroll.y = max(0, y)
-        }
+        }, onUnload: {
+            // The paged TabView drops pages that are not next to the open one. When the Course list is dropped while another
+            // tab is open, its position is gone (it comes back at the top), so the photo and cover go back to "top" too.
+            // Without this they kept the old scroll position (a solid black header) until the new list reported in.
+            if tab != .course { scroll.y = 0 }
+        })
         case .participants: ParticipantsView(courseId: course.id)
         case .drive: CourseDriveTab(courseId: course.id)
         case .todo: CourseTodoTab(courseId: course.id)
@@ -47,6 +54,22 @@ struct CourseDetailView: View {
     }
 
     private var photoOn: Bool { true }      // the photo header is on in every theme (Light washes it out, see CourseBackdrop)
+
+    /// A tap on the tab strip. The pager only slides ONE page when the tab is several places away, but the cover strips are
+    /// laid out one per tab, so animating them would sweep every tab in between across the header (solid black strips over
+    /// the photo). A far jump therefore moves the cover straight to the new tab; a neighbour still slides with its page.
+    private func select(_ t: CourseTab) {
+        guard t != tab else { return }
+        let from = tabs.firstIndex(of: tab) ?? 0
+        let to = tabs.firstIndex(of: t) ?? 0
+        if abs(to - from) > 1 {
+            var tr = Transaction(); tr.disablesAnimations = true
+            withTransaction(tr) { coverTab = t }
+            withAnimation(.easeInOut(duration: 0.25)) { tab = t }
+        } else {
+            withAnimation(.easeInOut(duration: 0.25)) { tab = t; coverTab = t }
+        }
+    }
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -65,9 +88,12 @@ struct CourseDetailView: View {
         // the open tab goes away when its last item is removed
         .onChange(of: tabs) { new in if !new.contains(tab) { tab = .course } }
         // the swipe is finished: the strips now sit in their new places, so the swipe offset goes back to 0 (no animation)
-        .onChange(of: tab) { _ in
+        .onChange(of: tab) { newTab in
             var t = Transaction(); t.disablesAnimations = true
-            withTransaction(t) { pager.dragX = 0 }
+            withTransaction(t) {
+                pager.dragX = 0
+                coverTab = newTab       // swipes (and removed tabs) change `tab` directly: the cover catches up here
+            }
         }
     }
 
@@ -77,7 +103,7 @@ struct CourseDetailView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 26) {
                     ForEach(tabs) { t in
-                        Button { withAnimation(.easeInOut(duration: 0.25)) { tab = t } } label: {
+                        Button { select(t) } label: {
                             HStack(spacing: 6) {
                                 Text(t.rawValue)
                                     .fontWeight(tab == t ? .semibold : .regular)
@@ -99,7 +125,7 @@ struct CourseDetailView: View {
             .noTopEdgeEffect(photoOn)
             // clear over the photo at the top of the Course tab, solid everywhere else; extends up over the nav bar.
             // One strip per tab that slides with the pages while swiping (see CourseChromeCover)
-            .background { if photoOn { CourseChromeCover(scroll: scroll, pager: pager, tabs: tabs, current: tab) } }
+            .background { if photoOn { CourseChromeCover(scroll: scroll, pager: pager, tabs: tabs, current: coverTab) } }
             // keep the selected tab visible when swiping between pages
             .onChange(of: tab) { t in withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(t, anchor: .center) } }
             }
@@ -121,8 +147,10 @@ struct CourseDetailView: View {
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
-            // the pager used to stop at the bottom safe area, leaving a black bar behind the tab bar: let it run underneath
-            .ignoresSafeArea(.container, edges: .bottom)
+            // The pager stopped at the tab bar's safe area and left a black band behind the floating bar (the page content was
+            // cut off along the band's top edge). `.ignoresSafeArea` does not reliably widen a page-style TabView, so its
+            // frame is grown by the bar's height instead: the pages now run all the way down, underneath the bar.
+            .padding(.bottom, -bottomInset)
             .background(GeometryReader { g in
                 Color.clear
                     .onAppear { pageW = g.size.width }
@@ -187,6 +215,7 @@ struct CourseContentView: View {
     let courseId: Int
     var course: Course? = nil
     var onScroll: (CGFloat) -> Void = { _ in }
+    var onUnload: () -> Void = {}                   // the list left the screen for good (page unloaded): its position is gone
     @State private var sections: [CourseSection] = []
     @State private var loading = true
     @State private var error: String?
@@ -204,10 +233,14 @@ struct CourseContentView: View {
             }
             .padding(16)
             // the list's real scroll position (read from its UIScrollView), so the header photo moves up with it
-            .background(CourseScrollProbe { y in
+            .background(CourseScrollProbe(onChange: { y in
                 box.y = y
                 onScroll(y)
-            })
+            }, onDetach: {
+                // a list that comes back starts at the top again
+                box.y = 0
+                onUnload()
+            }))
         }
         // coming back to this page (from another tab): put the photo where the list really is
         .onAppear { onScroll(box.y) }
