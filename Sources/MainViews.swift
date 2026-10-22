@@ -18,7 +18,6 @@ struct RootView: View {
     var body: some View {
         TabView(selection: $tab) {
             NavigationStack { CoursesView() }
-                .background(TabBadgeTint(color: Theme.uiAccent, text: Theme.uiOnAccent))   // accent badges (TabBadgeTint.swift)
                 .tabItem { Label("My courses", systemImage: "books.vertical") }
                 .tag(0)
             NavigationStack { AssignmentsTabView(model: assignments) }
