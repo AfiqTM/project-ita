@@ -590,20 +590,26 @@ struct DriveDestination: View {
 /// blurred `.shadow`. It looks like a glow, but it is plain vector drawing: no blur pass, no off-screen bitmap,
 /// so it stays cheap behind a card that is thousands of points tall.
 struct StackedGlow: View {
+    /// (how far the ring reaches past the card edge in pt, opacity of that ring), outermost first.
+    /// Fitted to the three blurred shadows in `GlowCard` (Theme.swift): about 60% at the very edge,
+    /// ~20% 5 pt out, ~5% 15 pt out, gone at ~30 pt.
+    typealias Ring = (reach: CGFloat, opacity: Double)
+    static let glowRings: [Ring] = [(30, 0.011), (23, 0.015), (17, 0.033), (12, 0.054),
+                                    (8, 0.091), (5, 0.111), (3, 0.153), (1.5, 0.279)]
+    static let softRings: [Ring] = [(18, 0.002), (12, 0.005), (6, 0.0096), (3, 0.0203)]
+    static let westernRings: [Ring] = [(18, 0.022), (12, 0.051), (6, 0.116), (3, 0.232)]
+
     let color: Color
-    let layers: Int            // how many rings (each `spacing` pt wider than the last)
-    let opacity: Double        // opacity of ONE layer; they add up towards the card edge
-    var spacing: CGFloat = 2
+    let rings: [Ring]
     var dy: CGFloat = 0        // vertical offset (drop-shadow look for the light / western themes)
     let radius: CGFloat
 
     var body: some View {
         ZStack {
-            // biggest first, so the brightest part ends up right at the card edge
-            ForEach(Array((1...max(layers, 1)).reversed()), id: \.self) { i in
-                let d = CGFloat(i) * spacing
+            ForEach(rings.indices, id: \.self) { i in
+                let d = rings[i].reach
                 RoundedRectangle(cornerRadius: radius + d, style: .continuous)
-                    .fill(color.opacity(opacity))
+                    .fill(color.opacity(rings[i].opacity))
                     .padding(-d)
             }
         }
@@ -624,19 +630,19 @@ struct DriveListCard: ViewModifier {
         let western = p.card == .western
         let r = Theme.cardRadius(radius)
         let shape = RoundedRectangle(cornerRadius: r, style: .continuous)
-        // colour, layers, opacity per layer, y offset: tuned to look like the shadows in GlowCard
-        let halo: (Color, Int, Double, CGFloat)?
+        // colour, rings, y offset: fitted to the shadows GlowCard uses for each card style
+        let halo: (Color, [StackedGlow.Ring], CGFloat)?
         switch p.card {
-        case .glow, .terminal: halo = (Color(hex: p.glow), 14, 0.10, 0)
-        case .soft:            halo = (Color.black, 8, 0.012, 3)
-        case .western:         halo = (Color.black, 11, 0.09, 4)
+        case .glow, .terminal: halo = (Color(hex: p.glow), StackedGlow.glowRings, 0)
+        case .soft:            halo = (Color.black, StackedGlow.softRings, 3)
+        case .western:         halo = (Color.black, StackedGlow.westernRings, 5)
         case .pixel:           halo = nil          // hard block shadow below, no blur in that theme
         }
         return content
             .background {
                 ZStack {
                     if let h = halo {
-                        StackedGlow(color: h.0, layers: h.1, opacity: h.2, dy: h.3, radius: r)
+                        StackedGlow(color: h.0, rings: h.1, dy: h.2, radius: r)
                     }
                     if pixel { shape.fill(Color(hex: p.glow)).offset(x: 3, y: 3) }
                     shape.fill(Color(hex: p.surface))
@@ -646,7 +652,8 @@ struct DriveListCard: ViewModifier {
                         .clipShape(shape)
                 }
             }
-            .overlay(shape.stroke(Color(hex: p.line), lineWidth: pixel ? 2 : 1).allowsHitTesting(false))
+            .overlay(shape.stroke(Color(hex: p.line), lineWidth: p.card == .glow ? 0 : (pixel ? 2 : 1))
+                .allowsHitTesting(false))
     }
 }
 extension View {
