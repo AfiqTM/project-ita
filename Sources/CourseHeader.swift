@@ -111,7 +111,7 @@ struct CourseHeaderView: View {
                 .foregroundStyle(LinearGradient(colors: [Theme.txt, Theme.accent.opacity(0.85)],
                                                 startPoint: .topLeading, endPoint: .bottomTrailing))
                 .lineLimit(2).minimumScaleFactor(0.6)
-                .pixelHeading(20, normal: .system(size: 34, weight: .bold), pt: 34)
+                .pixelHeading(22, normal: .system(size: 38, weight: .bold), pt: 38)
             subtitle
             ForEach(lecturers.people) { p in
                 HStack(spacing: 10) {
@@ -138,6 +138,30 @@ final class CourseScrollModel: ObservableObject {
     @Published var y: CGFloat = 0
 }
 
+/// Remembers the Course list's last scroll position without redrawing anything (a plain reference, not observed), so the
+/// photo can be put back in the right place when the Course page comes back on screen
+final class CourseScrollBox {
+    var y: CGFloat = 0
+}
+
+/// The solid cover behind the status bar, the navigation bar AND the tab strip, drawn as one view with one opacity, so the
+/// whole top area fades in and out together with exactly the same timing (no part of it can lag behind another).
+/// On the Course tab it follows the scroll (clear at the top so the photo shows through; solid once the photo has moved
+/// away); on every other tab it is solid. Switching tabs fades it quickly and straight away.
+struct CourseChromeBackground: View {
+    @ObservedObject var scroll: CourseScrollModel
+    let onCourse: Bool
+
+    var body: some View {
+        let scrolled = min(max(scroll.y / 260, 0), 1)
+        Theme.bg
+            .opacity(onCourse ? scrolled : 1)
+            .animation(.easeOut(duration: 0.14), value: onCourse)
+            .ignoresSafeArea(edges: .top)
+            .allowsHitTesting(false)
+    }
+}
+
 struct CourseBackdrop: View {
     @ObservedObject var scroll: CourseScrollModel
     @ObservedObject private var themes = ThemeStore.shared
@@ -159,6 +183,7 @@ struct CourseBackdrop: View {
                                     startPoint: .top, endPoint: .init(x: 0.5, y: 0.35)))
             .mask(LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.5),
                                          .init(color: .clear, location: 1)], startPoint: .top, endPoint: .bottom))
+            // moves up 1:1 with the list and slides off under the status bar, like the reference video
             .offset(y: -min(max(scroll.y, 0), height))
             .ignoresSafeArea(edges: .top)
             .allowsHitTesting(false)
