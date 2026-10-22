@@ -111,3 +111,5 @@ Paste an OAuth **iOS** client ID from Google Cloud Console into the setup sectio
 - "Open ENT submission in iTa'leem" (opens the assignment page)
 
 The subject list is refreshed each time the app opens. Announcement checks are keyword and date matching on the announcement text, not an AI model.
+
+On iOS 18 and later (built for the iOS 27 Siri), `Sources/SiriIndex.swift` also puts the assignments and announcements the app downloads into the phone's Spotlight index as App Entities, so Apple Intelligence can find them by meaning. They stay on the phone and are removed when you sign out. The system schemas (such as `.reminders.createReminder`) are not adopted yet; they need the iOS 27 SDK.

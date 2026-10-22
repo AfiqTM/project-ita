@@ -94,6 +94,7 @@ struct RootView: View {
             guard let uid = app.site?.userid else { return }
             await OfflineCache.paintFromCache { await assignments.load(uid: uid) }   // last download first, instantly
             await assignments.load(uid: uid)                                          // then the online version
+            await SiriNotes.donate(SiriNotes.notes(from: assignments.items))          // Siri AI can find them by meaning (SiriIndex.swift)
         }
         .task { await NotificationManager.shared.requestPermission() }
         // Offline support: download the lists in the background so they open with no internet

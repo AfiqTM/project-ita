@@ -465,6 +465,8 @@ enum OfflinePrefetch {
         guard let fid = pick?.instance else { return }
         guard let d: DiscResp = try? await api.call("mod_forum_get_forum_discussions",
                                                     ["forumid": fid, "perpage": 50]) else { return }
+        let cname = SiriCatalog.cached().first { $0.id == id }?.name ?? ""
+        await SiriNotes.donate(SiriNotes.notes(fromAnnouncements: d.discussions, courseId: id, course: cname))   // for Siri AI
         for disc in d.discussions.prefix(5) {   // newest five: the ones people actually open
             _ = try? await api.raw("mod_forum_get_discussion_posts", ["discussionid": disc.discussion])
         }
