@@ -61,7 +61,7 @@ struct CourseDetailView: View {
                         .frame(height: geo.safeAreaInsets.top)
                         .ignoresSafeArea(edges: .top)
                         .opacity(tab == .course && atTop ? 0 : 1)
-                        .animation(.easeInOut(duration: 0.25), value: tab == .course && atTop)
+                        .animation(.easeOut(duration: 0.14), value: tab == .course && atTop)
                 }
                 .allowsHitTesting(false)
             }
@@ -103,7 +103,7 @@ struct CourseDetailView: View {
             }
             .noTopEdgeEffect(photoOn)
             .background(Theme.bg.opacity(photoOn && !(tab == .course && atTop) ? 1 : 0))
-            .animation(.easeInOut(duration: 0.25), value: tab == .course && atTop)
+            .animation(.easeOut(duration: 0.14), value: tab == .course && atTop)
             // keep the selected tab visible when swiping between pages
             .onChange(of: tab) { t in withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(t, anchor: .center) } }
             }
