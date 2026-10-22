@@ -10,7 +10,7 @@ enum Site {
 struct iTaleemApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate   // background uploads (BackgroundUpload.swift)
     @StateObject private var app = AppState()
-    @StateObject private var todos = TodoStore()
+    @StateObject private var todos = TodoStore.shared
     @StateObject private var driveLib = DriveLibrary()
     @StateObject private var driveAuth = DriveAuth()
     @StateObject private var catalog = CourseCatalog()

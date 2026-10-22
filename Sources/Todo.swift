@@ -129,6 +129,8 @@ struct TodoItem: Codable, Identifiable, Hashable {
 
 @MainActor
 final class TodoStore: ObservableObject {
+    /// The one store: the app's screens and Siri ("Add a to-do") both use it, so neither overwrites the other
+    static let shared = TodoStore()
     @Published private(set) var items: [TodoItem] = []
     private let key = "todo.items.v1"
 

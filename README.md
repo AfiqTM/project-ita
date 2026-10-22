@@ -97,3 +97,17 @@ Paste an OAuth **iOS** client ID from Google Cloud Console into the setup sectio
 - Font is the system font; add Google Sans Flex .ttf files + UIAppFonts if you want it.
 - Requires iTa'leem's mobile web services to be enabled (the official Moodle app needs the same).
 - Images embedded inside page text still need internet; only attachment files are saved offline.
+
+## Siri
+
+`Sources/Siri.swift` (App Intents, iOS 16+) lets you ask Siri, or use the same actions in the Shortcuts app. Say a subject by name, short form (DES, SE, ENT) or code (BICS 1306):
+
+- "When is my assignment due in iTa'leem" / "When is my DES assignment in iTa'leem"
+- "When is something due in iTa'leem" (Siri asks what: quiz 2, lab report ...)
+- "Who is my SE lecturer in iTa'leem", "What section am I in for SE in iTa'leem"
+- "How many classes can I miss in DES in iTa'leem" (absences left before attendance drops under 80%)
+- "Is DES class cancelled in iTa'leem" / "... on a date" (reads the subject's announcements for cancelled, online, moved or rescheduled classes)
+- "Add a to-do in iTa'leem"
+- "Open ENT submission in iTa'leem" (opens the assignment page)
+
+The subject list is refreshed each time the app opens. Announcement checks are keyword and date matching on the announcement text, not an AI model.
