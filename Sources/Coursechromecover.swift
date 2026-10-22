@@ -11,6 +11,23 @@ import SwiftUI
 /// How far a swipe between tabs has moved (in points). Kept in its own object so only the cover redraws while swiping.
 final class CoursePagerModel: ObservableObject {
     @Published var dragX: CGFloat = 0
+    /// True once CoursePagerProbe is reading the real page position; the finger-based fallback in CourseDetailView stands down.
+    var followsPages = false
+
+    /// The pages are `x` points from where they rest (+ = moved right). Called by CoursePagerProbe on every scroll step.
+    func follow(_ x: CGFloat, index: Int, count: Int, width: CGFloat) {
+        var dx = max(-width, min(width, x))
+        if index == 0 { dx = min(dx, 0) }                  // no page before the first tab
+        if index == count - 1 { dx = max(dx, 0) }          // none after the last
+        if abs(dx - dragX) > 0.01 { dragX = dx }
+    }
+
+    /// The swipe has stopped moving. A finished page change already put the cover back (CourseDetailView resets it when the
+    /// tab changes); a swipe that snapped back may leave a hair of offset, so clear it.
+    func settle() {
+        guard dragX != 0 else { return }
+        withAnimation(.easeOut(duration: 0.15)) { dragX = 0 }
+    }
 }
 
 struct CourseChromeCover: View {
