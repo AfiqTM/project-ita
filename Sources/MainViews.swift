@@ -18,10 +18,11 @@ struct RootView: View {
     var body: some View {
         TabView(selection: $tab) {
             NavigationStack { CoursesView() }
-                .tabItem { Label("My courses", systemImage: "books.vertical") }
+                .background(TabBadgeTint(color: Theme.uiAccent, text: Theme.uiOnAccent))   // accent badges (TabBadgeTint.swift)
+                .tabItem { Label("Courses", systemImage: "books.vertical") }
                 .tag(0)
             NavigationStack { AssignmentsTabView(model: assignments) }
-                .tabItem { Label("Assignments", systemImage: "checklist") }
+                .tabItem { Label("Due", systemImage: "checklist") }
                 .badge(assignments.badgeCount)   // to-do items due inside the range chosen in the tab
                 .tag(1)
             NavigationStack { AlertsView(badge: notifs) }
