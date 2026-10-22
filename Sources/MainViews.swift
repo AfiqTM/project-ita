@@ -14,20 +14,37 @@ struct RootView: View {
     @ObservedObject private var themes = ThemeStore.shared
     @State private var tab = 0
     @State private var othersPath: [OthersRoute] = []
-    @State private var coursesReset = 0     // bumped when the Courses tab is tapped again: back to the list of all courses
-
     /// The tab selection; tapping the tab that is already open sends Courses back to its main list
     private var selection: Binding<Int> {
         Binding(get: { tab }, set: { new in
-            if new == tab && new == 0 { coursesReset += 1 }
+            if new == tab && new == 0 { popToRootAnimated() }
             tab = new
         })
+    }
+
+    /// Tapping the open Courses tab again: slide back out of every screen to the main course list (the normal back animation)
+    private func popToRootAnimated() {
+        func nav(in vc: UIViewController) -> UINavigationController? {
+            if let n = vc as? UINavigationController { return n }
+            for c in vc.children { if let n = nav(in: c) { return n } }
+            return nil
+        }
+        func tabBar(in vc: UIViewController) -> UITabBarController? {
+            if let t = vc as? UITabBarController { return t }
+            for c in vc.children { if let t = tabBar(in: c) { return t } }
+            if let p = vc.presentedViewController { return tabBar(in: p) }
+            return nil
+        }
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        guard let root = scenes.flatMap(\.windows).first(where: \.isKeyWindow)?.rootViewController,
+              let tabs = tabBar(in: root), let selected = tabs.selectedViewController,
+              let n = nav(in: selected), n.viewControllers.count > 1 else { return }
+        n.popToRootViewController(animated: true)
     }
 
     var body: some View {
         TabView(selection: selection) {
             NavigationStack { CoursesView() }
-                .id(coursesReset)       // a new identity pops every screen opened inside Courses
                 .background(TabBadgeTint(color: Theme.uiAccent, text: Theme.uiOnAccent))   // accent badges (TabBadgeTint.swift)
                 .tabItem { Label("Courses", systemImage: "books.vertical") }
                 .tag(0)
