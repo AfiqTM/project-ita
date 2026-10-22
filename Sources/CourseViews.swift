@@ -16,10 +16,6 @@ struct CourseDetailView: View {
     @State private var scroll = CourseScrollModel()          // how far the Course tab has scrolled (moves the header photo);
                                                              // a reference held in @State so scrolling doesn't redraw this view
     @State private var atTop = true
-    @State private var drag: CGFloat = 0                     // finger offset while swiping between tabs
-    @State private var dragLocked = false                    // this drag is a horizontal tab swipe
-    @State private var dragIgnored = false                   // this drag belongs to something else (vertical scroll, edge back-swipe)
-    @State private var pageW: CGFloat = 390
     @ObservedObject private var themes = ThemeStore.shared
 
     private var todoCount: Int { todos.count(for: course.id) }
@@ -64,8 +60,8 @@ struct CourseDetailView: View {
                     Theme.bg
                         .frame(height: geo.safeAreaInsets.top)
                         .ignoresSafeArea(edges: .top)
-                        .opacity(cover)
-                        .animation(.easeOut(duration: 0.14), value: atTop)
+                        .opacity(tab == .course && atTop ? 0 : 1)
+                        .animation(.easeOut(duration: 0.14), value: tab == .course && atTop)
                 }
                 .allowsHitTesting(false)
             }
@@ -86,7 +82,7 @@ struct CourseDetailView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 26) {
                     ForEach(tabs) { t in
-                        Button { go(to: t) } label: {
+                        Button { withAnimation(.easeInOut(duration: 0.25)) { tab = t } } label: {
                             HStack(spacing: 6) {
                                 Text(t.rawValue)
                                     .fontWeight(tab == t ? .semibold : .regular)
@@ -106,77 +102,21 @@ struct CourseDetailView: View {
                 .padding(.horizontal, 16).padding(.vertical, 12)
             }
             .noTopEdgeEffect(photoOn)
-            .background(Theme.bg.opacity(cover))
-            .animation(.easeOut(duration: 0.14), value: atTop)
+            .background(Theme.bg.opacity(photoOn && !(tab == .course && atTop) ? 1 : 0))
+            .animation(.easeOut(duration: 0.14), value: tab == .course && atTop)
             // keep the selected tab visible when swiping between pages
             .onChange(of: tab) { t in withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(t, anchor: .center) } }
             }
 
             // Swipe right-to-left for the next tab, left-to-right for the previous one.
             // On the first tab (Course) a left-to-right swipe from the screen edge still goes back.
-            pager
-        }
-    }
-
-    // MARK: custom pager — the pages, the photo and the top bar all follow one value, so they move together
-
-    private var index: Int { tabs.firstIndex(of: tab) ?? 0 }
-
-    /// 0 = the photo shows through the top bar (Course tab, at the top), 1 = solid; follows the swipe
-    private var cover: Double {
-        guard photoOn else { return 0 }
-        if tab == .course && !atTop { return 1 }
-        let pos = CGFloat(index) - drag / max(pageW, 1)
-        return Double(min(max(pos, 0), 1))
-    }
-
-    private func go(to t: CourseTab) {
-        withAnimation(.easeOut(duration: 0.28)) { tab = t; drag = 0 }
-    }
-
-    private var pager: some View {
-        GeometryReader { geo in
-            let w = geo.size.width
-            HStack(spacing: 0) {
-                ForEach(Array(tabs.enumerated()), id: \.element) { i, t in
-                    Group {
-                        if abs(i - index) <= 1 { page(t) } else { Color.clear }     // only the open tab and its neighbours are built
-                    }
-                    .frame(width: w, height: geo.size.height)
-                    .background(t == .course ? Color.clear : Theme.bg)
+            TabView(selection: $tab) {
+                ForEach(tabs) { t in
+                    page(t).background(t == .course ? Color.clear : Theme.bg).tag(t)
                 }
             }
-            .offset(x: -CGFloat(index) * w + drag)
-            .onAppear { pageW = w }
-            .onChange(of: w) { pageW = $0 }
+            .tabViewStyle(.page(indexDisplayMode: .never))
         }
-        .clipped()
-        // swipe right-to-left for the next tab, left-to-right for the previous one; a swipe that starts at the screen's
-        // left edge on the first tab is left to the system's back gesture
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 10)
-                .onChanged { v in
-                    if !dragLocked && !dragIgnored {
-                        let horizontal = abs(v.translation.width) > abs(v.translation.height) * 1.2
-                        if !horizontal { dragIgnored = true }
-                        else if index == 0 && v.startLocation.x < 28 && v.translation.width > 0 { dragIgnored = true }
-                        else { dragLocked = true }
-                    }
-                    guard dragLocked else { return }
-                    var dx = v.translation.width
-                    if (index == 0 && dx > 0) || (index == tabs.count - 1 && dx < 0) { dx /= 3 }     // resist at the ends
-                    drag = dx
-                }
-                .onEnded { v in
-                    defer { dragLocked = false; dragIgnored = false }
-                    guard dragLocked else { return }
-                    let projected = v.predictedEndTranslation.width
-                    var target = index
-                    if (v.translation.width < -pageW * 0.25 || projected < -pageW * 0.5), index < tabs.count - 1 { target += 1 }
-                    else if (v.translation.width > pageW * 0.25 || projected > pageW * 0.5), index > 0 { target -= 1 }
-                    go(to: tabs[target])
-                }
-        )
     }
 }
 
