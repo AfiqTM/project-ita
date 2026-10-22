@@ -5,7 +5,7 @@ import SwiftUI
 // A blurred photo behind the navigation bar, the tab strip and the top of the Course tab, fading into the page.
 // Under it: the course code in large letters, "Subject • Section 02 • Semester 1", and the lecturer(s).
 // The photo is Assets.xcassets/CourseHeader.imageset/header.jpg: replace that file to change it.
-// Light theme keeps the plain page (a dark photo would not fit it).
+// Dark themes dim the photo; the Light theme washes it toward the page's off-white (see CourseBackdrop) so the dark text stays readable.
 
 extension Course {
     /// "BICS 1306 04 SEM1" -> "BICS 1306 04"
@@ -50,9 +50,11 @@ extension Person {
     var isLecturer: Bool {
         (roles ?? []).contains { ["editingteacher", "teacher"].contains(($0.shortname ?? "").lowercased()) }
     }
+    /// The participant list shows no role at all for this person (iTa'leem lists its lecturers like this; students say "student")
+    var hasNoRole: Bool { (roles ?? []).isEmpty }
 }
 
-/// The course's lecturers, from the participant list (people with a teacher role)
+/// The course's lecturers, from the participant list (people with a teacher role, or with no role at all)
 @MainActor final class CourseLecturers: ObservableObject {
     @Published private(set) var people: [Person] = []
     private static var cache: [Int: [Person]] = [:]
@@ -62,6 +64,11 @@ extension Person {
         var teachers: [Person] = []
         if let all: [Person] = try? await MoodleAPI.shared.call("core_enrol_get_enrolled_users", ["courseid": courseId]) {
             teachers = all.filter(\.isLecturer)
+            // A participant with no role is a lecturer too. Only when the list reports roles for somebody (otherwise the site
+            // hides roles for everyone and all would look like lecturers), and only when just a few have none.
+            let rolesReported = all.contains { !($0.roles ?? []).isEmpty }
+            let noRole = all.filter { $0.hasNoRole && !$0.isLecturer }
+            if rolesReported && noRole.count <= 8 { teachers += noRole }
         }
         if teachers.isEmpty { teachers = await contacts(courseId) }     // the participant list may not show roles
         let withPictures = await ProfileImages.upgraded(teachers)
@@ -169,18 +176,19 @@ struct CourseBackdrop: View {
 
     var body: some View {
         let t = themes.theme
+        let light = t.scheme == .light
         Color.clear
             .frame(maxWidth: .infinity).frame(height: height)
             .overlay {
                 Image("CourseHeader").resizable().scaledToFill()
                     .saturation(t.coverSaturation)
-                    .brightness(t.coverBrightness * 0.5)
+                    .brightness(light ? 0 : t.coverBrightness * 0.5)
                     .overlay { if let c = t.coverTint { Color(hex: c).opacity(0.35).blendMode(.multiply) } }
+                    // Light theme: wash the photo toward the page's off-white so the dark text on top stays readable
+                    .overlay { if light { Theme.bg.opacity(0.62) } }
             }
             .clipped()
-            // darker at the top so the title bar and tabs stay readable, fading into the page at the bottom
-            .overlay(LinearGradient(colors: [Color.black.opacity(0.45), Color.black.opacity(0)],
-                                    startPoint: .top, endPoint: .init(x: 0.5, y: 0.35)))
+            // no dark band at the top: the photo goes straight up under the status bar and navigation bar
             .mask(LinearGradient(stops: [
                 .init(color: .black, location: 0),
                 .init(color: .black, location: 0.38),
