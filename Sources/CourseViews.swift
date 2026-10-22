@@ -52,9 +52,7 @@ struct CourseDetailView: View {
         ZStack(alignment: .top) {
             Theme.bg.ignoresSafeArea()
             if photoOn {
-                CourseBackdrop(scroll: scroll)
-                    .opacity(tab == .course ? 1 : 0)
-                    .animation(.easeInOut(duration: 0.25), value: tab)
+                CourseBackdrop(scroll: scroll)      // stays put; the other tabs' opaque pages slide over it
             }
             content
             if photoOn {
@@ -104,6 +102,8 @@ struct CourseDetailView: View {
                 .padding(.horizontal, 16).padding(.vertical, 12)
             }
             .noTopEdgeEffect(photoOn)
+            .background(Theme.bg.opacity(photoOn && !(tab == .course && atTop) ? 1 : 0))
+            .animation(.easeInOut(duration: 0.25), value: tab == .course && atTop)
             // keep the selected tab visible when swiping between pages
             .onChange(of: tab) { t in withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(t, anchor: .center) } }
             }
@@ -112,11 +112,10 @@ struct CourseDetailView: View {
             // On the first tab (Course) a left-to-right swipe from the screen edge still goes back.
             TabView(selection: $tab) {
                 ForEach(tabs) { t in
-                    page(t).tag(t)
+                    page(t).background(t == .course ? Color.clear : Theme.bg).tag(t)
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
-            .background(Theme.bg)        // pages never show black while they load
         }
     }
 }

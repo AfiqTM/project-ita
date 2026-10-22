@@ -13,7 +13,9 @@ extension Course {
         let base = prettyShort ?? prettyFull
         let t = base.replacingOccurrences(of: "\\s*\\bSEM\\s*\\d+\\b", with: "", options: [.regularExpression, .caseInsensitive])
             .trimmingCharacters(in: .whitespaces)
-        return t.isEmpty ? base : t
+        // "BICS 1306 04" -> "BICS 1306" (the section is shown in the line below)
+        let short = t.replacingOccurrences(of: "(?<=\\d{4})\\s+\\d{1,2}$", with: "", options: .regularExpression)
+        return short.isEmpty ? (t.isEmpty ? base : t) : short
     }
     /// "Section 02" (from "... Section 2 ..." in the full name)
     var sectionLabel: String? {
@@ -109,7 +111,7 @@ struct CourseHeaderView: View {
                 .foregroundStyle(LinearGradient(colors: [Theme.txt, Theme.accent.opacity(0.85)],
                                                 startPoint: .topLeading, endPoint: .bottomTrailing))
                 .lineLimit(2).minimumScaleFactor(0.6)
-                .pixelHeading(24, normal: .system(size: 46, weight: .bold), pt: 46)
+                .pixelHeading(20, normal: .system(size: 34, weight: .bold), pt: 34)
             subtitle
             ForEach(lecturers.people) { p in
                 HStack(spacing: 10) {
