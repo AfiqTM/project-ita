@@ -107,7 +107,11 @@ struct CourseDetailView: View {
             // On the first tab (Course) a left-to-right swipe from the screen edge still goes back.
             TabView(selection: $tab) {
                 ForEach(tabs) { t in
-                    page(t).background(t == .course ? Color.clear : Theme.bg).tag(t)
+                    page(t)
+                        .background(t == .course ? Color.clear : Theme.bg)
+                        // reads where the pager really is, so the top cover slides exactly as far as the pages
+                        .background(CoursePagerProbe(pager: pager, index: tabs.firstIndex(of: tab) ?? 0, count: tabs.count))
+                        .tag(t)
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
@@ -116,11 +120,13 @@ struct CourseDetailView: View {
                     .onAppear { pageW = g.size.width }
                     .onChange(of: g.size.width) { pageW = $0 }
             })
-            // the top cover follows the finger, so it slides in together with the page next to it
+            // fallback only: CoursePagerProbe normally drives the top cover from the pages' real position (the finger runs
+            // slightly ahead of the pager, which left the cover misaligned with the page next to it)
             .simultaneousGesture(
                 DragGesture(minimumDistance: 12)
                     .onChanged { v in
-                        guard abs(v.translation.width) > abs(v.translation.height),
+                        guard !pager.followsPages,
+                              abs(v.translation.width) > abs(v.translation.height),
                               let i = tabs.firstIndex(of: tab) else { return }
                         var dx = v.translation.width
                         if i == 0 { dx = min(dx, 0) }                    // no page before the first tab
@@ -128,6 +134,7 @@ struct CourseDetailView: View {
                         pager.dragX = max(-pageW, min(pageW, dx))
                     }
                     .onEnded { v in
+                        if pager.followsPages { return }
                         guard abs(v.translation.width) > abs(v.translation.height),
                               let i = tabs.firstIndex(of: tab) else {
                             withAnimation(.easeOut(duration: 0.2)) { pager.dragX = 0 }
