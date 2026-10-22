@@ -16,6 +16,8 @@ struct CourseDetailView: View {
     @State private var scroll = CourseScrollModel()          // how far the Course tab has scrolled (moves the header photo);
                                                              // a reference held in @State so scrolling doesn't redraw this view
     @State private var anticipated: CourseTab?               // the tab a swipe is heading for, so the top fade starts with the swipe
+    @State private var photoReady = true                     // false while pages are sliding after leaving / returning to Course
+    @State private var tapped = false                       // the last tab change came from tapping a tab (pages slide the whole way)
     @ObservedObject private var themes = ThemeStore.shared
 
     private var todoCount: Int { todos.count(for: course.id) }
@@ -46,8 +48,8 @@ struct CourseDetailView: View {
 
     private var photoOn: Bool { themes.theme.scheme == .dark }
 
-    /// The photo is only shown while the Course tab is open and no swipe toward another tab is under way
-    private var photoVisible: Bool { tab == .course && anticipated == nil }
+    /// The photo is only shown while the Course tab is open, settled, and no swipe toward another tab is under way
+    private var photoVisible: Bool { tab == .course && anticipated == nil && photoReady }
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -69,7 +71,18 @@ struct CourseDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         // the open tab goes away when its last item is removed
         .onChange(of: tabs) { new in if !new.contains(tab) { tab = .course } }
-        .onChange(of: tab) { _ in anticipated = nil }
+        .onChange(of: tab) { t in
+            anticipated = nil
+            if t != .course {
+                photoReady = false                      // gone at once when leaving Course
+            } else if tapped {
+                // a tap from a far tab slides through the pages in between: bring the photo back once Course has arrived
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { if tab == .course { photoReady = true } }
+            } else {
+                photoReady = true                       // a swipe only changes the tab once the page has settled
+            }
+            tapped = false
+        }
     }
 
     private var content: some View {
@@ -78,7 +91,7 @@ struct CourseDetailView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 26) {
                     ForEach(tabs) { t in
-                        Button { withAnimation(.easeInOut(duration: 0.25)) { tab = t } } label: {
+                        Button { tapped = (t != tab); withAnimation(.easeInOut(duration: 0.25)) { tab = t } } label: {
                             HStack(spacing: 6) {
                                 Text(t.rawValue)
                                     .fontWeight(tab == t ? .semibold : .regular)
