@@ -106,7 +106,7 @@ struct StudyItemEntity: IndexedEntity {
 }
 
 @available(iOS 18.0, *)
-struct StudyItemQuery: EntityStringQuery, IndexedEntityQuery {
+struct StudyItemQuery: EntityStringQuery {
     func entities(for identifiers: [String]) async throws -> [StudyItemEntity] {
         SiriNotes.all().filter { identifiers.contains($0.id) }.map(StudyItemEntity.init)
     }
@@ -117,13 +117,5 @@ struct StudyItemQuery: EntityStringQuery, IndexedEntityQuery {
     }
     func suggestedEntities() async throws -> [StudyItemEntity] {
         SiriNotes.all().prefix(20).map(StudyItemEntity.init)
-    }
-    // Spotlight asks for everything again if its index has a problem
-    func reindexEntities(for identifiers: [String], indexDescription: CSSearchableIndexDescription) async throws {
-        let l = SiriNotes.all().filter { identifiers.contains($0.id) }.map(StudyItemEntity.init)
-        try await CSSearchableIndex(name: "iTaleemStudy").indexAppEntities(l)
-    }
-    func reindexAllEntities(indexDescription: CSSearchableIndexDescription) async throws {
-        try await CSSearchableIndex(name: "iTaleemStudy").indexAppEntities(SiriNotes.all().map(StudyItemEntity.init))
     }
 }
