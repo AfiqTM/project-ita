@@ -396,7 +396,7 @@ private enum Announce {
     static func mentions(_ d: Date, in text: String) -> Bool {
         let cal = Calendar(identifier: .gregorian)
         let c = cal.dateComponents([.day, .month, .weekday], from: d)
-        guard let day = c.day, let month = c.month, let wd = c.weekday else { return false }
+        guard let day = c.day, let month = c.month, c.weekday != nil else { return false }
         let months = [["january", "jan"], ["february", "feb"], ["march", "mar"], ["april", "apr"], ["may"], ["june", "jun"],
                       ["july", "jul"], ["august", "aug"], ["september", "sept", "sep"], ["october", "oct"],
                       ["november", "nov"], ["december", "dec"]]
@@ -575,7 +575,14 @@ struct iTaleemShortcuts: AppShortcutsProvider {
         AppShortcut(intent: AbsencesLeftIntent(),
                     phrases: ["How many classes can I miss in \(\.$subject) in \(.applicationName)",
                               "How many times can I be absent for \(\.$subject) in \(.applicationName)",
-                              "How is my \(\.$subject) attendance in \(.applicationName)"],
+                              "How is my \(\.$subject) attendance in \(.applicationName)",
+                              "How many times can I skip \(\.$subject) in \(.applicationName)",
+                              "How many times can I skip \(\.$subject) on \(.applicationName)",
+                              "How many times can I miss \(\.$subject) in \(.applicationName)",
+                              "How many classes can I skip in \(\.$subject) in \(.applicationName)",
+                              "How many absences left for \(\.$subject) in \(.applicationName)",
+                              "Can I skip \(\.$subject) in \(.applicationName)",
+                              "\(.applicationName) how many times can I skip \(\.$subject)"],
                     shortTitle: "Absences left", systemImageName: "checkmark.circle")
         AppShortcut(intent: ClassStatusIntent(),
                     phrases: ["Is \(\.$subject) class cancelled in \(.applicationName)",
