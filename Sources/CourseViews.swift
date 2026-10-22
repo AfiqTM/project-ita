@@ -15,7 +15,8 @@ struct CourseDetailView: View {
     @State private var tab: CourseTab = .course
     @State private var scroll = CourseScrollModel()          // how far the Course tab has scrolled (moves the header photo);
                                                              // a reference held in @State so scrolling doesn't redraw this view
-    @State private var anticipated: CourseTab?               // the tab a swipe is heading for, so the top fade starts with the swipe
+    @State private var pager = CoursePagerModel()            // how far a swipe between tabs has moved (slides the top cover with the pages)
+    @State private var pageW: CGFloat = 390                  // width of the page area (for the swipe)
     @ObservedObject private var themes = ThemeStore.shared
 
     private var todoCount: Int { todos.count(for: course.id) }
@@ -46,9 +47,6 @@ struct CourseDetailView: View {
 
     private var photoOn: Bool { themes.theme.scheme == .dark }
 
-    /// The tab the top area should look like it is on: the one a swipe is heading for, else the open one
-    private var shownTab: CourseTab { anticipated ?? tab }
-
     var body: some View {
         ZStack(alignment: .top) {
             Theme.bg.ignoresSafeArea()
@@ -65,7 +63,11 @@ struct CourseDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         // the open tab goes away when its last item is removed
         .onChange(of: tabs) { new in if !new.contains(tab) { tab = .course } }
-        .onChange(of: tab) { _ in anticipated = nil }
+        // the swipe is finished: the strips now sit in their new places, so the swipe offset goes back to 0 (no animation)
+        .onChange(of: tab) { _ in
+            var t = Transaction(); t.disableAnimations = true
+            withTransaction(t) { pager.dragX = 0 }
+        }
     }
 
     private var content: some View {
@@ -94,8 +96,9 @@ struct CourseDetailView: View {
                 .padding(.horizontal, 16).padding(.vertical, 12)
             }
             .noTopEdgeEffect(photoOn)
-            // clear over the photo at the top of the Course tab, solid everywhere else; extends up over the nav bar
-            .background { if photoOn { CourseChromeBackground(scroll: scroll, onCourse: shownTab == .course) } }
+            // clear over the photo at the top of the Course tab, solid everywhere else; extends up over the nav bar.
+            // One strip per tab that slides with the pages while swiping (see CourseChromeCover)
+            .background { if photoOn { CourseChromeCover(scroll: scroll, pager: pager, tabs: tabs, current: tab) } }
             // keep the selected tab visible when swiping between pages
             .onChange(of: tab) { t in withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(t, anchor: .center) } }
             }
@@ -108,20 +111,41 @@ struct CourseDetailView: View {
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
-            // start the top fade as soon as a swipe heads for another tab, not once the page has settled
+            .background(GeometryReader { g in
+                Color.clear
+                    .onAppear { pageW = g.size.width }
+                    .onChange(of: g.size.width) { pageW = $0 }
+            })
+            // the top cover follows the finger, so it slides in together with the page next to it
             .simultaneousGesture(
                 DragGesture(minimumDistance: 12)
                     .onChanged { v in
                         guard abs(v.translation.width) > abs(v.translation.height),
                               let i = tabs.firstIndex(of: tab) else { return }
-                        let j = v.translation.width < 0 ? i + 1 : i - 1
-                        guard tabs.indices.contains(j), anticipated != tabs[j] else { return }
-                        anticipated = tabs[j]
+                        var dx = v.translation.width
+                        if i == 0 { dx = min(dx, 0) }                    // no page before the first tab
+                        if i == tabs.count - 1 { dx = max(dx, 0) }       // none after the last
+                        pager.dragX = max(-pageW, min(pageW, dx))
                     }
-                    .onEnded { _ in
-                        // the page change itself clears this; if the swipe was cancelled, put the top area back
+                    .onEnded { v in
+                        guard abs(v.translation.width) > abs(v.translation.height),
+                              let i = tabs.firstIndex(of: tab) else {
+                            withAnimation(.easeOut(duration: 0.2)) { pager.dragX = 0 }
+                            return
+                        }
+                        // does the page go on to the next / previous tab? (past half way, counting the flick)
+                        let p = v.predictedEndTranslation.width
+                        let dir = p < -pageW / 2 ? 1 : (p > pageW / 2 ? -1 : 0)
+                        if dir != 0, tabs.indices.contains(i + dir) {
+                            withAnimation(.easeOut(duration: 0.25)) { pager.dragX = dir == 1 ? -pageW : pageW }
+                        } else {
+                            withAnimation(.easeOut(duration: 0.25)) { pager.dragX = 0 }
+                        }
+                        // the page change itself resets this; if the swipe did not change the tab, put the cover back
                         let at = tab
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { if tab == at { anticipated = nil } }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+                            if tab == at { withAnimation(.easeOut(duration: 0.2)) { pager.dragX = 0 } }
+                        }
                     }
             )
         }
