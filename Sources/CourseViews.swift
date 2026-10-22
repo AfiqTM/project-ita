@@ -48,7 +48,7 @@ struct CourseDetailView: View {
         }
     }
 
-    private var photoOn: Bool { themes.theme.scheme == .dark }
+    private var photoOn: Bool { true }      // every theme has a cover photo (the Light theme uses its own bright version)
 
     /// The photo is only shown while the Course tab is open, settled, and no swipe toward another tab is under way
     private var photoVisible: Bool { tab == .course && anticipated == nil && photoReady }
