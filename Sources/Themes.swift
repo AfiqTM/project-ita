@@ -153,7 +153,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
 }
 
 /// The home-screen icon that goes with each theme. Each one is an alternate icon set in the asset catalog
-/// (Assets.xcassets/AppIcon-Dark, AppIcon-Light, AppIcon-Terminal, AppIcon-Retro, AppIcon-RedDead) and listed in project.yml under
+/// (Assets.xcassets/AppIcon-Light, AppIcon-Terminal, AppIcon-Retro, AppIcon-RedDead) and listed in project.yml under
 /// ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES.
 /// iOS shows its own "You have changed the icon" notice every time the icon changes; apps can't hide it.
 /// The icon only follows the theme while the switch on the Themes screen is on.
@@ -164,10 +164,11 @@ enum AppIcon {
         UserDefaults.standard.object(forKey: followsThemeKey) as? Bool ?? true
     }
 
-    /// Each theme has its own icon set: Dark, Light, Terminal, Retro and Red Dead.
-    static func name(for theme: AppTheme) -> String {
+    /// Each theme has its own icon. nil = the main icon (AppIcon), whose default image is the dark icon,
+    /// so Dark never depends on an alternate-icon lookup (the only one that showed the blank placeholder).
+    static func name(for theme: AppTheme) -> String? {
         switch theme {
-        case .dark: return "AppIcon-Dark"
+        case .dark: return nil
         case .light: return "AppIcon-Light"
         case .terminal: return "AppIcon-Terminal"
         case .retro: return "AppIcon-Retro"
