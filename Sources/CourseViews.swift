@@ -65,7 +65,7 @@ struct CourseDetailView: View {
         .onChange(of: tabs) { new in if !new.contains(tab) { tab = .course } }
         // the swipe is finished: the strips now sit in their new places, so the swipe offset goes back to 0 (no animation)
         .onChange(of: tab) { _ in
-            var t = Transaction(); t.disableAnimations = true
+            var t = Transaction(); t.disablesAnimations = true
             withTransaction(t) { pager.dragX = 0 }
         }
     }
