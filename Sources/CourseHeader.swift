@@ -214,6 +214,8 @@ struct CourseBackdrop: View {
             ], startPoint: .top, endPoint: .bottom))
             // moves up 1:1 with the list and slides off under the status bar, like the reference video
             .offset(y: -min(max(scroll.y, 0), height))
+            // and it dims as it goes, so it melts into the page colour instead of sliding off with an edge
+            .opacity(max(0, 1 - Double(scroll.y) / 520))
             .ignoresSafeArea(edges: .top)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
