@@ -144,7 +144,7 @@ struct CourseDetailView: View {
                         .mask(TopFade())
                         .background(t == .course ? Color.clear : Theme.bg)
                         // reads where the pager really is, so the top cover slides exactly as far as the pages
-                        .background(CoursePagerProbe(pager: pager, index: tabs.firstIndex(of: tab) ?? 0, count: tabs.count))
+                        .background(CoursePagerProbe(pager: pager, index: tabs.firstIndex(of: tab) ?? 0, count: tabs.count, page: tabs.firstIndex(of: t) ?? 0))
                         .tag(t)
                 }
             }

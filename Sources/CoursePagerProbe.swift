@@ -15,6 +15,7 @@ struct CoursePagerProbe: UIViewRepresentable {
     let pager: CoursePagerModel
     let index: Int      // position of the open tab
     let count: Int      // how many tabs there are
+    var page: Int = 0   // position of the tab this probe's page shows
 
     func makeUIView(context: Context) -> ProbeView {
         let v = ProbeView()
@@ -23,6 +24,7 @@ struct CoursePagerProbe: UIViewRepresentable {
         v.pager = pager
         v.index = index
         v.count = count
+        v.page = page
         return v
     }
 
@@ -30,6 +32,7 @@ struct CoursePagerProbe: UIViewRepresentable {
         v.pager = pager
         v.index = index
         v.count = count
+        v.page = page
         v.attachIfNeeded()
     }
 
@@ -37,6 +40,11 @@ struct CoursePagerProbe: UIViewRepresentable {
         var pager: CoursePagerModel?
         var index = 0
         var count = 1
+        var page = 0
+
+        /// Where this page really is on screen (x of its left edge in the window). Unlike the pager's contentOffset this is
+        /// not thrown off when the pager inserts a page (a Course page that was dropped and is rebuilt in front).
+        var screenX: CGFloat { convert(bounds, to: nil).minX }
 
         override func didMoveToWindow() {
             super.didMoveToWindow()
@@ -51,7 +59,7 @@ struct CoursePagerProbe: UIViewRepresentable {
             var view: UIView? = superview
             while let v = view {
                 if let sv = v as? UIScrollView, sv.isPagingEnabled {
-                    PagerFollower.attach(to: sv, pager: pager, index: index, count: count)
+                    PagerFollower.attach(to: sv, pager: pager, index: index, count: count).register(self, page: page)
                     return
                 }
                 view = v.superview
@@ -77,15 +85,24 @@ final class PagerFollower: NSObject {
     private var last: CGFloat = 0       // the offset last passed on
     private var endWork: DispatchWorkItem?
 
-    static func attach(to sv: UIScrollView, pager: CoursePagerModel, index: Int, count: Int) {
+    private final class WeakProbe { weak var view: CoursePagerProbe.ProbeView?; init(_ v: CoursePagerProbe.ProbeView) { view = v } }
+    private var probes: [Int: WeakProbe] = [:]      // the probe of each loaded page, by tab position
+    private var startProbe: CoursePagerProbe.ProbeView?   // the probe of the page the swipe started on
+    private var restX: CGFloat = 0                  // where that page sat on screen when the swipe began
+
+    func register(_ v: CoursePagerProbe.ProbeView, page: Int) { probes[page] = WeakProbe(v) }
+
+    @discardableResult
+    static func attach(to sv: UIScrollView, pager: CoursePagerModel, index: Int, count: Int) -> PagerFollower {
         if let f = objc_getAssociatedObject(sv, &pagerFollowerKey) as? PagerFollower {
             f.pager = pager
             f.index = index
             f.count = count
-            return
+            return f
         }
         let f = PagerFollower(scroll: sv, pager: pager, index: index, count: count)
         objc_setAssociatedObject(sv, &pagerFollowerKey, f, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        return f
     }
 
     private init(scroll: UIScrollView, pager: CoursePagerModel, index: Int, count: Int) {
@@ -127,6 +144,8 @@ final class PagerFollower: NSObject {
             startIndex = index
             rest = (s.contentOffset.x / w).rounded() * w
             last = 0
+            // measure the swipe on the page itself where possible (see ProbeView.screenX)
+            if let v = probes[startIndex]?.view, v.window != nil { startProbe = v; restX = v.screenX } else { startProbe = nil }
             endWork?.cancel()
         }
         wasTouching = touching
@@ -138,9 +157,11 @@ final class PagerFollower: NSObject {
             return
         }
 
-        let x = rest - s.contentOffset.x                    // + = pages moved right
-        // the pager re-centres its scroll view at times (a jump of a whole page that does not move the pages): carry on from there
-        if abs(x - last) > w * 0.6 {
+        var x = rest - s.contentOffset.x                    // + = pages moved right
+        if let v = startProbe, v.window != nil {
+            x = v.screenX - restX                           // the page's real movement
+        } else if abs(x - last) > w * 0.6 {
+            // the pager re-centres its scroll view at times (a jump of a whole page that does not move the pages): carry on from there
             rest = s.contentOffset.x + last
             return
         }
