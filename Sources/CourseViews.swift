@@ -15,7 +15,7 @@ struct CourseDetailView: View {
     @State private var tab: CourseTab = .course
     @State private var scroll = CourseScrollModel()          // how far the Course tab has scrolled (moves the header photo);
                                                              // a reference held in @State so scrolling doesn't redraw this view
-    @State private var atTop = true
+    @State private var anticipated: CourseTab?               // the tab a swipe is heading for, so the top fade starts with the swipe
     @ObservedObject private var themes = ThemeStore.shared
 
     private var todoCount: Int { todos.count(for: course.id) }
@@ -36,8 +36,6 @@ struct CourseDetailView: View {
         switch t {
         case .course: CourseContentView(courseId: course.id, course: course) { y in
             scroll.y = max(0, y)
-            let top = y < 60
-            if top != atTop { atTop = top }
         }
         case .participants: ParticipantsView(courseId: course.id)
         case .drive: CourseDriveTab(courseId: course.id)
@@ -48,31 +46,26 @@ struct CourseDetailView: View {
 
     private var photoOn: Bool { themes.theme.scheme == .dark }
 
+    /// The tab the top area should look like it is on: the one a swipe is heading for, else the open one
+    private var shownTab: CourseTab { anticipated ?? tab }
+
     var body: some View {
         ZStack(alignment: .top) {
             Theme.bg.ignoresSafeArea()
             if photoOn {
-                CourseBackdrop(scroll: scroll)      // stays put; the other tabs' opaque pages slide over it
+                CourseBackdrop(scroll: scroll)      // moves up with the Course list; the other tabs' opaque pages slide over it
             }
             content
-            if photoOn {
-                GeometryReader { geo in
-                    Theme.bg
-                        .frame(height: geo.safeAreaInsets.top)
-                        .ignoresSafeArea(edges: .top)
-                        .opacity(1)
-                                        }
-                .allowsHitTesting(false)
-            }
         }
-        // the photo shows through the navigation bar while the Course tab is at the top; the bar's own background is
-        // always hidden and a cover fades in over the status/nav area instead, so switching tabs doesn't flash
+        // the photo shows through the navigation bar and the tab strip while the Course tab is at the top. The bar's own
+        // background is always hidden; the tab strip carries ONE cover (see CourseChromeBackground) that reaches up over
+        // the status bar and navigation bar, so the whole top area fades together
         .toolbarBackground(photoOn ? Visibility.hidden : Visibility.automatic, for: .navigationBar)
         .navigationTitle(course.prettyShort ?? course.prettyFull)
         .navigationBarTitleDisplayMode(.inline)
         // the open tab goes away when its last item is removed
         .onChange(of: tabs) { new in if !new.contains(tab) { tab = .course } }
-        .onChange(of: tab) { _ in scroll.y = 0; atTop = true }
+        .onChange(of: tab) { _ in anticipated = nil }
     }
 
     private var content: some View {
@@ -101,8 +94,9 @@ struct CourseDetailView: View {
                 .padding(.horizontal, 16).padding(.vertical, 12)
             }
             .noTopEdgeEffect(photoOn)
-            .background(photoOn ? Theme.bg : Color.clear)
-                        // keep the selected tab visible when swiping between pages
+            // clear over the photo at the top of the Course tab, solid everywhere else; extends up over the nav bar
+            .background { if photoOn { CourseChromeBackground(scroll: scroll, onCourse: shownTab == .course) } }
+            // keep the selected tab visible when swiping between pages
             .onChange(of: tab) { t in withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(t, anchor: .center) } }
             }
 
@@ -114,6 +108,22 @@ struct CourseDetailView: View {
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
+            // start the top fade as soon as a swipe heads for another tab, not once the page has settled
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 12)
+                    .onChanged { v in
+                        guard abs(v.translation.width) > abs(v.translation.height),
+                              let i = tabs.firstIndex(of: tab) else { return }
+                        let j = v.translation.width < 0 ? i + 1 : i - 1
+                        guard tabs.indices.contains(j), anticipated != tabs[j] else { return }
+                        anticipated = tabs[j]
+                    }
+                    .onEnded { _ in
+                        // the page change itself clears this; if the swipe was cancelled, put the top area back
+                        let at = tab
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { if tab == at { anticipated = nil } }
+                    }
+            )
         }
     }
 }
@@ -125,6 +135,7 @@ struct CourseContentView: View {
     @State private var sections: [CourseSection] = []
     @State private var loading = true
     @State private var error: String?
+    @State private var box = CourseScrollBox()      // last scroll position (a plain reference: no redraw while scrolling)
 
     var body: some View {
         ScrollView {
@@ -142,7 +153,9 @@ struct CourseContentView: View {
             })
         }
         .coordinateSpace(name: "courseScroll")
-        .onPreferenceChange(CourseScrollKey.self) { onScroll($0) }
+        .onPreferenceChange(CourseScrollKey.self) { box.y = $0; onScroll($0) }
+        // coming back to this page (from another tab): put the photo where the list really is
+        .onAppear { onScroll(box.y) }
         .noTopEdgeEffect(course != nil)
         .refreshable { await load() }
         .task {
