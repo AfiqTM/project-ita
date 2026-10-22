@@ -132,7 +132,10 @@ struct CourseDetailView: View {
                     page(t)
                         // keep the last row reachable above the floating bar now that the pages extend under it
                         .safeAreaInset(edge: .bottom, spacing: 0) { Color.clear.frame(height: bottomInset) }
-                        .background(t == .course ? Color.clear : Theme.bg).tag(t)
+                        .background(t == .course ? Color.clear : Theme.bg)
+                        // the list fades out under the tab strip instead of being cut off by a hard edge there
+                        .mask(alignment: .top) { TopFadeMask() }
+                        .tag(t)
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
@@ -155,6 +158,23 @@ struct CourseDetailView: View {
                     }
             )
         }
+    }
+}
+
+/// Soft top edge for a page: transparent at the very top, solid after `height` points
+struct TopFadeMask: View {
+    var height: CGFloat = 28
+    var body: some View {
+        VStack(spacing: 0) {
+            LinearGradient(stops: [
+                .init(color: .clear, location: 0),
+                .init(color: Color.black.opacity(0.35), location: 0.45),
+                .init(color: .black, location: 1)
+            ], startPoint: .top, endPoint: .bottom)
+            .frame(height: height)
+            Color.black
+        }
+        .ignoresSafeArea(.container, edges: .bottom)
     }
 }
 
