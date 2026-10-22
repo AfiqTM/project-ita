@@ -41,6 +41,18 @@ struct SiriCourse: Codable, Hashable {
 
     private static func squash(_ s: String) -> String { s.lowercased().filter { $0.isLetter || $0.isNumber } }
 
+    /// Other names for the subject: the short form (DES), its first word (Enterprise), its code (BICS 1306)
+    var aliases: [String] {
+        var l: [String] = []
+        let a = acronym.uppercased()
+        if a.count >= 2 { l.append(a); l.append(a.map(String.init).joined(separator: " ")) }   // DES, "D E S"
+        if let w = words.first, w.count > 3 { l.append(w) }
+        l.append(code)
+        if let s = shortname, !s.isEmpty { l.append(s.replacingOccurrences(of: "_", with: " ")) }
+        var seen = Set<String>()
+        return l.filter { !$0.isEmpty && seen.insert($0.lowercased()).inserted }
+    }
+
     /// How well a spoken / typed subject matches this one (0 = not at all)
     func score(_ query: String) -> Int {
         let q = Self.squash(query)
@@ -131,11 +143,17 @@ struct CourseEntity: AppEntity {
     var id: Int
     var name: String
     var code: String
+    var aliases: [String]
 
     var displayRepresentation: DisplayRepresentation {
-        DisplayRepresentation(title: "\(name)", subtitle: "\(code)")
+        if #available(iOS 18.0, *) {
+            // other ways to say the subject: DES, SE, ENT, "BICS 1306" ...
+            return DisplayRepresentation(title: "\(name)", subtitle: "\(code)",
+                                         synonyms: aliases.map { LocalizedStringResource("\($0)") })
+        }
+        return DisplayRepresentation(title: "\(name)", subtitle: "\(code)")
     }
-    init(_ c: SiriCourse) { id = c.id; name = c.name; code = c.code }
+    init(_ c: SiriCourse) { id = c.id; name = c.name; code = c.code; aliases = c.aliases }
 }
 
 struct CourseQuery: EntityStringQuery {
@@ -216,6 +234,11 @@ enum SiriData {
     }
 }
 
+/// The answer, spoken and also returned as text (so "add that to my calendar" style follow-ups can use it)
+func siriReply(_ text: String) -> some IntentResult & ProvidesDialog & ReturnsValue<String> {
+    .result(value: text, dialog: IntentDialog(stringLiteral: text))
+}
+
 // MARK: Deadlines
 
 private func deadlineSentence(_ e: TLEvent) -> String {
@@ -240,33 +263,33 @@ private func deadlineAnswer(courseId: Int?, subjectName: String?) async -> Strin
 
 struct NextAssignmentIntent: AppIntent {
     static var title: LocalizedStringResource = "Next assignment"
-    static var description = IntentDescription("When your next assignments are due.")
-    func perform() async throws -> some IntentResult & ProvidesDialog {
+    static var description = IntentDescription("Tells the student when their next assignments are due, across all subjects. Use for: when is my assignment due, what is due soon, when do I submit, upcoming deadlines.", categoryName: "Study")
+    func perform() async throws -> some IntentResult & ProvidesDialog & ReturnsValue<String> {
         try SiriCatalog.prepare()
         let text = await deadlineAnswer(courseId: nil, subjectName: nil)
-        return .result(dialog: "\(text)")
+        return siriReply("\(text)")
     }
 }
 
 struct SubjectAssignmentIntent: AppIntent {
     static var title: LocalizedStringResource = "Subject assignment"
-    static var description = IntentDescription("When the next assignment of a subject is due.")
+    static var description = IntentDescription("Tells the student when the next assignment of one subject is due. Use for: when is the DES assignment due, when do I submit work for a subject.", categoryName: "Study")
     @Parameter(title: "Subject") var subject: CourseEntity
-    func perform() async throws -> some IntentResult & ProvidesDialog {
+    func perform() async throws -> some IntentResult & ProvidesDialog & ReturnsValue<String> {
         try SiriCatalog.prepare()
         let text = await deadlineAnswer(courseId: subject.id, subjectName: subject.name)
-        return .result(dialog: "\(text)")
+        return siriReply("\(text)")
     }
 }
 
 struct WhenIsIntent: AppIntent {
     static var title: LocalizedStringResource = "When is something"
-    static var description = IntentDescription("Find the date of an assignment, quiz or other event by name.")
+    static var description = IntentDescription("Finds the date and time of an assignment, quiz, test, lab or other coming event by its name. Use for: when is quiz 2, when is the lab report, when is the test.", categoryName: "Study")
     @Parameter(title: "What", requestValueDialog: "What are you looking for? For example: quiz 2 or lab report.")
     var query: String
     @Parameter(title: "Subject") var subject: CourseEntity?
 
-    func perform() async throws -> some IntentResult & ProvidesDialog {
+    func perform() async throws -> some IntentResult & ProvidesDialog & ReturnsValue<String> {
         try SiriCatalog.prepare()
         let stop: Set<String> = ["when", "whens", "when's", "is", "the", "my", "a", "an", "due", "date", "for", "of", "what", "time", "i", "have"]
         let tokens = query.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init).filter { !stop.contains($0) }
@@ -278,11 +301,11 @@ struct WhenIsIntent: AppIntent {
             return tokens.allSatisfy { t in name.contains(t) || (course?.score(t) ?? 0) >= 70 }
         }
         if tokens.isEmpty || hits.isEmpty {
-            return .result(dialog: "I couldn't find anything called \(query) coming up.")
+            return siriReply("I couldn't find anything called \(query) coming up.")
         }
         var s = deadlineSentence(hits[0]) + "."
         if hits.count > 1 { s += " Also " + deadlineSentence(hits[1]) + "." }
-        return .result(dialog: "\(s)")
+        return siriReply("\(s)")
     }
 }
 
@@ -290,29 +313,29 @@ struct WhenIsIntent: AppIntent {
 
 struct LecturerIntent: AppIntent {
     static var title: LocalizedStringResource = "Lecturer"
-    static var description = IntentDescription("Who the lecturer of a subject is.")
+    static var description = IntentDescription("Tells the name of the lecturer or teacher of a subject. Use for: who teaches this subject, who is my lecturer, lecturer name.", categoryName: "Study")
     @Parameter(title: "Subject") var subject: CourseEntity
-    @MainActor func perform() async throws -> some IntentResult & ProvidesDialog {
+    @MainActor func perform() async throws -> some IntentResult & ProvidesDialog & ReturnsValue<String> {
         try SiriCatalog.prepare()
         let l = CourseLecturers()
         await l.load(courseId: subject.id)
         let names = l.people.map(\.displayName)
-        guard !names.isEmpty else { return .result(dialog: "I couldn't find the lecturer for \(subject.name).") }
+        guard !names.isEmpty else { return siriReply("I couldn't find the lecturer for \(subject.name).") }
         let list = names.count == 1 ? names[0] : names.dropLast().joined(separator: ", ") + " and " + names[names.count - 1]
-        return .result(dialog: "Your lecturer for \(subject.name) is \(list).")
+        return siriReply("Your lecturer for \(subject.name) is \(list).")
     }
 }
 
 struct SectionIntent: AppIntent {
     static var title: LocalizedStringResource = "Section"
-    static var description = IntentDescription("Which section you are in for a subject.")
+    static var description = IntentDescription("Tells which section (class group) the student is in for a subject. Use for: what section am I, which section is this subject.", categoryName: "Study")
     @Parameter(title: "Subject") var subject: CourseEntity
-    func perform() async throws -> some IntentResult & ProvidesDialog {
+    func perform() async throws -> some IntentResult & ProvidesDialog & ReturnsValue<String> {
         try SiriCatalog.prepare()
         guard let c = await SiriCatalog.course(subject.id), let sec = c.course.sectionLabel else {
-            return .result(dialog: "I couldn't find a section number for \(subject.name).")
+            return siriReply("I couldn't find a section number for \(subject.name).")
         }
-        return .result(dialog: "You're in \(sec) for \(subject.name).")
+        return siriReply("You're in \(sec) for \(subject.name).")
     }
 }
 
@@ -320,16 +343,18 @@ struct SectionIntent: AppIntent {
 
 struct AbsencesLeftIntent: AppIntent {
     static var title: LocalizedStringResource = "Absences left"
-    static var description = IntentDescription("How many more classes you can miss before attendance drops below 80%.")
+    static var description = IntentDescription("Tells how many more classes the student can be absent from before attendance drops below 80 percent. Use for: how many times can I skip, can I miss one more lecture, how is my attendance, am I allowed to be absent.", categoryName: "Attendance")
     @Parameter(title: "Subject") var subject: CourseEntity
+    @Parameter(title: "How many classes", description: "How many classes the person wants to skip. Leave empty to just ask how many they can miss.")
+    var count: Int?
 
-    func perform() async throws -> some IntentResult & ProvidesDialog {
+    func perform() async throws -> some IntentResult & ProvidesDialog & ReturnsValue<String> {
         try SiriCatalog.prepare()
         let uid = try await SiriData.userId()
         let api = MoodleAPI.shared
         let secs = await SiriData.contents(subject.id)
         guard let m = secs.flatMap({ $0.modules }).first(where: { $0.modname == "attendance" && $0.uservisible != false }) else {
-            return .result(dialog: "\(subject.name) has no attendance record.")
+            return siriReply("\(subject.name) has no attendance record.")
         }
         var summary: AttSummary?
         if let html = await api.attendanceMobileContent(cmid: m.id, courseId: subject.id, userid: uid) {
@@ -343,17 +368,21 @@ struct AbsencesLeftIntent: AppIntent {
             summary = s
         }
         guard let s = summary, let k = s.absencesLeft() else {
-            return .result(dialog: "I couldn't read the attendance for \(subject.name) right now.")
+            return siriReply("I couldn't read the attendance for \(subject.name) right now.")
         }
         let limit = Int(AttSummary.limitPercent)
         let maxText = s.maxPercent.map { " Your best possible attendance is \($0)." } ?? ""
         if k < 0 {
-            return .result(dialog: "Even if you attend every class from now on, \(subject.name) can't reach \(limit) percent.\(maxText)")
+            return siriReply("Even if you attend every class from now on, \(subject.name) can't reach \(limit) percent.\(maxText)")
+        }
+        if let n = count, n > 0 {
+            if n <= k { return siriReply("Yes. You can miss \(n) \(subject.name) class\(n == 1 ? "" : "es"), and still have \(k - n) more to spare before going under \(limit) percent.\(maxText)") }
+            return siriReply("No. You can only miss \(k) more \(subject.name) class\(k == 1 ? "" : "es") before going under \(limit) percent, so \(n) is too many.\(maxText)")
         }
         if k == 0 {
-            return .result(dialog: "You can't miss any more \(subject.name) classes without going under \(limit) percent.\(maxText)")
+            return siriReply("You can't miss any more \(subject.name) classes without going under \(limit) percent.\(maxText)")
         }
-        return .result(dialog: "You can miss \(k) more \(subject.name) class\(k == 1 ? "" : "es") before going under \(limit) percent.\(maxText)")
+        return siriReply("You can miss \(k) more \(subject.name) class\(k == 1 ? "" : "es") before going under \(limit) percent.\(maxText)")
     }
 }
 
@@ -417,33 +446,33 @@ private enum Announce {
 
 struct ClassStatusIntent: AppIntent {
     static var title: LocalizedStringResource = "Class changes"
-    static var description = IntentDescription("Checks the announcements of a subject for cancelled, online or moved classes.")
+    static var description = IntentDescription("Reads a subject's recent announcements for cancelled, online, moved or rescheduled classes. Use for: is the class cancelled, is there class today, any change to the class, is it online.", categoryName: "Study")
     @Parameter(title: "Subject") var subject: CourseEntity
 
-    func perform() async throws -> some IntentResult & ProvidesDialog {
+    func perform() async throws -> some IntentResult & ProvidesDialog & ReturnsValue<String> {
         try SiriCatalog.prepare()
         let list = await SiriData.announcements(subject.id)
-        guard !list.isEmpty else { return .result(dialog: "I couldn't read any \(subject.name) announcements.") }
+        guard !list.isEmpty else { return siriReply("I couldn't read any \(subject.name) announcements.") }
         let cutoff = Int(Date().addingTimeInterval(-21 * 86400).timeIntervalSince1970)
         let hits = list.filter { ($0.created ?? 0) >= cutoff && Announce.hasKeyword(Announce.text($0)) }
         guard let d = hits.first else {
-            return .result(dialog: "No recent \(subject.name) announcement mentions a cancelled, online or moved class.")
+            return siriReply("No recent \(subject.name) announcement mentions a cancelled, online or moved class.")
         }
         let posted = d.created.map { " (posted " + SiriData.fmtDay(Date(timeIntervalSince1970: TimeInterval($0))) + ")" } ?? ""
-        return .result(dialog: "\(subject.name) announcement\(posted): \(Announce.snippet(Announce.text(d), near: Announce.keywords))")
+        return siriReply("\(subject.name) announcement\(posted): \(Announce.snippet(Announce.text(d), near: Announce.keywords))")
     }
 }
 
 struct ClassStatusOnDateIntent: AppIntent {
     static var title: LocalizedStringResource = "Class on a date"
-    static var description = IntentDescription("Checks the announcements of a subject for a given day: cancelled, online, new venue or rescheduled.")
+    static var description = IntentDescription("Reads a subject's announcements for one specific day: cancelled, online, new venue or rescheduled. Use for: is the class cancelled on a date, is there class on Friday, venue change for a day.", categoryName: "Study")
     @Parameter(title: "Subject") var subject: CourseEntity
     @Parameter(title: "Date", requestValueDialog: "Which day?") var date: Date
 
-    func perform() async throws -> some IntentResult & ProvidesDialog {
+    func perform() async throws -> some IntentResult & ProvidesDialog & ReturnsValue<String> {
         try SiriCatalog.prepare()
         let list = await SiriData.announcements(subject.id, limit: 40)
-        guard !list.isEmpty else { return .result(dialog: "I couldn't read any \(subject.name) announcements.") }
+        guard !list.isEmpty else { return siriReply("I couldn't read any \(subject.name) announcements.") }
         let day = SiriData.fmtDay(date)
         // 1) an announcement that names the day; 2) one that names the weekday and was posted within 10 days before it
         var hits = list.filter { Announce.mentions(date, in: Announce.text($0)) }
@@ -458,12 +487,12 @@ struct ClassStatusOnDateIntent: AppIntent {
         }
         hits.sort { Announce.hasKeyword(Announce.text($0)) && !Announce.hasKeyword(Announce.text($1)) }
         guard let d = hits.first else {
-            return .result(dialog: "I didn't find an announcement about \(subject.name) on \(day), so as far as the announcements say, nothing has changed.")
+            return siriReply("I didn't find an announcement about \(subject.name) on \(day), so as far as the announcements say, nothing has changed.")
         }
         let t = Announce.text(d)
         let near = Announce.keywords.filter { t.lowercased().contains($0) }
         let verdict = Announce.hasKeyword(t) ? "There is an announcement that may affect it" : "It is mentioned in an announcement"
-        return .result(dialog: "\(verdict) for \(subject.name) on \(day): \(Announce.snippet(t, near: near.isEmpty ? [] : near))")
+        return siriReply("\(verdict) for \(subject.name) on \(day): \(Announce.snippet(t, near: near.isEmpty ? [] : near))")
     }
 }
 
@@ -471,19 +500,19 @@ struct ClassStatusOnDateIntent: AppIntent {
 
 struct AddTodoIntent: AppIntent {
     static var title: LocalizedStringResource = "Add to-do"
-    static var description = IntentDescription("Adds something to your to-do list.")
+    static var description = IntentDescription("Adds an item to the student's to-do list, optionally for a subject and with a due date. Use for: add a to-do, remind me to, I need to do.", categoryName: "To-do")
     @Parameter(title: "What", requestValueDialog: "What do you want to add?") var what: String
     @Parameter(title: "Subject") var subject: CourseEntity?
     @Parameter(title: "Due") var due: Date?
 
-    @MainActor func perform() async throws -> some IntentResult & ProvidesDialog {
+    @MainActor func perform() async throws -> some IntentResult & ProvidesDialog & ReturnsValue<String> {
         let when = due ?? Calendar.current.date(bySettingHour: 9, minute: 0, second: 0,
                                                 of: Date().addingTimeInterval(86400)) ?? Date().addingTimeInterval(86400)
         let item = TodoItem(title: what, kind: .work, courseId: subject?.id, courseName: subject?.name, due: when)
         TodoStore.shared.add(item)
         let tail = due == nil ? "" : ", due " + SiriData.fmtWhen(when)
         let forSubject = subject.map { " for " + $0.name } ?? ""
-        return .result(dialog: "Added \(what)\(forSubject) to your to-do list\(tail).")
+        return siriReply("Added \(what)\(forSubject) to your to-do list\(tail).")
     }
 }
 
@@ -499,18 +528,18 @@ final class SiriRouter: ObservableObject {
 
 struct OpenSubmissionIntent: AppIntent {
     static var title: LocalizedStringResource = "Open submission"
-    static var description = IntentDescription("Opens the submission page of a subject's next assignment.")
+    static var description = IntentDescription("Opens the app on the submission page of a subject's next assignment. Use for: open the submission page, take me to submit the assignment, go to the assignment.", categoryName: "Study")
     static var openAppWhenRun = true
     @Parameter(title: "Subject") var subject: CourseEntity
 
-    @MainActor func perform() async throws -> some IntentResult & ProvidesDialog {
+    @MainActor func perform() async throws -> some IntentResult & ProvidesDialog & ReturnsValue<String> {
         try SiriCatalog.prepare()
         guard let a = try await SiriData.nextAssignment(subject.id) else {
-            return .result(dialog: "\(subject.name) has no assignments.")
+            return siriReply("\(subject.name) has no assignments.")
         }
         let module = AssignItem(a: a, courseId: subject.id, courseName: subject.name, status: nil).module
         SiriRouter.shared.submission = SiriRouter.Target(courseId: subject.id, module: module)
-        return .result(dialog: "Opening \(a.name) for \(subject.name).")
+        return siriReply("Opening \(a.name) for \(subject.name).")
     }
 }
 
