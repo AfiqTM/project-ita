@@ -92,6 +92,7 @@ struct CourseDetailView: View {
                 }
                 .padding(.horizontal, 16).padding(.vertical, 12)
             }
+            .noTopEdgeEffect(photoOn)
             // keep the selected tab visible when swiping between pages
             .onChange(of: tab) { t in withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(t, anchor: .center) } }
             }
@@ -133,6 +134,7 @@ struct CourseContentView: View {
         }
         .coordinateSpace(name: "courseScroll")
         .onPreferenceChange(CourseScrollKey.self) { onScroll($0) }
+        .noTopEdgeEffect(course != nil)
         .refreshable { await load() }
         .task {
             await OfflineCache.paintFromCache { await load() }
@@ -156,33 +158,44 @@ struct SectionCard: View {
     let courseId: Int
     let section: CourseSection
     @State private var open = true
+    @ObservedObject private var themes = ThemeStore.shared
+    private var glass: Bool { themes.theme.scheme == .dark }      // dark themes: the photo page's see-through cards
 
     var body: some View {
-        VStack(spacing: 0) {
-            Button { open.toggle() } label: {
+        let mods = section.modules.filter { $0.uservisible != false }
+        let card = VStack(spacing: 0) {
+            Button { withAnimation(.easeInOut(duration: 0.2)) { open.toggle() } } label: {
                 HStack {
                     Text(section.name.isEmpty ? "General" : section.name)
                         .fontWeight(.semibold).foregroundColor(Theme.txt)
                         .rocks(20)
                     Spacer()
-                    Image(systemName: open ? "chevron.up" : "chevron.down").foregroundColor(Theme.accent)
+                    Image(systemName: open ? "chevron.up" : "chevron.down")
+                        .font(glass ? .system(size: 13, weight: .semibold) : nil)
+                        .foregroundColor(glass ? Theme.muted : Theme.accent)
                 }
-                .padding(14)
-                .background(Theme.titleBar)
+                .padding(glass ? 16 : 14)
+                .background(glass ? Color.clear : Theme.titleBar)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
             if open {
-                ForEach(section.modules.filter { $0.uservisible != false }) { m in
-                    ModuleRow(courseId: courseId, module: m)
+                if glass && !mods.isEmpty { Rectangle().fill(Theme.line.opacity(0.8)).frame(height: 1) }
+                ForEach(Array(mods.enumerated()), id: \.element.id) { i, m in
+                    ModuleRow(courseId: courseId, module: m, divider: glass && i > 0)
                 }
             }
         }
-        .glowCard()
+        if glass { card.glassCard() } else { card.glowCard() }
     }
 }
 
 struct ModuleRow: View {
     let courseId: Int
     let module: Module
+    var divider = false                // a fine line above the row (photo page cards)
+    @ObservedObject private var themes = ThemeStore.shared
+    private var glass: Bool { themes.theme.scheme == .dark }
 
     private var icon: String {
         switch module.modname {
@@ -237,13 +250,27 @@ struct ModuleRow: View {
         } else {
             NavigationLink { destination } label: {
                 HStack(spacing: 12) {
-                    Image(systemName: icon).foregroundColor(Theme.accent).frame(width: 24)
+                    if glass {
+                        // icon on a soft accent tile
+                        Image(systemName: icon).font(.system(size: 16, weight: .medium)).foregroundColor(Theme.accent)
+                            .frame(width: 34, height: 34)
+                            .background(Theme.accent.opacity(0.13))
+                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    } else {
+                        Image(systemName: icon).foregroundColor(Theme.accent).frame(width: 24)
+                    }
                     Text(module.name).foregroundColor(Theme.txt).multilineTextAlignment(.leading)
                     Spacer()
                     if module.modname == "resource" { FileStateIcon(file: module.contents?.first) }
+                    if glass {
+                        Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundColor(Theme.muted)
+                    }
                 }
-                .padding(14)
+                .padding(.horizontal, 14).padding(.vertical, glass ? 11 : 14)
                 .contentShape(Rectangle())
+                .overlay(alignment: .top) {
+                    if divider { Rectangle().fill(Theme.line.opacity(0.6)).frame(height: 1).padding(.leading, 60) }
+                }
             }
             .buttonStyle(.plain)
             .fileDownloadMenu(module.modname == "resource" ? module.contents?.first : nil)   // press and hold: Download

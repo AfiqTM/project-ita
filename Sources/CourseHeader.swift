@@ -57,17 +57,51 @@ extension Person {
 
     func load(courseId: Int) async {
         if let c = Self.cache[courseId] { people = c }
-        guard let all: [Person] = try? await MoodleAPI.shared.call("core_enrol_get_enrolled_users", ["courseid": courseId]) else { return }
-        let teachers = all.filter(\.isLecturer)
+        var teachers: [Person] = []
+        if let all: [Person] = try? await MoodleAPI.shared.call("core_enrol_get_enrolled_users", ["courseid": courseId]) {
+            teachers = all.filter(\.isLecturer)
+        }
+        if teachers.isEmpty { teachers = await contacts(courseId) }     // the participant list may not show roles
         let withPictures = await ProfileImages.upgraded(teachers)
+        guard !withPictures.isEmpty else { return }
         Self.cache[courseId] = withPictures
         people = withPictures
+    }
+
+    private struct ContactCourse: Decodable { let contacts: [Contact]?; struct Contact: Decodable { let id: Int } }
+    private struct ContactResp: Decodable { let courses: [ContactCourse] }
+
+    /// The course's "contacts" (its teachers, as the site lists them on the course card), with their profiles
+    private func contacts(_ courseId: Int) async -> [Person] {
+        guard let r: ContactResp = try? await MoodleAPI.shared.call(
+                "core_course_get_courses_by_field", ["field": "id", "value": courseId]),
+              let ids = r.courses.first?.contacts?.map(\.id), !ids.isEmpty,
+              let users: [Person] = try? await MoodleAPI.shared.call(
+                "core_user_get_users_by_field", ["field": "id", "values": ids]) else { return [] }
+        return users
     }
 }
 
 struct CourseHeaderView: View {
     let course: Course
     @StateObject private var lecturers = CourseLecturers()
+
+    /// "Subject • Section 02 • Semester 1" on one line when it fits; otherwise the subject, then the section and semester
+    /// on the next line (so a line never starts or ends with a loose dot)
+    @ViewBuilder private var subtitle: some View {
+        let rest = [course.sectionLabel, course.semesterLabel].compactMap { $0 }.joined(separator: "  •  ")
+        if !course.subjectName.isEmpty {
+            ViewThatFits(in: .horizontal) {
+                Text(([course.subjectName] + (rest.isEmpty ? [] : [rest])).joined(separator: "  •  "))
+                    .lineLimit(1)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(course.subjectName).fixedSize(horizontal: false, vertical: true)
+                    if !rest.isEmpty { Text(rest) }
+                }
+            }
+            .font(Theme.read(.body)).foregroundColor(Theme.txt)
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -76,11 +110,7 @@ struct CourseHeaderView: View {
                                                 startPoint: .topLeading, endPoint: .bottomTrailing))
                 .lineLimit(2).minimumScaleFactor(0.6)
                 .pixelHeading(24, normal: .system(size: 46, weight: .bold), pt: 46)
-            if !course.headerLine.isEmpty {
-                Text(course.headerLine)
-                    .font(Theme.read(.body)).foregroundColor(Theme.txt)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            subtitle
             ForEach(lecturers.people) { p in
                 HStack(spacing: 10) {
                     ProfilePhoto(name: p.fullname, urls: [p.profileimageurlsmall, p.profileimageurl], size: 30,
@@ -131,5 +161,33 @@ struct CourseBackdrop: View {
             .ignoresSafeArea(edges: .top)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
+    }
+}
+
+
+/// The course sections on the photo pages: a dark, slightly see-through card with a fine accent outline
+struct GlassCard: ViewModifier {
+    var radius: CGFloat = 20
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+        content
+            .background(Theme.surface.opacity(0.62))
+            .background(.ultraThinMaterial)
+            .clipShape(shape)
+            .overlay(shape.stroke(Theme.accent.opacity(0.28), lineWidth: 1))
+            .shadow(color: Color.black.opacity(0.35), radius: 14, y: 6)
+    }
+}
+
+extension View {
+    func glassCard(radius: CGFloat = 20) -> some View { modifier(GlassCard(radius: radius)) }
+
+    /// iOS 26 draws a hairline where a scroll view meets the navigation bar; the photo header wants none
+    @ViewBuilder func noTopEdgeEffect(_ on: Bool = true) -> some View {
+        #if compiler(>=6.2)
+        if on, #available(iOS 26.0, *) { self.scrollEdgeEffectHidden(true, for: .top) } else { self }
+        #else
+        self
+        #endif
     }
 }
