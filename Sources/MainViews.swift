@@ -8,7 +8,6 @@ struct RootView: View {
     @StateObject private var notifs = NotifBadgeModel()
     @StateObject private var browser = SiteBrowser()
     @ObservedObject private var chat = ChatStore.shared   // unread chats, for the app-icon badge
-    @ObservedObject private var siri = SiriRouter.shared   // screens Siri asks for (Siri.swift)
 
     // Kept here (not inside the tabs) so they survive when the tabs are rebuilt for a new theme:
     // the selected tab and, in Others, the screen that is open (Others > Themes)
@@ -75,26 +74,11 @@ struct RootView: View {
         .id(themes.theme)
         .safeAreaInset(edge: .top, spacing: 0) { OfflineBanner().id(themes.theme) }   // small "Offline" pill, only while saved data is shown
         .overlay { MessagesOverlay() }   // Messages: full-screen, above the tab bar (Messages.swift)
-        // "Open <subject> submission": the assignment page, as a sheet over whatever is open
-        .sheet(item: $siri.submission) { t in
-            NavigationStack {
-                AssignmentView(courseId: t.courseId, module: t.module)
-                    .toolbar {
-                        ToolbarItem(placement: .navigationBarLeading) {
-                            Button("Done") { siri.submission = nil }
-                        }
-                    }
-            }
-            .environmentObject(app)
-        }
-        // the subject list Siri understands ("DES", "SE" ...)
-        .task(id: app.site?.userid) { await SiriCatalog.refresh() }
         // Load at launch so the badges are right before either tab is opened
         .task(id: app.site?.userid) {
             guard let uid = app.site?.userid else { return }
             await OfflineCache.paintFromCache { await assignments.load(uid: uid) }   // last download first, instantly
             await assignments.load(uid: uid)                                          // then the online version
-            await SiriNotes.donate(SiriNotes.notes(from: assignments.items))          // Siri AI can find them by meaning (SiriIndex.swift)
         }
         .task { await NotificationManager.shared.requestPermission() }
         // Offline support: download the lists in the background so they open with no internet

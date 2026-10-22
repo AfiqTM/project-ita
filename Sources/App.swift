@@ -78,7 +78,6 @@ final class AppState: ObservableObject {
         site = nil
         loggedIn = false
         OfflineCache.clearAll()
-        SiriNotes.clear()
         OfflineFileStore.shared.clearAll()
         OfflineQueue.shared.clear()
         OfflineMonitor.shared.usingCache = false

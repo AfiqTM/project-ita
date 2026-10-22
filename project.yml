@@ -27,12 +27,6 @@ targets:
           - fetch
         BGTaskSchedulerPermittedIdentifiers:
           - italeem.refresh
-        INAlternativeAppNames:              # other names Siri accepts for \(.applicationName); "Ita" avoids Siri taking "iTa'leem" for the IIUM website
-          - INAlternativeAppName: Ita
-          - INAlternativeAppName: iTaleem
-            INAlternativeAppNamePronunciationHint: eye tah leem
-          - INAlternativeAppName: Italeem
-            INAlternativeAppNamePronunciationHint: eye tah leem
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.afiq.italeem

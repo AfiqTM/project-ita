@@ -1,0 +1,388 @@
+diff --git a/Archive/Siri/README.md b/Archive/Siri/README.md
+new file mode 100644
+index 0000000..de15bab
+--- /dev/null
++++ b/Archive/Siri/README.md
+@@ -0,0 +1,24 @@
++# Siri / Shortcuts (archived)
++
++Ask Siri (or use the Shortcuts app): assignments due, lecturer, section, absences left before attendance drops under 80%,
++class cancelled / moved (read from announcements), add a to-do, open a submission. Plus an iOS 18+ Spotlight index of
++assignments, announcements and attendance notes (App Entities) for Apple Intelligence.
++
++It is kept here **only as a backup**. This folder is outside the `Sources` folder that XcodeGen builds, so none of it is
++compiled or shipped, and the app no longer refers to it.
++
++Files
++- `Siri.swift`           subjects, intents (`AbsencesLeftIntent` ...), `SiriRouter`, `iTaleemShortcuts` phrases
++- `SiriIndex.swift`      `SiriNotes` store, `StudyItemEntity` / `StudyItemQuery` (Spotlight index)
++- `archive-hooks.patch`  the edits that were removed from `App.swift` (sign-out clear), `MainViews.swift` (submission sheet,
++                         subject refresh, donate), `Offline.swift` (announcement donate), `AttendanceSync.swift`
++                         (attendance notes), `project.yml` (alternative app names "Ita" / "iTaleem" / "Italeem"), `README.md`
++
++Known problem when it was archived: on iOS 27 the spoken phrases ("... in iTa'leem") went to Siri's own AI / the website instead
++of the app's intents. The actions did appear and run correctly in the Shortcuts app, so a personal shortcut with its own name
++worked. Not solved.
++
++To bring it back
++1. `git mv Archive/Siri/Siri.swift Archive/Siri/SiriIndex.swift Sources/`
++2. `git apply -R Archive/Siri/archive-hooks.patch`
++3. run `xcodegen`
+diff --git a/Sources/Siri.swift b/Archive/Siri/Siri.swift
+similarity index 100%
+rename from Sources/Siri.swift
+rename to Archive/Siri/Siri.swift
+diff --git a/Sources/SiriIndex.swift b/Archive/Siri/SiriIndex.swift
+similarity index 100%
+rename from Sources/SiriIndex.swift
+rename to Archive/Siri/SiriIndex.swift
+diff --git a/Archive/Siri/archive-hooks.patch b/Archive/Siri/archive-hooks.patch
+new file mode 100644
+index 0000000..848e41b
+--- /dev/null
++++ b/Archive/Siri/archive-hooks.patch
+@@ -0,0 +1,172 @@
++diff --git a/README.md b/README.md
++index deb576c..decc18c 100644
++--- a/README.md
+++++ b/README.md
++@@ -98,18 +98,7 @@ Paste an OAuth **iOS** client ID from Google Cloud Console into the setup sectio
++ - Requires iTa'leem's mobile web services to be enabled (the official Moodle app needs the same).
++ - Images embedded inside page text still need internet; only attachment files are saved offline.
++ 
++-## Siri
+++## Siri (archived)
++ 
++-`Sources/Siri.swift` (App Intents, iOS 16+) lets you ask Siri, or use the same actions in the Shortcuts app. Say a subject by name, short form (DES, SE, ENT) or code (BICS 1306):
++-
++-- "When is my assignment due in iTa'leem" / "When is my DES assignment in iTa'leem"
++-- "When is something due in iTa'leem" (Siri asks what: quiz 2, lab report ...)
++-- "Who is my SE lecturer in iTa'leem", "What section am I in for SE in iTa'leem"
++-- "How many classes can I miss in DES in iTa'leem" (absences left before attendance drops under 80%)
++-- "Is DES class cancelled in iTa'leem" / "... on a date" (reads the subject's announcements for cancelled, online, moved or rescheduled classes)
++-- "Add a to-do in iTa'leem"
++-- "Open ENT submission in iTa'leem" (opens the assignment page)
++-
++-The subject list is refreshed each time the app opens. Announcement checks are keyword and date matching on the announcement text, not an AI model.
++-
++-On iOS 18 and later (built for the iOS 27 Siri), `Sources/SiriIndex.swift` also puts the assignments and announcements the app downloads into the phone's Spotlight index as App Entities, so Apple Intelligence can find them by meaning. They stay on the phone and are removed when you sign out. The system schemas (such as `.reminders.createReminder`) are not adopted yet; they need the iOS 27 SDK.
+++The Siri / Shortcuts support (App Intents, Spotlight index of assignments and announcements, attendance notes) was taken out of the
+++app. All of it is kept in `Archive/Siri/` with a README that says how to bring it back. Nothing there is compiled or shipped.
++diff --git a/Sources/App.swift b/Sources/App.swift
++index 88fdeb2..37e92a0 100644
++--- a/Sources/App.swift
+++++ b/Sources/App.swift
++@@ -78,7 +78,6 @@ final class AppState: ObservableObject {
++         site = nil
++         loggedIn = false
++         OfflineCache.clearAll()
++-        SiriNotes.clear()
++         OfflineFileStore.shared.clearAll()
++         OfflineQueue.shared.clear()
++         OfflineMonitor.shared.usingCache = false
++diff --git a/Sources/AttendanceSync.swift b/Sources/AttendanceSync.swift
++index b0bcd25..b94a5aa 100644
++--- a/Sources/AttendanceSync.swift
+++++ b/Sources/AttendanceSync.swift
++@@ -20,14 +20,6 @@ extension MoodleAPI {
++         return s.maxPercentValue
++     }
++ 
++-    // Same call as above, but also says how many classes can still be missed (for Siri's content index)
++-    fileprivate func tokenSummary(_ m: Module, courseId: Int, uid: Int) async -> (percent: Double?, left: Int?) {
++-        guard let h = await attendanceMobileContent(cmid: m.id, courseId: courseId, userid: uid) else { return (nil, nil) }
++-        var s = parseAttendance(h)
++-        s.fillMax()
++-        return (s.maxPercentValue, s.absencesLeft())
++-    }
++-
++     // 2) Fallback: the website page, using only the existing web session.
++     //    Background sync must NEVER request an auto-login key (allowAutologin: false), otherwise it
++     //    uses up Moodle's one-key-per-6-minutes allowance and the user gets logged out later.
++@@ -123,18 +115,11 @@ enum AttendanceSync {
++ 
++         // Pass 1 (parallel): token only
++         var percent: [Int: Double] = [:]
++-        var left: [Int: Int] = [:]
++-        await withTaskGroup(of: (Int, Double?, Int?).self) { group in
+++        await withTaskGroup(of: (Int, Double?).self) { group in
++             for (c, m) in found {
++-                group.addTask {
++-                    let r = await api.tokenSummary(m, courseId: c.id, uid: userid)
++-                    return (m.id, r.percent, r.left)
++-                }
++-            }
++-            for await (id, p, k) in group {
++-                if let p { percent[id] = p }
++-                if let k { left[id] = k }
+++                group.addTask { (m.id, await api.tokenMaxPercent(m, courseId: c.id, uid: userid)) }
++             }
+++            for await (id, p) in group { if let p { percent[id] = p } }
++         }
++         // Pass 2 (one at a time): website page using the existing web session only (never requests a key)
++         for (_, m) in found where percent[m.id] == nil {
++@@ -172,23 +157,5 @@ enum AttendanceSync {
++ 
++         AttendanceStore.save(AttendanceSnapshot(items: items, updated: Date()))
++         lastRun = Date()
++-
++-        // Give Siri the real numbers, so a loosely worded question ("how many times can I skip DES") is answered
++-        // from the student's own attendance and not from a guess (SiriIndex.swift)
++-        let limit = Int(AttSummary.limitPercent)
++-        let stamp = Date().formatted(.dateTime.day().month(.wide).hour().minute())
++-        var notes: [SiriNote] = []
++-        for (c, m) in found where currentIDs.contains(c.id) {
++-            guard let k = left[m.id] else { continue }
++-            let course = SiriCourse(id: c.id, fullname: c.fullname.decodedEntities, shortname: c.shortname).name
++-            let body: String
++-            if k < 0 { body = "Attendance for \(course): even attending every remaining class, you cannot reach \(limit) percent." }
++-            else if k == 0 { body = "Attendance for \(course): you cannot miss any more classes without going under \(limit) percent." }
++-            else { body = "Attendance for \(course): you can miss \(k) more class\(k == 1 ? "" : "es") (skip, be absent) before going under \(limit) percent." }
++-            notes.append(SiriNote(id: "attend-\(m.id)", kind: "Attendance", courseId: c.id, course: course,
++-                                  title: "Attendance \u{2013} \(course)", body: body + " Checked \(stamp).",
++-                                  date: Date().timeIntervalSince1970))
++-        }
++-        await SiriNotes.donate(notes)
++     }
++ }
++diff --git a/Sources/MainViews.swift b/Sources/MainViews.swift
++index 367a290..3aef415 100644
++--- a/Sources/MainViews.swift
+++++ b/Sources/MainViews.swift
++@@ -8,7 +8,6 @@ struct RootView: View {
++     @StateObject private var notifs = NotifBadgeModel()
++     @StateObject private var browser = SiteBrowser()
++     @ObservedObject private var chat = ChatStore.shared   // unread chats, for the app-icon badge
++-    @ObservedObject private var siri = SiriRouter.shared   // screens Siri asks for (Siri.swift)
++ 
++     // Kept here (not inside the tabs) so they survive when the tabs are rebuilt for a new theme:
++     // the selected tab and, in Others, the screen that is open (Others > Themes)
++@@ -75,26 +74,11 @@ struct RootView: View {
++         .id(themes.theme)
++         .safeAreaInset(edge: .top, spacing: 0) { OfflineBanner().id(themes.theme) }   // small "Offline" pill, only while saved data is shown
++         .overlay { MessagesOverlay() }   // Messages: full-screen, above the tab bar (Messages.swift)
++-        // "Open <subject> submission": the assignment page, as a sheet over whatever is open
++-        .sheet(item: $siri.submission) { t in
++-            NavigationStack {
++-                AssignmentView(courseId: t.courseId, module: t.module)
++-                    .toolbar {
++-                        ToolbarItem(placement: .navigationBarLeading) {
++-                            Button("Done") { siri.submission = nil }
++-                        }
++-                    }
++-            }
++-            .environmentObject(app)
++-        }
++-        // the subject list Siri understands ("DES", "SE" ...)
++-        .task(id: app.site?.userid) { await SiriCatalog.refresh() }
++         // Load at launch so the badges are right before either tab is opened
++         .task(id: app.site?.userid) {
++             guard let uid = app.site?.userid else { return }
++             await OfflineCache.paintFromCache { await assignments.load(uid: uid) }   // last download first, instantly
++             await assignments.load(uid: uid)                                          // then the online version
++-            await SiriNotes.donate(SiriNotes.notes(from: assignments.items))          // Siri AI can find them by meaning (SiriIndex.swift)
++         }
++         .task { await NotificationManager.shared.requestPermission() }
++         // Offline support: download the lists in the background so they open with no internet
++diff --git a/Sources/Offline.swift b/Sources/Offline.swift
++index c64eb23..69463f9 100644
++--- a/Sources/Offline.swift
+++++ b/Sources/Offline.swift
++@@ -465,8 +465,6 @@ enum OfflinePrefetch {
++         guard let fid = pick?.instance else { return }
++         guard let d: DiscResp = try? await api.call("mod_forum_get_forum_discussions",
++                                                     ["forumid": fid, "perpage": 50]) else { return }
++-        let cname = SiriCatalog.cached().first { $0.id == id }?.name ?? ""
++-        await SiriNotes.donate(SiriNotes.notes(fromAnnouncements: d.discussions, courseId: id, course: cname))   // for Siri AI
++         for disc in d.discussions.prefix(5) {   // newest five: the ones people actually open
++             _ = try? await api.raw("mod_forum_get_discussion_posts", ["discussionid": disc.discussion])
++         }
++diff --git a/project.yml b/project.yml
++index f406d2b..0e2c1e8 100644
++--- a/project.yml
+++++ b/project.yml
++@@ -27,12 +27,6 @@ targets:
++           - fetch
++         BGTaskSchedulerPermittedIdentifiers:
++           - italeem.refresh
++-        INAlternativeAppNames:              # other names Siri accepts for \(.applicationName); "Ita" avoids Siri taking "iTa'leem" for the IIUM website
++-          - INAlternativeAppName: Ita
++-          - INAlternativeAppName: iTaleem
++-            INAlternativeAppNamePronunciationHint: eye tah leem
++-          - INAlternativeAppName: Italeem
++-            INAlternativeAppNamePronunciationHint: eye tah leem
++     settings:
++       base:
++         PRODUCT_BUNDLE_IDENTIFIER: com.afiq.italeem
+diff --git a/README.md b/README.md
+index deb576c..decc18c 100644
+--- a/README.md
++++ b/README.md
+@@ -98,18 +98,7 @@ Paste an OAuth **iOS** client ID from Google Cloud Console into the setup sectio
+ - Requires iTa'leem's mobile web services to be enabled (the official Moodle app needs the same).
+ - Images embedded inside page text still need internet; only attachment files are saved offline.
+ 
+-## Siri
++## Siri (archived)
+ 
+-`Sources/Siri.swift` (App Intents, iOS 16+) lets you ask Siri, or use the same actions in the Shortcuts app. Say a subject by name, short form (DES, SE, ENT) or code (BICS 1306):
+-
+-- "When is my assignment due in iTa'leem" / "When is my DES assignment in iTa'leem"
+-- "When is something due in iTa'leem" (Siri asks what: quiz 2, lab report ...)
+-- "Who is my SE lecturer in iTa'leem", "What section am I in for SE in iTa'leem"
+-- "How many classes can I miss in DES in iTa'leem" (absences left before attendance drops under 80%)
+-- "Is DES class cancelled in iTa'leem" / "... on a date" (reads the subject's announcements for cancelled, online, moved or rescheduled classes)
+-- "Add a to-do in iTa'leem"
+-- "Open ENT submission in iTa'leem" (opens the assignment page)
+-
+-The subject list is refreshed each time the app opens. Announcement checks are keyword and date matching on the announcement text, not an AI model.
+-
+-On iOS 18 and later (built for the iOS 27 Siri), `Sources/SiriIndex.swift` also puts the assignments and announcements the app downloads into the phone's Spotlight index as App Entities, so Apple Intelligence can find them by meaning. They stay on the phone and are removed when you sign out. The system schemas (such as `.reminders.createReminder`) are not adopted yet; they need the iOS 27 SDK.
++The Siri / Shortcuts support (App Intents, Spotlight index of assignments and announcements, attendance notes) was taken out of the
++app. All of it is kept in `Archive/Siri/` with a README that says how to bring it back. Nothing there is compiled or shipped.
+diff --git a/Sources/App.swift b/Sources/App.swift
+index 88fdeb2..37e92a0 100644
+--- a/Sources/App.swift
++++ b/Sources/App.swift
+@@ -78,7 +78,6 @@ final class AppState: ObservableObject {
+         site = nil
+         loggedIn = false
+         OfflineCache.clearAll()
+-        SiriNotes.clear()
+         OfflineFileStore.shared.clearAll()
+         OfflineQueue.shared.clear()
+         OfflineMonitor.shared.usingCache = false
+diff --git a/Sources/AttendanceSync.swift b/Sources/AttendanceSync.swift
+index b0bcd25..b94a5aa 100644
+--- a/Sources/AttendanceSync.swift
++++ b/Sources/AttendanceSync.swift
+@@ -20,14 +20,6 @@ extension MoodleAPI {
+         return s.maxPercentValue
+     }
+ 
+-    // Same call as above, but also says how many classes can still be missed (for Siri's content index)
+-    fileprivate func tokenSummary(_ m: Module, courseId: Int, uid: Int) async -> (percent: Double?, left: Int?) {
+-        guard let h = await attendanceMobileContent(cmid: m.id, courseId: courseId, userid: uid) else { return (nil, nil) }
+-        var s = parseAttendance(h)
+-        s.fillMax()
+-        return (s.maxPercentValue, s.absencesLeft())
+-    }
+-
+     // 2) Fallback: the website page, using only the existing web session.
+     //    Background sync must NEVER request an auto-login key (allowAutologin: false), otherwise it
+     //    uses up Moodle's one-key-per-6-minutes allowance and the user gets logged out later.
+@@ -123,18 +115,11 @@ enum AttendanceSync {
+ 
+         // Pass 1 (parallel): token only
+         var percent: [Int: Double] = [:]
+-        var left: [Int: Int] = [:]
+-        await withTaskGroup(of: (Int, Double?, Int?).self) { group in
++        await withTaskGroup(of: (Int, Double?).self) { group in
+             for (c, m) in found {
+-                group.addTask {
+-                    let r = await api.tokenSummary(m, courseId: c.id, uid: userid)
+-                    return (m.id, r.percent, r.left)
+-                }
+-            }
+-            for await (id, p, k) in group {
+-                if let p { percent[id] = p }
+-                if let k { left[id] = k }
++                group.addTask { (m.id, await api.tokenMaxPercent(m, courseId: c.id, uid: userid)) }
+             }
++            for await (id, p) in group { if let p { percent[id] = p } }
+         }
+         // Pass 2 (one at a time): website page using the existing web session only (never requests a key)
+         for (_, m) in found where percent[m.id] == nil {
+@@ -172,23 +157,5 @@ enum AttendanceSync {
+ 
+         AttendanceStore.save(AttendanceSnapshot(items: items, updated: Date()))
+         lastRun = Date()
+-
+-        // Give Siri the real numbers, so a loosely worded question ("how many times can I skip DES") is answered
+-        // from the student's own attendance and not from a guess (SiriIndex.swift)
+-        let limit = Int(AttSummary.limitPercent)
+-        let stamp = Date().formatted(.dateTime.day().month(.wide).hour().minute())
+-        var notes: [SiriNote] = []
+-        for (c, m) in found where currentIDs.contains(c.id) {
+-            guard let k = left[m.id] else { continue }
+-            let course = SiriCourse(id: c.id, fullname: c.fullname.decodedEntities, shortname: c.shortname).name
+-            let body: String
+-            if k < 0 { body = "Attendance for \(course): even attending every remaining class, you cannot reach \(limit) percent." }
+-            else if k == 0 { body = "Attendance for \(course): you cannot miss any more classes without going under \(limit) percent." }
+-            else { body = "Attendance for \(course): you can miss \(k) more class\(k == 1 ? "" : "es") (skip, be absent) before going under \(limit) percent." }
+-            notes.append(SiriNote(id: "attend-\(m.id)", kind: "Attendance", courseId: c.id, course: course,
+-                                  title: "Attendance \u{2013} \(course)", body: body + " Checked \(stamp).",
+-                                  date: Date().timeIntervalSince1970))
+-        }
+-        await SiriNotes.donate(notes)
+     }
+ }
+diff --git a/Sources/MainViews.swift b/Sources/MainViews.swift
+index 367a290..3aef415 100644
+--- a/Sources/MainViews.swift
++++ b/Sources/MainViews.swift
+@@ -8,7 +8,6 @@ struct RootView: View {
+     @StateObject private var notifs = NotifBadgeModel()
+     @StateObject private var browser = SiteBrowser()
+     @ObservedObject private var chat = ChatStore.shared   // unread chats, for the app-icon badge
+-    @ObservedObject private var siri = SiriRouter.shared   // screens Siri asks for (Siri.swift)
+ 
+     // Kept here (not inside the tabs) so they survive when the tabs are rebuilt for a new theme:
+     // the selected tab and, in Others, the screen that is open (Others > Themes)
+@@ -75,26 +74,11 @@ struct RootView: View {
+         .id(themes.theme)
+         .safeAreaInset(edge: .top, spacing: 0) { OfflineBanner().id(themes.theme) }   // small "Offline" pill, only while saved data is shown
+         .overlay { MessagesOverlay() }   // Messages: full-screen, above the tab bar (Messages.swift)
+-        // "Open <subject> submission": the assignment page, as a sheet over whatever is open
+-        .sheet(item: $siri.submission) { t in
+-            NavigationStack {
+-                AssignmentView(courseId: t.courseId, module: t.module)
+-                    .toolbar {
+-                        ToolbarItem(placement: .navigationBarLeading) {
+-                            Button("Done") { siri.submission = nil }
+-                        }
+-                    }
+-            }
+-            .environmentObject(app)
+-        }
+-        // the subject list Siri understands ("DES", "SE" ...)
+-        .task(id: app.site?.userid) { await SiriCatalog.refresh() }
+         // Load at launch so the badges are right before either tab is opened
+         .task(id: app.site?.userid) {
+             guard let uid = app.site?.userid else { return }
+             await OfflineCache.paintFromCache { await assignments.load(uid: uid) }   // last download first, instantly
+             await assignments.load(uid: uid)                                          // then the online version
+-            await SiriNotes.donate(SiriNotes.notes(from: assignments.items))          // Siri AI can find them by meaning (SiriIndex.swift)
+         }
+         .task { await NotificationManager.shared.requestPermission() }
+         // Offline support: download the lists in the background so they open with no internet
+diff --git a/Sources/Offline.swift b/Sources/Offline.swift
+index c64eb23..69463f9 100644
+--- a/Sources/Offline.swift
++++ b/Sources/Offline.swift
+@@ -465,8 +465,6 @@ enum OfflinePrefetch {
+         guard let fid = pick?.instance else { return }
+         guard let d: DiscResp = try? await api.call("mod_forum_get_forum_discussions",
+                                                     ["forumid": fid, "perpage": 50]) else { return }
+-        let cname = SiriCatalog.cached().first { $0.id == id }?.name ?? ""
+-        await SiriNotes.donate(SiriNotes.notes(fromAnnouncements: d.discussions, courseId: id, course: cname))   // for Siri AI
+         for disc in d.discussions.prefix(5) {   // newest five: the ones people actually open
+             _ = try? await api.raw("mod_forum_get_discussion_posts", ["discussionid": disc.discussion])
+         }
+diff --git a/project.yml b/project.yml
+index f406d2b..0e2c1e8 100644
+--- a/project.yml
++++ b/project.yml
+@@ -27,12 +27,6 @@ targets:
+           - fetch
+         BGTaskSchedulerPermittedIdentifiers:
+           - italeem.refresh
+-        INAlternativeAppNames:              # other names Siri accepts for \(.applicationName); "Ita" avoids Siri taking "iTa'leem" for the IIUM website
+-          - INAlternativeAppName: Ita
+-          - INAlternativeAppName: iTaleem
+-            INAlternativeAppNamePronunciationHint: eye tah leem
+-          - INAlternativeAppName: Italeem
+-            INAlternativeAppNamePronunciationHint: eye tah leem
+     settings:
+       base:
+         PRODUCT_BUNDLE_IDENTIFIER: com.afiq.italeem
