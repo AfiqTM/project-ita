@@ -148,12 +148,12 @@ struct CourseContentView: View {
                 if loading { ProgressView().tint(Theme.accent) }
             }
             .padding(16)
-            .background(GeometryReader { g in
-                Color.clear.preference(key: CourseScrollKey.self, value: -g.frame(in: .named("courseScroll")).minY)
+            // the list's real scroll position (read from its UIScrollView), so the header photo moves up with it
+            .background(CourseScrollProbe { y in
+                box.y = y
+                onScroll(y)
             })
         }
-        .coordinateSpace(name: "courseScroll")
-        .onPreferenceChange(CourseScrollKey.self) { box.y = $0; onScroll($0) }
         // coming back to this page (from another tab): put the photo where the list really is
         .onAppear { onScroll(box.y) }
         .noTopEdgeEffect(course != nil)
