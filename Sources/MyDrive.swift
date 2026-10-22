@@ -586,9 +586,35 @@ struct DriveDestination: View {
 
 // MARK: - Long lists (search results, folders)
 
+/// A soft halo made of a stack of flat rounded rectangles, each a little bigger and very faint, instead of a
+/// blurred `.shadow`. It looks like a glow, but it is plain vector drawing: no blur pass, no off-screen bitmap,
+/// so it stays cheap behind a card that is thousands of points tall.
+struct StackedGlow: View {
+    let color: Color
+    let layers: Int            // how many rings (each `spacing` pt wider than the last)
+    let opacity: Double        // opacity of ONE layer; they add up towards the card edge
+    var spacing: CGFloat = 2
+    var dy: CGFloat = 0        // vertical offset (drop-shadow look for the light / western themes)
+    let radius: CGFloat
+
+    var body: some View {
+        ZStack {
+            // biggest first, so the brightest part ends up right at the card edge
+            ForEach(Array((1...max(layers, 1)).reversed()), id: \.self) { i in
+                let d = CGFloat(i) * spacing
+                RoundedRectangle(cornerRadius: radius + d, style: .continuous)
+                    .fill(color.opacity(opacity))
+                    .padding(-d)
+            }
+        }
+        .offset(y: dy)
+        .allowsHitTesting(false)
+    }
+}
+
 /// Card look for long lists. `glowCard()` puts three blurred shadows on the whole card, which is far too heavy
 /// around ~100 rows (iOS redraws the entire tall stack through the shadow passes, so scrolling stutters).
-/// Here the surface and outline are drawn behind the rows instead, and the rows stay plain.
+/// Here the surface, outline and a cheap stacked glow are drawn behind the rows instead, and the rows stay plain.
 struct DriveListCard: ViewModifier {
     var radius: CGFloat = 14
     @ObservedObject private var themes = ThemeStore.shared
@@ -596,10 +622,22 @@ struct DriveListCard: ViewModifier {
         let p = themes.theme.palette
         let pixel = p.card == .pixel
         let western = p.card == .western
-        let shape = RoundedRectangle(cornerRadius: Theme.cardRadius(radius), style: .continuous)
+        let r = Theme.cardRadius(radius)
+        let shape = RoundedRectangle(cornerRadius: r, style: .continuous)
+        // colour, layers, opacity per layer, y offset: tuned to look like the shadows in GlowCard
+        let halo: (Color, Int, Double, CGFloat)?
+        switch p.card {
+        case .glow, .terminal: halo = (Color(hex: p.glow), 14, 0.10, 0)
+        case .soft:            halo = (Color.black, 8, 0.012, 3)
+        case .western:         halo = (Color.black, 11, 0.09, 4)
+        case .pixel:           halo = nil          // hard block shadow below, no blur in that theme
+        }
         return content
             .background {
                 ZStack {
+                    if let h = halo {
+                        StackedGlow(color: h.0, layers: h.1, opacity: h.2, dy: h.3, radius: r)
+                    }
                     if pixel { shape.fill(Color(hex: p.glow)).offset(x: 3, y: 3) }
                     shape.fill(Color(hex: p.surface))
                         .overlay(alignment: .top) {
