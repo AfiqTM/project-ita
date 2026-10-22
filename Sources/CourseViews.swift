@@ -62,6 +62,8 @@ struct CourseDetailView: View {
         guard t != tab else { return }
         let from = tabs.firstIndex(of: tab) ?? 0
         let to = tabs.firstIndex(of: t) ?? 0
+        // coming back to Course from further than the next tab: its list was dropped and is rebuilt at the top
+        if t == .course && from > 1 { scroll.y = 0 }
         if abs(to - from) > 1 {
             var tr = Transaction(); tr.disablesAnimations = true
             withTransaction(tr) { coverTab = t }
@@ -220,6 +222,7 @@ struct CourseContentView: View {
     @State private var loading = true
     @State private var error: String?
     @State private var box = CourseScrollBox()      // last scroll position (a plain reference: no redraw while scrolling)
+    @State private var born = Date()                // when this list was built (a list the pager rebuilt starts at the top)
 
     var body: some View {
         ScrollView {
@@ -234,8 +237,12 @@ struct CourseContentView: View {
             .padding(16)
             // the list's real scroll position (read from its UIScrollView), so the header photo moves up with it
             .background(CourseScrollProbe(onChange: { y in
-                box.y = y
-                onScroll(y)
+                // A list that was just built always sits at the top. Its scroll view reports a wrong offset (the safe-area
+                // inset, before its first layout) for a moment, which drew the header solid black with the photo scrolled
+                // away until the content came in. Reports in that first moment count as "top".
+                let v: CGFloat = Date().timeIntervalSince(born) < 0.8 ? 0 : y
+                box.y = v
+                onScroll(v)
             }, onDetach: {
                 // a list that comes back starts at the top again
                 box.y = 0
