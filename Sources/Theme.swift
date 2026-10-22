@@ -214,17 +214,8 @@ enum Theme {
                 item.selected.titleTextAttributes = [.font: f, .kern: Face.display.tabKern, .foregroundColor: uiAccent]
             }
         }
-        // iOS 26: the tab bar is the system's floating glass pill and spaces its own items. Attaching a custom
-        // UITabBarAppearance (even just badge colours) makes it lay out in a content-hugging way, which gave
-        // uneven gaps and a lopsided bar. So on iOS 26 the system look is kept, and the custom appearance is
-        // only attached for themes that need their own tab label font (Terminal, Retro, Red Dead).
-        if #available(iOS 26.0, *), !(mono || theme.westernHeadings) {
-            UITabBar.appearance().standardAppearance = UITabBarAppearance()
-            UITabBar.appearance().scrollEdgeAppearance = nil
-        } else {
-            UITabBar.appearance().standardAppearance = tab
-            UITabBar.appearance().scrollEdgeAppearance = tab
-        }
+        UITabBar.appearance().standardAppearance = tab
+        UITabBar.appearance().scrollEdgeAppearance = tab
     }
 }
 
