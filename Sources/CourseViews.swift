@@ -35,7 +35,7 @@ struct CourseDetailView: View {
     @ViewBuilder private func page(_ t: CourseTab) -> some View {
         switch t {
         case .course: CourseContentView(courseId: course.id, course: course) { y in
-            scroll.y = max(0, y)
+            scroll.y = y
         }
         case .participants: ParticipantsView(courseId: course.id)
         case .drive: CourseDriveTab(courseId: course.id)
