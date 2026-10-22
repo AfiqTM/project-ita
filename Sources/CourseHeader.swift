@@ -184,7 +184,7 @@ struct CourseBackdrop: View {
             .mask(LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.5),
                                          .init(color: .clear, location: 1)], startPoint: .top, endPoint: .bottom))
             // moves up 1:1 with the list and slides off under the status bar, like the reference video
-            .offset(y: -min(max(scroll.y, 0), height))
+            .offset(y: -min(scroll.y, height))
             .ignoresSafeArea(edges: .top)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
