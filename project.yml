@@ -27,7 +27,8 @@ targets:
           - fetch
         BGTaskSchedulerPermittedIdentifiers:
           - italeem.refresh
-        INAlternativeAppNames:              # so Siri accepts "iTaleem" / "Italeem" for \(.applicationName) (the display name has an apostrophe)
+        INAlternativeAppNames:              # other names Siri accepts for \(.applicationName); "Ita" avoids Siri taking "iTa'leem" for the IIUM website
+          - INAlternativeAppName: Ita
           - INAlternativeAppName: iTaleem
             INAlternativeAppNamePronunciationHint: eye tah leem
           - INAlternativeAppName: Italeem
