@@ -7,7 +7,9 @@ import UIKit
 // pager's scroll view only starts moving after its own small slop, so the pages trail the finger by a few points and the
 // cover ran ahead of them (a black block at the top that did not line up with the page under it).
 // This reads the paging scroll view's contentOffset instead, the same way CourseScrollProbe reads the Course list.
-// Put it as a .background of each page inside the TabView: it walks up to the paging scroll view that holds the page.
+//
+// Put CoursePagerProbe as a .background of each page inside the TabView. It walks up to the paging scroll view that holds
+// the page and hands it to ONE PagerFollower (stored on the scroll view), however many pages carry a probe.
 
 struct CoursePagerProbe: UIViewRepresentable {
     let pager: CoursePagerModel
@@ -18,92 +20,140 @@ struct CoursePagerProbe: UIViewRepresentable {
         let v = ProbeView()
         v.isUserInteractionEnabled = false
         v.backgroundColor = .clear
-        v.update(pager: pager, index: index, count: count)
+        v.pager = pager
+        v.index = index
+        v.count = count
         return v
     }
 
     func updateUIView(_ v: ProbeView, context: Context) {
-        v.update(pager: pager, index: index, count: count)
+        v.pager = pager
+        v.index = index
+        v.count = count
         v.attachIfNeeded()
     }
 
     final class ProbeView: UIView {
-        private var pager: CoursePagerModel?
-        private var index = 0
-        private var count = 1
-        private var observation: NSKeyValueObservation?
-        private var fromTouch = false       // the movement going on right now began with a finger (not a tab-strip tap)
-        private var wasTouching = false
-        private var rest: CGFloat?          // contentOffset.x the pager rested at when this swipe began
-        private var last: CGFloat = 0       // the offset last passed on
-        private var settleWork: DispatchWorkItem?
-
-        func update(pager: CoursePagerModel, index: Int, count: Int) {
-            self.pager = pager
-            self.index = index
-            self.count = count
-        }
+        var pager: CoursePagerModel?
+        var index = 0
+        var count = 1
 
         override func didMoveToWindow() {
             super.didMoveToWindow()
-            if window == nil {
-                observation = nil
-                settleWork?.cancel()
-            } else {
-                attachIfNeeded()
-                // the pager may not be in place yet during the first layout pass
-                DispatchQueue.main.async { [weak self] in self?.attachIfNeeded() }
-            }
+            guard window != nil else { return }
+            attachIfNeeded()
+            // the pager may not be in place yet during the first layout pass
+            DispatchQueue.main.async { [weak self] in self?.attachIfNeeded() }
         }
 
         func attachIfNeeded() {
-            guard observation == nil, window != nil else { return }
+            guard window != nil, let pager else { return }
             var view: UIView? = superview
             while let v = view {
                 if let sv = v as? UIScrollView, sv.isPagingEnabled {
-                    pager?.followsPages = true
-                    observation = sv.observe(\.contentOffset, options: [.new]) { [weak self] s, _ in
-                        self?.report(s)
-                    }
+                    PagerFollower.attach(to: sv, pager: pager, index: index, count: count)
                     return
                 }
                 view = v.superview
             }
         }
+    }
+}
 
-        private func report(_ s: UIScrollView) {
-            guard let pager else { return }
-            let w = s.bounds.width
-            guard w > 0 else { return }
+private var pagerFollowerKey: UInt8 = 0
 
-            let touching = s.isTracking || s.isDragging
-            if touching && !wasTouching { fromTouch = true; rest = nil; last = 0 }     // a new swipe begins
-            wasTouching = touching
-            // a page change started by tapping a tab animates by itself (the cover moves with the tab): only follow a swipe
-            guard fromTouch else { return }
-            guard touching || s.isDecelerating else {                                   // the swipe is over
-                fromTouch = false
-                rest = nil
-                scheduleSettle()
-                return
-            }
+/// Follows one paging scroll view and tells the CoursePagerModel how far a swipe has moved the pages.
+final class PagerFollower: NSObject {
+    private var pager: CoursePagerModel
+    private var index: Int              // the open tab (kept up to date by the probes)
+    private var count: Int
+    private weak var scroll: UIScrollView?
+    private var observation: NSKeyValueObservation?
 
-            let base = rest ?? (s.contentOffset.x / w).rounded() * w
-            rest = base
-            let x = base - s.contentOffset.x
-            // the pager re-centres its scroll view when a page change completes: a jump of a whole page, not movement
-            if abs(x - last) > w * 0.6 { return }
-            last = x
-            pager.follow(x, index: index, count: count, width: w)
-            scheduleSettle()
+    private var fromTouch = false       // the movement going on right now began with a finger (not a tab-strip tap)
+    private var wasTouching = false
+    private var startIndex = 0          // the open tab when the swipe began (the pager flips the open tab halfway through)
+    private var rest: CGFloat = 0       // contentOffset.x the pager rested at when the swipe began
+    private var last: CGFloat = 0       // the offset last passed on
+    private var endWork: DispatchWorkItem?
+
+    static func attach(to sv: UIScrollView, pager: CoursePagerModel, index: Int, count: Int) {
+        if let f = objc_getAssociatedObject(sv, &pagerFollowerKey) as? PagerFollower {
+            f.pager = pager
+            f.index = index
+            f.count = count
+            return
+        }
+        let f = PagerFollower(scroll: sv, pager: pager, index: index, count: count)
+        objc_setAssociatedObject(sv, &pagerFollowerKey, f, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+    }
+
+    private init(scroll: UIScrollView, pager: CoursePagerModel, index: Int, count: Int) {
+        self.scroll = scroll
+        self.pager = pager
+        self.index = index
+        self.count = count
+        super.init()
+        pager.followsPages = true
+        observation = scroll.observe(\.contentOffset, options: [.new]) { [weak self] s, _ in
+            self?.report(s)
+        }
+        // lets us know when the finger lifts, even if the pages then have nowhere to move
+        scroll.panGestureRecognizer.addTarget(self, action: #selector(panChanged(_:)))
+    }
+
+    deinit {
+        observation?.invalidate()
+        endWork?.cancel()
+        scroll?.panGestureRecognizer.removeTarget(self, action: #selector(panChanged(_:)))
+    }
+
+    @objc private func panChanged(_ g: UIPanGestureRecognizer) {
+        switch g.state {
+        case .began: endWork?.cancel()
+        case .ended, .cancelled, .failed: scheduleEnd()
+        default: break
+        }
+    }
+
+    private func report(_ s: UIScrollView) {
+        let w = s.bounds.width
+        guard w > 0 else { return }
+
+        let touching = s.isTracking || s.isDragging
+        if touching && !wasTouching {                       // a finger came down: a new swipe begins
+            pager.swipeEnded()                              // (closes one still open from before)
+            fromTouch = true
+            startIndex = index
+            rest = (s.contentOffset.x / w).rounded() * w
+            last = 0
+            endWork?.cancel()
+        }
+        wasTouching = touching
+        // a page change started by tapping a tab animates by itself (the cover moves with the tab): only follow a swipe
+        guard fromTouch else { return }
+        guard touching || s.isDecelerating else {           // the pages have stopped
+            fromTouch = false
+            scheduleEnd()
+            return
         }
 
-        // fires once the offset has stopped changing (reports come every frame while it moves)
-        private func scheduleSettle() {
-            settleWork?.cancel()
-            let work = DispatchWorkItem { [weak self] in self?.pager?.settle() }
-            settleWork = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
+        let x = rest - s.contentOffset.x                    // + = pages moved right
+        // the pager re-centres its scroll view at times (a jump of a whole page that does not move the pages): carry on from there
+        if abs(x - last) > w * 0.6 {
+            rest = s.contentOffset.x + last
+            return
         }
+        last = x
+        pager.swipeMoved(x, from: startIndex, count: count, width: w)
+        if !touching { scheduleEnd() }                      // finger is up: the end comes once the pages stop moving
+    }
+
+    // fires once nothing has moved for a moment (reports come every frame while the pages move)
+    private func scheduleEnd() {
+        endWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.pager.swipeEnded() }
+        endWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
     }
 }
