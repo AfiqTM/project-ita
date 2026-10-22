@@ -38,7 +38,8 @@ struct CourseDetailView: View {
     @ViewBuilder private func page(_ t: CourseTab) -> some View {
         switch t {
         case .course: CourseContentView(courseId: course.id, course: course) { y in
-            scroll.y = max(0, y)
+            let v = max(0, y)
+            if abs(scroll.y - v) > 0.3 { scroll.y = v }
         }
         case .participants: ParticipantsView(courseId: course.id)
         case .drive: CourseDriveTab(courseId: course.id)
@@ -75,7 +76,7 @@ struct CourseDetailView: View {
         }
         // the photo shows through the navigation bar and the tab strip while the Course tab is at the top; the bar's own
         // background is always hidden, so everything up there fades together with the photo
-        .toolbarBackground(photoOn ? Visibility.hidden : Visibility.automatic, for: .navigationBar)
+        .toolbarBackground(Visibility.hidden, for: .navigationBar)
         .navigationTitle(course.prettyShort ?? course.prettyFull)
         .navigationBarTitleDisplayMode(.inline)
         // the open tab goes away when its last item is removed
@@ -177,12 +178,16 @@ struct CourseContentView: View {
                 if loading { ProgressView().tint(Theme.accent) }
             }
             .padding(16)
-            .background(GeometryReader { g in
-                Color.clear.preference(key: CourseScrollKey.self, value: -g.frame(in: .named("courseScroll")).minY)
-            })
+            // reads the list's real contentOffset (a preference key silently stops reporting inside the paged TabView)
+            .background(CourseScrollProbe(
+                onChange: { y in
+                    guard abs(y - box.y) > 0.3 else { return }
+                    box.y = y
+                    onScroll(y)
+                },
+                onDetach: { box.y = 0; onScroll(0) }
+            ))
         }
-        .coordinateSpace(name: "courseScroll")
-        .onPreferenceChange(CourseScrollKey.self) { box.y = $0; onScroll($0) }
         // coming back to this page (from another tab): put the photo where the list really is
         .onAppear { onScroll(box.y) }
         .noTopEdgeEffect(course != nil)
