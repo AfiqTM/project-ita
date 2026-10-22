@@ -269,13 +269,21 @@ struct DriveItem: Decodable, Identifiable {
         let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]; return f
     }()
     private static let iso = ISO8601DateFormatter()
+    // Shared formatters: `Date.formatted` and `ByteCountFormatter.string` build a new formatter on every call,
+    // which is slow when it runs for every row on every redraw.
+    private static let dayFmt: DateFormatter = {
+        let f = DateFormatter(); f.dateStyle = .medium; f.timeStyle = .none; return f
+    }()
+    private static let sizeFmt: ByteCountFormatter = {
+        let f = ByteCountFormatter(); f.countStyle = .file; return f
+    }()
 
     var subtitle: String {
         var parts: [String] = []
         if let m = modifiedTime, let d = Self.isoFrac.date(from: m) ?? Self.iso.date(from: m) {
-            parts.append(d.formatted(date: .abbreviated, time: .omitted))
+            parts.append(Self.dayFmt.string(from: d))
         }
-        if let s = size, let n = Int64(s) { parts.append(ByteCountFormatter.string(fromByteCount: n, countStyle: .file)) }
+        if let s = size, let n = Int64(s) { parts.append(Self.sizeFmt.string(fromByteCount: n)) }
         return parts.joined(separator: " · ")
     }
 }
@@ -430,7 +438,13 @@ final class DriveFolderModel: ObservableObject {
             let token = try await auth.accessToken()
             let r = try await DriveAPI.list(q: q, token: token, pageToken: more ? next : nil)
             guard my == gen else { return }
-            items = more ? items + r.items : r.items
+            if more {
+                // never add the same file twice (duplicate ids make a ForEach scroll and jump oddly)
+                let seen = Set(items.map(\.id))
+                items += r.items.filter { !seen.contains($0.id) }
+            } else {
+                items = r.items
+            }
             next = r.next
             loadedOnce = true
         } catch {
@@ -512,6 +526,7 @@ enum DriveIcon {
 struct DriveRow: View {
     let ref: DriveRef
     var subtitle: String? = nil
+    var showLine = true                    // false for the last row of a card, so the divider doesn't cross the rounded corners
     var onRemove: (() -> Void)? = nil      // set inside a course's My Drive tab
 
     @EnvironmentObject var lib: DriveLibrary
@@ -544,7 +559,7 @@ struct DriveRow: View {
             }
         }
         .padding(.leading, 14).padding(.trailing, 6).padding(.vertical, 2)
-        .overlay(Rectangle().fill(Theme.line).frame(height: 1), alignment: .bottom)
+        .overlay(Rectangle().fill(Theme.line).frame(height: showLine ? 1 : 0), alignment: .bottom)
         .contextMenu { actions }
         .sheet(isPresented: $saving) { SaveToSubjectSheet(ref: ref) }
     }
@@ -566,6 +581,59 @@ struct DriveDestination: View {
     let ref: DriveRef
     var body: some View {
         if ref.isFolder { DriveFolderView(folder: ref) } else { DrivePreviewView(ref: ref) }
+    }
+}
+
+// MARK: - Long lists (search results, folders)
+
+/// Card look for long lists. `glowCard()` puts three blurred shadows on the whole card, which is far too heavy
+/// around ~100 rows (iOS redraws the entire tall stack through the shadow passes, so scrolling stutters).
+/// Here the surface and outline are drawn behind the rows instead, and the rows stay plain.
+struct DriveListCard: ViewModifier {
+    var radius: CGFloat = 14
+    @ObservedObject private var themes = ThemeStore.shared
+    func body(content: Content) -> some View {
+        let p = themes.theme.palette
+        let pixel = p.card == .pixel
+        let western = p.card == .western
+        let shape = RoundedRectangle(cornerRadius: Theme.cardRadius(radius), style: .continuous)
+        return content
+            .background {
+                ZStack {
+                    if pixel { shape.fill(Color(hex: p.glow)).offset(x: 3, y: 3) }
+                    shape.fill(Color(hex: p.surface))
+                        .overlay(alignment: .top) {
+                            if western { TornBand().fill(Color(hex: p.accent)).frame(height: 9) }
+                        }
+                        .clipShape(shape)
+                }
+            }
+            .overlay(shape.stroke(Color(hex: p.line), lineWidth: pixel ? 2 : 1).allowsHitTesting(false))
+    }
+}
+extension View {
+    func driveListCard() -> some View { modifier(DriveListCard()) }
+}
+
+/// The rows of a folder or a search. They are direct children of one LazyVStack, so only the rows on screen
+/// are built, and "load more" fires when the spinner at the bottom is really reached.
+struct DriveItemList: View {
+    let items: [DriveItem]
+    let hasMore: Bool
+    let loadMore: () -> Void
+
+    var body: some View {
+        LazyVStack(spacing: 0) {
+            ForEach(items) { item in
+                DriveRow(ref: item.ref, subtitle: item.subtitle,
+                         showLine: item.id != items.last?.id || hasMore)
+            }
+            if hasMore {
+                ProgressView().tint(Theme.accent).padding().frame(maxWidth: .infinity)
+                    .onAppear { loadMore() }
+            }
+        }
+        .driveListCard()
     }
 }
 
@@ -650,7 +718,8 @@ struct MyDriveView: View {
     var body: some View {
         DriveGate {
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 14) {
+                // A plain VStack: the lazy part is the row list inside `results` (DriveItemList)
+                VStack(alignment: .leading, spacing: 14) {
                     searchBar
                     if cleanQuery.isEmpty {
                         scopeBar
@@ -736,15 +805,9 @@ struct MyDriveView: View {
     @ViewBuilder private var results: some View {
         if let e = model.error { Text(e).font(Theme.font(.footnote)).foregroundColor(Theme.muted) }
         if !model.items.isEmpty {
-            VStack(spacing: 0) {
-                ForEach(model.items) { DriveRow(ref: $0.ref, subtitle: $0.subtitle) }
-                if model.hasMore {
-                    ProgressView().tint(Theme.accent).padding()
-                        .frame(maxWidth: .infinity)
-                        .onAppear { Task { await model.load(q: q, auth: auth, more: true) } }
-                }
+            DriveItemList(items: model.items, hasMore: model.hasMore) {
+                Task { await model.load(q: q, auth: auth, more: true) }
             }
-            .glowCard()
         } else if model.loading {
             ProgressView().tint(Theme.accent).frame(maxWidth: .infinity)
         } else if model.loadedOnce && model.error == nil {
@@ -766,17 +829,12 @@ struct DriveFolderView: View {
     var body: some View {
         DriveGate {
             ScrollView {
-                LazyVStack(spacing: 14) {
+                VStack(spacing: 14) {
                     if let e = model.error { Text(e).font(Theme.font(.footnote)).foregroundColor(Theme.muted) }
                     if !model.items.isEmpty {
-                        VStack(spacing: 0) {
-                            ForEach(model.items) { DriveRow(ref: $0.ref, subtitle: $0.subtitle) }
-                            if model.hasMore {
-                                ProgressView().tint(Theme.accent).padding().frame(maxWidth: .infinity)
-                                    .onAppear { Task { await model.load(q: q, auth: auth, more: true) } }
-                            }
+                        DriveItemList(items: model.items, hasMore: model.hasMore) {
+                            Task { await model.load(q: q, auth: auth, more: true) }
                         }
-                        .glowCard()
                     } else if model.loading {
                         ProgressView().tint(Theme.accent)
                     } else if model.loadedOnce && model.error == nil {
