@@ -181,10 +181,15 @@ struct CourseBackdrop: View {
             // darker at the top so the title bar and tabs stay readable, fading into the page at the bottom
             .overlay(LinearGradient(colors: [Color.black.opacity(0.45), Color.black.opacity(0)],
                                     startPoint: .top, endPoint: .init(x: 0.5, y: 0.35)))
-            .mask(LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.5),
-                                         .init(color: .clear, location: 1)], startPoint: .top, endPoint: .bottom))
+            .mask(LinearGradient(stops: [
+                .init(color: .black, location: 0),
+                .init(color: .black, location: 0.38),
+                .init(color: Color.black.opacity(0.6), location: 0.62),
+                .init(color: Color.black.opacity(0.2), location: 0.82),
+                .init(color: .clear, location: 1)
+            ], startPoint: .top, endPoint: .bottom))
             // moves up 1:1 with the list and slides off under the status bar, like the reference video
-            .offset(y: -min(scroll.y, height))
+            .offset(y: -min(max(scroll.y, 0), height))
             .ignoresSafeArea(edges: .top)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
