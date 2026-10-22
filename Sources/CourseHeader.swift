@@ -47,8 +47,19 @@ extension Person {
         while let last = words.last, last.allSatisfy(\.isNumber) { words.removeLast() }
         return words.map { $0.prefix(1).uppercased() + $0.dropFirst().lowercased() }.joined(separator: " ")
     }
+    /// Any teaching-type role: editingteacher, teacher, "Lecturer", "Instructor", "Tutor", coursecreator, manager ...
     var isLecturer: Bool {
-        (roles ?? []).contains { ["editingteacher", "teacher"].contains(($0.shortname ?? "").lowercased()) }
+        (roles ?? []).contains { r in
+            let key = ((r.shortname ?? "") + " " + (r.name ?? "")).lowercased()
+            return ["teacher", "lecturer", "instructor", "tutor", "coursecreator", "manager"].contains { key.contains($0) }
+        }
+    }
+    /// True when the person is explicitly a student
+    var isStudent: Bool {
+        (roles ?? []).contains { r in
+            let key = ((r.shortname ?? "") + " " + (r.name ?? "")).lowercased()
+            return key.contains("student")
+        }
     }
     /// The participant list shows no role at all for this person (iTa'leem lists its lecturers like this; students say "student")
     var hasNoRole: Bool { (roles ?? []).isEmpty }
@@ -63,14 +74,19 @@ extension Person {
         if let c = Self.cache[courseId] { people = c }
         var teachers: [Person] = []
         if let all: [Person] = try? await MoodleAPI.shared.call("core_enrol_get_enrolled_users", ["courseid": courseId]) {
+            // 1) anyone with a teaching role (editingteacher, teacher, ...)
             teachers = all.filter(\.isLecturer)
-            // A participant with no role is a lecturer too. Only when the list reports roles for somebody (otherwise the site
-            // hides roles for everyone and all would look like lecturers), and only when just a few have none.
-            let rolesReported = all.contains { !($0.roles ?? []).isEmpty }
-            let noRole = all.filter { $0.hasNoRole && !$0.isLecturer }
-            if rolesReported && noRole.count <= 8 { teachers += noRole }
+            // 2) iTa'leem shows its lecturers as "No roles". Treat a participant with no role as a lecturer when the
+            //    list clearly reports roles for the students (so we know "no role" is real, not hidden for everybody).
+            let studentsReported = all.contains { $0.isStudent }
+            if studentsReported {
+                teachers += all.filter { $0.hasNoRole && !$0.isLecturer }
+            }
         }
-        if teachers.isEmpty { teachers = await contacts(courseId) }     // the participant list may not show roles
+        // 3) the course's own "contacts" (teachers as the site lists them on the course card), always merged in
+        let fromContacts = await contacts(courseId)
+        for c in fromContacts where !teachers.contains(where: { $0.id == c.id }) { teachers.append(c) }
+
         let withPictures = await ProfileImages.upgraded(teachers)
         guard !withPictures.isEmpty else { return }
         Self.cache[courseId] = withPictures
