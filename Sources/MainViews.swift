@@ -638,9 +638,15 @@ struct ProfileView: View {
     @ObservedObject private var themes = ThemeStore.shared
     @ObservedObject private var autoAtt = AutoAttendance.shared
 
+    private func sectionTitle(_ t: String) -> some View {
+        Text(t).font(Theme.font(.footnote).weight(.semibold)).foregroundColor(Theme.muted)
+            .textCase(.uppercase).padding(.horizontal, 6).padding(.bottom, -8)
+    }
+
     var body: some View {
         ScrollView {
-            VStack(spacing: 18) {
+            VStack(alignment: .leading, spacing: 18) {
+                // 1. profile
                 VStack(spacing: 0) {
                     NavigationLink {
                         UserProfileView(userid: app.site?.userid ?? 0,
@@ -648,8 +654,15 @@ struct ProfileView: View {
                                         imageURL: app.site?.userpictureurl)
                     } label: {
                         ProfileRow(icon: "person.crop.circle", title: "My Profile",
-                                   subtitle: app.site?.fullname ?? "Your details", showLine: true)
+                                   subtitle: app.site?.fullname ?? "Your details", showLine: false)
                     }
+                }
+                .buttonStyle(.plain)
+                .glowCard()
+
+                // 2. Academic Tools
+                sectionTitle("Academic Tools")
+                VStack(spacing: 0) {
                     NavigationLink { TodoListView() } label: {
                         let n = todos.pending.count
                         ProfileRow(icon: "checklist", title: "To-Do List",
@@ -659,24 +672,44 @@ struct ProfileView: View {
                         ProfileRow(icon: "function", title: "Final Exam Calculator",
                                    subtitle: "Marks needed in the final exam", showLine: true)
                     }
-                    NavigationLink { AutoAttendanceView() } label: {
-                        ProfileRow(icon: "checkmark.circle", title: "Auto Attendance",
-                                   subtitle: autoAtt.state.master ? "On · \(autoAtt.enabledCount) subject\(autoAtt.enabledCount == 1 ? "" : "s")" : "Off",
-                                   showLine: true)
-                    }
                     NavigationLink { MyDriveView() } label: {
                         ProfileRow(icon: "externaldrive", title: "My Drive",
                                    subtitle: driveAuth.email ?? "Browse your Google Drive", showLine: true)
                     }
+                    NavigationLink { AutoAttendanceView() } label: {
+                        ProfileRow(icon: "checkmark.circle", title: "Auto Attendance",
+                                   subtitle: autoAtt.state.master ? "On · \(autoAtt.enabledCount) subject\(autoAtt.enabledCount == 1 ? "" : "s")" : "Off",
+                                   showLine: false)
+                    }
+                }
+                .buttonStyle(.plain)
+                .glowCard()
+
+                // 3. App Preferences
+                sectionTitle("App Preferences")
+                VStack(spacing: 0) {
                     NavigationLink(value: OthersRoute.themes) {
                         ProfileRow(icon: "paintpalette", title: "Themes",
                                    subtitle: themes.theme.name, showLine: true)
                     }
                     OfflineSupportRow()
+                    Rectangle().fill(Theme.line).frame(height: 1)
                     SyncStatusRow()
                 }
                 .buttonStyle(.plain)
                 .glowCard()
+
+                // sign out, below everything else
+                Button(role: .destructive) {
+                    SiteBrowser.wipeSession(); AttendanceStore.clear()
+                    UNUserNotificationCenter.current().setBadgeCount(0) { _ in }
+                    app.signOut()
+                } label: {
+                    Text("Sign out").frame(maxWidth: .infinity).padding(.vertical, 12)
+                        .background(Theme.surface2).foregroundColor(.red.opacity(0.85))
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+                .padding(.top, 6)
             }
             .padding(24)
         }
