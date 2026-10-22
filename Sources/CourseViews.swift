@@ -17,6 +17,7 @@ struct CourseDetailView: View {
                                                              // a reference held in @State so scrolling doesn't redraw this view
     @State private var pager = CoursePagerModel()            // how far a swipe between tabs has moved (slides the top cover with the pages)
     @State private var pageW: CGFloat = 390                  // width of the page area (for the swipe)
+    @State private var bottomInset: CGFloat = 0              // height of the floating tab bar's safe area (pages scroll under it)
     @ObservedObject private var themes = ThemeStore.shared
 
     private var todoCount: Int { todos.count(for: course.id) }
@@ -45,7 +46,7 @@ struct CourseDetailView: View {
         }
     }
 
-    private var photoOn: Bool { themes.theme.scheme == .dark }
+    private var photoOn: Bool { true }      // the photo header is on in every theme (Light washes it out, see CourseBackdrop)
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -108,6 +109,8 @@ struct CourseDetailView: View {
             TabView(selection: $tab) {
                 ForEach(tabs) { t in
                     page(t)
+                        // the pages run under the floating tab bar (see below), so the list gets that height as bottom room
+                        .safeAreaInset(edge: .bottom, spacing: 0) { Color.clear.frame(height: bottomInset) }
                         // the list is cut off where it meets the header (pure black), and the cards' glow is a faint grey:
                         // fade the first few points out so there is no hard line between the two
                         .mask(TopFade())
@@ -118,6 +121,8 @@ struct CourseDetailView: View {
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
+            // the pager used to stop at the bottom safe area, leaving a black bar behind the tab bar: let it run underneath
+            .ignoresSafeArea(.container, edges: .bottom)
             .background(GeometryReader { g in
                 Color.clear
                     .onAppear { pageW = g.size.width }
@@ -159,6 +164,11 @@ struct CourseDetailView: View {
                     }
             )
         }
+        .background(GeometryReader { g in
+            Color.clear
+                .onAppear { bottomInset = g.safeAreaInsets.bottom }
+                .onChange(of: g.safeAreaInsets.bottom) { bottomInset = $0 }
+        })
     }
 }
 
