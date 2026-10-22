@@ -417,11 +417,14 @@ struct PersonGroup: Decodable {
     let description: String?
 }
 
+struct PersonRole: Decodable { let shortname: String?; let name: String? }
+
 struct Person: Decodable, Identifiable {
     let id: Int
     let fullname: String
     let profileimageurlsmall: String?
     var profileimageurl: String? = nil    // the larger picture: tried too when the small one doesn't load
+    var roles: [PersonRole]? = nil    // "editingteacher" / "student" ... (core_enrol_get_enrolled_users)
     var groups: [PersonGroup]?   // the groups this person is in (core_enrol_get_enrolled_users)
 }
 

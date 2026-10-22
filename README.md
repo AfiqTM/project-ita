@@ -9,6 +9,7 @@ Native client for iTa'leem (IIUM Moodle) using Moodle's mobile web-service API, 
 - My courses with All / In progress / Future / Past / Starred / Removed from view / Assignments (count badge)
 - Default tonal cover for courses without an image
 - Course page: sections, files, folders, pages, forums (announcements), assignments (due / status / grade), Participants, Grades
+- Course page header (dark themes): a blurred photo behind the navigation bar and tabs (`Assets.xcassets/CourseHeader.imageset`, replace `header.jpg` to change it) that scrolls away with the page, the course code in large letters, "Subject • Section 02 • Semester 1" and the lecturer(s) with their picture (people with a teacher role in the participant list, name without the staff number)
 - Participants open a profile screen (photo, Message button, About me / Courses / More details, depending on the site's privacy settings)
 - Any activity without a native screen (quiz, ...) opens in the dark-themed web view
 
