@@ -666,11 +666,16 @@ struct ProfileView: View {
     @ObservedObject private var studyPlan = StudyPlanStore.shared
     @ObservedObject private var autoAtt = AutoAttendance.shared
 
-    /// "AFIQ TAUFIQ BIN MUHAMMAD 2412345" -> "Afiq" (the short name shown under My Profile)
+    /// "AFIQ TAUFIQ BIN MUHAMMAD 2412345" -> "Afiq Taufiq bin Muhammad 2412345" (full name and matric number under My Profile)
     private var shortName: String {
-        let words = (app.site?.fullname ?? "").split(whereSeparator: \.isWhitespace).map(String.init).filter { !$0.allSatisfy(\.isNumber) }
-        guard let first = words.first else { return "Your details" }
-        return first.prefix(1).uppercased() + first.dropFirst().lowercased()
+        let words = (app.site?.fullname ?? "").split(whereSeparator: \.isWhitespace).map(String.init)
+        guard !words.isEmpty else { return "Your details" }
+        let particles: Set<String> = ["bin", "binti", "bt", "bte", "b", "a/l", "a/p"]
+        return words.map { w in
+            if w.allSatisfy(\.isNumber) { return w }
+            let l = w.lowercased()
+            return particles.contains(l) ? l : l.prefix(1).uppercased() + l.dropFirst()
+        }.joined(separator: " ")
     }
 
     private func sectionTitle(_ t: String) -> some View {
@@ -681,7 +686,8 @@ struct ProfileView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                // 1. profile
+                // 1. account
+                sectionTitle("Account")
                 VStack(spacing: 0) {
                     NavigationLink {
                         UserProfileView(userid: app.site?.userid ?? 0,
@@ -689,7 +695,7 @@ struct ProfileView: View {
                                         imageURL: app.site?.userpictureurl)
                     } label: {
                         ProfileRow(icon: "person.crop.circle", title: "My Profile",
-                                   subtitle: shortName, showLine: false)
+                                   subtitle: shortName, subtitleLines: 2, showLine: false)
                     }
                 }
                 .buttonStyle(.plain)
@@ -769,6 +775,7 @@ struct ProfileRow: View {
     let title: String
     let subtitle: String
     var badge = 0
+    var subtitleLines = 1
     var showLine = true
 
     var body: some View {
@@ -776,7 +783,7 @@ struct ProfileRow: View {
             Image(systemName: icon).foregroundColor(Theme.accent).frame(width: 26).textGlow()
             VStack(alignment: .leading, spacing: 3) {
                 Text(title).foregroundColor(Theme.txt).textGlow(radius: 3).rocksHeading(12, normal: .subheadline.weight(.semibold), pt: 15)
-                Text(subtitle).font(Theme.font(.caption)).foregroundColor(Theme.muted).lineLimit(1)
+                Text(subtitle).font(Theme.font(.caption)).foregroundColor(Theme.muted).lineLimit(subtitleLines)
             }
             Spacer()
             if badge > 0 {
