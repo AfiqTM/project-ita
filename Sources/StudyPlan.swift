@@ -343,6 +343,7 @@ enum StudyPlanReader {
         var year: Int; var sem: Int; var courses: [PlanCourse]
         var expLocal: Double?; var expIntl: Double?; var nTotals: Int
     }
+    private struct PlanBlock { var year: Int; var sem: Int; var rows: [RawRow]; var totals: [PrintedTotal] }
     private struct Candidate {
         var plan: StudyPlan
         var hard: [String]          // totals that do not add up: something was misread
@@ -370,11 +371,21 @@ enum StudyPlanReader {
             }
         }
 
-        // semesters (a semester whose table runs over two pages, or is repeated, is merged)
-        var accs: [Int: SemAcc] = [:]
+        var plans: [PlanBlock] = []
         for b in parsed.blocks {
             guard case .plan(let y, let s) = b.kind else { continue }
             let (rs, totals) = rows(of: b)
+            plans.append(PlanBlock(year: y, sem: s, rows: rs, totals: totals))
+        }
+        return assemble(parsed, catalog: catalog, plans: plans)
+    }
+
+    /// Subjects + printed totals -> a plan, and the checks against the PDF's own numbers (shared by every reader)
+    private static func assemble(_ parsed: Parsed, catalog: [String: String], plans: [PlanBlock]) -> Candidate? {
+        // semesters (a semester whose table runs over two pages, or is repeated, is merged)
+        var accs: [Int: SemAcc] = [:]
+        for pb in plans {
+            let y = pb.year, s = pb.sem, rs = pb.rows, totals = pb.totals
             var expLocal: Double? = nil, expIntl: Double? = nil
             for t in totals {
                 let intl = t.label.contains("international"), loc = t.label.contains("local")
@@ -396,6 +407,9 @@ enum StudyPlanReader {
                                                  options: [.regularExpression, .caseInsensitive]).trimmingCharacters(in: .whitespaces)
                 if code.isEmpty || code.contains("XXXX") { code = name }
                 var cat = catalog[code.lowercased()] ?? catalog[name.lowercased()]
+                if cat == nil, let first = groups("([A-Z]{2,5}\\s?\\d{4}[A-Z]?)", in: code).first, first.count > 1 {
+                    cat = catalog[sub(first[1], "\\s+", " ").lowercased()]     // "CCSS 1020/2010/3010" -> "ccss 1020"
+                }
                 if cat == nil {
                     let l = name.lowercased()
                     cat = l.hasPrefix("field elective") ? "Field Elective" : l.hasPrefix("free elective") ? "Free Elective" : "Other"
@@ -480,6 +494,150 @@ enum StudyPlanReader {
             p.warnings = shown
         }
         return p
+    }
+
+    // ---- reader A: the text in the order the PDF stores it (no positions at all) ----
+    //
+    // Word writes a table row by row, so the text of the PDF reads "BICS 2302 Data Structures and Algorithms 3 BICS 1304,
+    // BICS 1305 BICS 2303 Intelligent Systems 3 ...". A row is [code] name credit [prerequisite]; the next row starts with
+    // a course code (or "Free Elective" / "Field Elective"). Because it never looks at where letters sit on the page it
+    // cannot merge neighbouring rows the way a position-based reading can.
+    private static let codeP = "[A-Z]{2,5} \\d{4}[A-Z]?"
+    private static let codesP = "\(codeP)(?:,\\s*\(codeP))*"
+    private static let startP = "(?:\(codesP)|[A-Z]{2,5}/[A-Z]{2,5} XXXX)"
+    private static let preP = "(?:-|Course Specific|Finish Courses|>=\\s*\\d+ Credits|\\d(?:st|nd|rd|th) Year|\(codesP))"
+    private static let rowRx = try? NSRegularExpression(pattern:
+        "(?:(\(codesP)|[A-Z]{2,5}/[A-Z]{2,5} XXXX)\\s+)?(.+?)\\s+(\\d{1,2}(?:\\.\\d)?)(?:\\s+(\(preP)))?(?:\\s+-)*(?=\\s+(?:\(startP)|Free Elective|Field Elective)|\\s*$)")
+    private static let totRx = try? NSRegularExpression(pattern:
+        "Total Credits \\((Local Students|International Students|Local/International)\\)\\s*(\\d{1,3}(?:\\.\\d)?)")
+    private static let semRx = try? NSRegularExpression(pattern: "(?:-\\s+)?YEAR\\s*(\\d)\\s*SEMESTER\\s*(\\d)")
+    private static let streamCats: [(String, String)] = [
+        ("UNIVERSITY REQUIRED COURSES", "University Required"), ("CORE COMPUTING COURSES", "Core Computing"),
+        ("DISCIPLINE COURSE", "Discipline Core"), ("FIELD ELECTIVES", "Field Elective"), ("FINAL YEAR PROJECT", "FYP"),
+        ("INDUSTRIAL ATTACHMENT", "Industrial Attachment"), ("FREE ELECTIVES", "Free Elective")]
+    private static let streamReqs: [(String, String)] = [
+        ("University Required Courses", "University Required"), ("Core Computing Courses", "Core Computing"),
+        ("Discipline Core Courses", "Discipline Core"), ("Field Electives", "Field Elective"), ("Free Electives", "Free Elective"),
+        ("Final Year Project \\(I ?& ?II\\)", "FYP"), ("Industrial Attachment", "Industrial Attachment")]
+    private static let deptWords: Set<String> = ["IRKHS", "CELPAD", "STADD", "SC4SH", "DCS", "DIS", "DCS/DIS", "Dept"]
+
+    private static func normStream(_ s: String) -> String {
+        var t = sub(s.replacingOccurrences(of: "\u{00A0}", with: " "), "\\s+", " ")
+        t = sub(t, "\\b([A-Z]{2,5})(\\d{4})\\b", "$1 $2")                 // LMBD1132 -> LMBD 1132
+        t = sub(t, "(\\d)\\s+(st|nd|rd|th) Year", "$1$2 Year")             // "3 rd Year" -> "3rd Year"
+        return t.trimmingCharacters(in: .whitespaces)
+    }
+
+    private static func streamRows(_ text: String) -> (rows: [RawRow], junk: Int) {
+        guard let rx = rowRx else { return ([], 0) }
+        let t = sub(sub(text, "Course Code\\s+Course Name\\s+Credit\\s+Hours\\s+Pre-?requisite", " "), "\\s+", " ")
+            .trimmingCharacters(in: .whitespaces)
+        let ns = t as NSString
+        var pos = 0, junk = 0
+        var out: [RawRow] = []
+        while pos < ns.length {
+            let range = NSRange(location: pos, length: ns.length - pos)
+            if let m = rx.firstMatch(in: t, options: [.anchored], range: range), m.range.length > 0 {
+                func g(_ i: Int) -> String { m.range(at: i).location == NSNotFound ? "" : ns.substring(with: m.range(at: i)) }
+                let pre = g(4)
+                out.append(RawRow(code: g(1), name: cleanName(g(2)), credit: toCredit(g(3)), pre: pre.isEmpty ? "-" : pre))
+                pos = m.range.location + m.range.length
+                while pos < ns.length, ns.character(at: pos) == 32 { pos += 1 }
+            } else {                                          // something that is not a subject: skip one word
+                let sp = ns.range(of: " ", options: [], range: NSRange(location: pos, length: ns.length - pos))
+                pos = sp.location == NSNotFound ? ns.length : sp.location + 1
+                junk += 1
+            }
+        }
+        return (out, junk)
+    }
+
+    private static func interpretStream(_ raw: String) -> Candidate? {
+        let t = normStream(raw)
+        guard let startR = t.range(of: "YEAR 1 SEMESTER 1") ?? t.range(of: "PROPOSED STUDY PLAN") else { return nil }
+        var front = String(t[..<startR.lowerBound])
+        var plan = String(t[startR.lowerBound...])
+        if let k = front.range(of: "LIST OF FIELD ELECTIVES") { front = String(front[..<k.lowerBound]) }
+
+        var parsed = Parsed()
+        if let m = groups("(BACHELOR[^()]*\\(HONOURS\\))", in: front).first, m.count > 1 { parsed.title = m[1].capitalized }
+
+        // where each course list starts
+        var heads: [(Int, Int, String)] = []                  // (start, end of heading, category)
+        for (h, c) in streamCats {
+            if let r = front.range(of: h) {
+                heads.append((front.distance(from: front.startIndex, to: r.lowerBound),
+                              front.distance(from: front.startIndex, to: r.upperBound), c))
+            }
+        }
+        heads.sort { $0.0 < $1.0 }
+        let chars = Array(front)
+        let headText = String(chars[0..<(heads.first?.0 ?? chars.count)])
+        for (rx, c) in streamReqs {
+            if let m = groups("\(rx)\\s+(\\d{1,3})\\b", in: headText).first, m.count > 1, let v = Double(m[1]) {
+                parsed.reqs.append(PlanRequirement(category: c, hours: v))
+            }
+        }
+        if let m = groups("Total Credit Requirements for graduation[^\\d]*(\\d{1,3})", in: headText).first, m.count > 1 {
+            parsed.total = Double(m[1])
+        }
+
+        // which category each subject belongs to: the code that starts a row of a course list
+        var catalog: [String: String] = [:]
+        for (n, h) in heads.enumerated() {
+            let end = n + 1 < heads.count ? heads[n + 1].0 : chars.count
+            let toks = String(chars[h.1..<max(h.1, end)]).split(separator: " ").map { String($0) }
+            for a in 0..<toks.count where has("^[A-Z]{2,5}$", toks[a]) && a + 1 < toks.count && has("^\\d{4}[A-Z]?,?$", toks[a + 1]) {
+                let prev = a > 0 ? toks[a - 1] : "Dept"
+                let nxt = a + 2 < toks.count ? toks[a + 2] : ""
+                let nxtIsCode = a + 3 < toks.count && has("^[A-Z]{2,5}$", nxt) && has("^\\d{4}[A-Z]?,?$", toks[a + 3])
+                let lead = deptWords.contains(prev) || (!prev.hasSuffix(",") && !deptWords.contains(nxt) && !nxtIsCode && !nxt.isEmpty)
+                if lead {
+                    let code = toks[a] + " " + toks[a + 1].trimmingCharacters(in: CharacterSet(charactersIn: ","))
+                    catalog[code.lowercased()] = h.2
+                }
+            }
+        }
+
+        var extra: [String] = []
+        if let g = plan.range(of: "Total Graduating Credits") {
+            let tail = String(plan[g.lowerBound...])
+            plan = String(plan[..<g.lowerBound])
+            if let rx = totRx {
+                let ns = tail as NSString
+                for m in rx.matches(in: tail, range: NSRange(location: 0, length: ns.length)) where !ns.substring(with: m.range(at: 1)).contains("International") {
+                    parsed.gradLocal = Double(ns.substring(with: m.range(at: 2)))
+                }
+            }
+        }
+
+        // the semesters
+        guard let sRx = semRx, let tRx = totRx else { return nil }
+        let pns = plan as NSString
+        let heads2 = sRx.matches(in: plan, range: NSRange(location: 0, length: pns.length))
+        var plans: [PlanBlock] = []
+        var junk = 0
+        for (i, m) in heads2.enumerated() {
+            guard let y = Int(pns.substring(with: m.range(at: 1))), let s = Int(pns.substring(with: m.range(at: 2))) else { continue }
+            let from = m.range.location + m.range.length
+            let to = i + 1 < heads2.count ? heads2[i + 1].range.location : pns.length
+            let body = pns.substring(with: NSRange(location: from, length: max(0, to - from)))
+            let bns = body as NSString
+            var totals: [PrintedTotal] = []
+            for tm in tRx.matches(in: body, range: NSRange(location: 0, length: bns.length)) {
+                totals.append(PrintedTotal(label: "total credits (" + bns.substring(with: tm.range(at: 1)).lowercased() + ")",
+                                           value: Double(bns.substring(with: tm.range(at: 2))) ?? 0))
+            }
+            let stripped = tRx.stringByReplacingMatches(in: body, range: NSRange(location: 0, length: bns.length), withTemplate: " ")
+            let (rs, j) = streamRows(stripped)
+            junk += j
+            plans.append(PlanBlock(year: y, sem: s, rows: rs, totals: totals))
+        }
+        if plans.isEmpty { return nil }
+        if junk > 0 { extra.append("Some text in the plan could not be matched to a subject.") }
+        guard var c = assemble(parsed, catalog: catalog, plans: plans) else { return nil }
+        c.soft += extra
+        return c
     }
 
     // ---- where the tokens come from ----
@@ -594,13 +752,19 @@ enum StudyPlanReader {
     static func read(_ url: URL, progress: ((String) -> Void)? = nil) async -> StudyPlan? {
         guard let doc = PDFDocument(url: url), doc.pageCount > 0 else { return nil }
 
-        // first try: the PDF's own text layer
+        // first try: the PDF's text in stored order (fast, no positions involved)
+        var pageText: [String] = []
+        for p in 0..<doc.pageCount { pageText.append(doc.page(at: p)?.string ?? "") }
+        var best = interpretStream(pageText.joined(separator: "\n"))
+        if let b = best, b.score == 0 { return finish(b) }
+
+        // second try: the text layer with the position of every character
         var toks: [Tok] = []
         for p in 0..<doc.pageCount {
             if let page = doc.page(at: p) { toks += textTokens(of: page, index: p) }
             await Task.yield()                           // keep the spinner moving
         }
-        var best = interpret(toks)
+        best = better(best, interpret(toks))
         if let b = best, b.score == 0 { return finish(b) }
 
         // the numbers did not add up (or there was no usable text, e.g. a scan): read the pages as pictures instead
