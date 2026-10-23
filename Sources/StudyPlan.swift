@@ -1054,7 +1054,7 @@ struct StudyPlanTrackerView: View {
 
     private var emptyState: some View {
         VStack(spacing: 14) {
-            Image(systemName: "checklist").font(.system(size: 44)).foregroundStyle(Theme.accent)
+            Image(systemName: "calendar.badge.checkmark").font(.system(size: 44)).foregroundStyle(Theme.accent)
             Text("Track your degree").font(Theme.font(.title3.weight(.semibold))).foregroundStyle(Theme.txt)
             Text("Upload your programme's study plan PDF. It is read on your phone, nothing is sent anywhere. Then tick the subjects you have finished to see credits, categories and semesters add up.")
                 .font(Theme.read(.subheadline)).foregroundStyle(Theme.muted).multilineTextAlignment(.center)
