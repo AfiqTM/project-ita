@@ -35,6 +35,7 @@ struct SyncStudy: Codable {
     var taken: [String]
     var picks: [String: String]
     var student: String
+    var concentration: String?      // the field-elective area chosen once, e.g. "Artificial Intelligence"
 }
 struct SyncDoc: Codable {
     var version = 1
