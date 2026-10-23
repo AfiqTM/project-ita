@@ -862,8 +862,13 @@ final class StudyPlanStore: ObservableObject {
     @Published private(set) var taken: Set<String> = []
     @Published private(set) var picks: [String: String] = [:]     // field-elective slot (course id) -> elective code
     @Published var student: StudentType {
-        didSet { UserDefaults.standard.set(student.rawValue, forKey: "studyplan.student") }
+        didSet {
+            UserDefaults.standard.set(student.rawValue, forKey: "studyplan.student")
+            if !applying { touch() }
+        }
     }
+    private var applying = false      // true while newer data from Drive is being applied (must not be sent back)
+    private let stampKey = "studyplan.updated"
 
     // v2: plans saved by the earlier reader could be misread (missing or mixed-up semesters), so they are not loaded any more
     private let planKey = "studyplan.plan.v2", takenKey = "studyplan.taken.v1", picksKey = "studyplan.picks.v1"
@@ -876,11 +881,41 @@ final class StudyPlanStore: ObservableObject {
         picks = (UserDefaults.standard.dictionary(forKey: picksKey) as? [String: String]) ?? [:]
     }
 
-    private func save() {
+    /// Always written on the phone first
+    private func persist() {
         if let p = plan, let d = try? JSONEncoder().encode(p) { UserDefaults.standard.set(d, forKey: planKey) }
         else { UserDefaults.standard.removeObject(forKey: planKey) }
         UserDefaults.standard.set(Array(taken), forKey: takenKey)
         UserDefaults.standard.set(picks, forKey: picksKey)
+    }
+    /// A change made on this device: kept locally, and (when Google Drive is connected) sent to Drive by SyncManager.
+    /// With no Drive connection the change waits and goes up as soon as Drive is connected.
+    private func save() {
+        persist()
+        touch()
+    }
+    private func touch() {
+        UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: stampKey)
+        NotificationCenter.default.post(name: .syncLocalChanged, object: nil)
+    }
+
+    // ---- Google Drive sync (the plan rides in the same iTaleem-sync.json as the to-dos; the newer copy wins) ----
+    var syncSnapshot: SyncStudy? {
+        let at = UserDefaults.standard.double(forKey: stampKey)
+        if at <= 0 && plan == nil { return nil }                      // never used
+        // data saved before sync existed counts as the oldest, so a copy already in Drive is never overwritten by it
+        return SyncStudy(updated: ms(Date(timeIntervalSince1970: at > 0 ? at : 1)), plan: plan, taken: Array(taken).sorted(),
+                         picks: picks, student: student.rawValue)
+    }
+    func applySync(_ s: SyncStudy) {
+        applying = true
+        defer { applying = false }
+        plan = s.plan
+        taken = Set(s.taken)
+        picks = s.picks
+        if let t = StudentType(rawValue: s.student) { student = t }
+        persist()
+        UserDefaults.standard.set(Double(s.updated) / 1000, forKey: stampKey)
     }
 
     /// A newly read plan replaces the old one; ticks are kept for subjects that are still in it
@@ -1055,6 +1090,8 @@ final class StudyPlanStore: ObservableObject {
 struct StudyPlanTrackerView: View {
     @ObservedObject private var store = StudyPlanStore.shared
     @ObservedObject private var themes = ThemeStore.shared
+    @EnvironmentObject private var auth: DriveAuth
+    @EnvironmentObject private var sync: SyncManager
     @State private var importing = false
     @State private var busy = false
     @State private var busyText = "Reading…"
@@ -1178,6 +1215,8 @@ struct StudyPlanTrackerView: View {
         }
         .padding(14).background(Theme.surface, in: RoundedRectangle(cornerRadius: 14))
 
+        saveStatusRow
+
         // field electives: add one and it is placed in the right semester; the first one fixes the concentration
         if !(plan.electives ?? []).isEmpty {
             VStack(alignment: .leading, spacing: 10) {
@@ -1224,6 +1263,36 @@ struct StudyPlanTrackerView: View {
 
         // semesters
         ForEach(plan.semesters) { s in semesterCard(s) }
+    }
+
+    /// Where the plan is saved: always on the phone, and in Google Drive too once it is connected
+    private var saveStatusRow: some View {
+        let connected = auth.isSignedIn && auth.canWrite
+        var text = "Saved on this phone only"
+        var action: String? = nil
+        if connected {
+            switch sync.state {
+            case .syncing: text = "Saved on this phone · saving to Google Drive…"
+            case .ok(let d): text = "Saved on this phone and Google Drive · " + d.formatted(date: .omitted, time: .shortened)
+            case .failed(let m): text = "Saved on this phone · Drive: " + m
+            default: text = "Saved on this phone and Google Drive"
+            }
+        } else if auth.isSignedIn {
+            text += " · allow Drive access to back it up"; action = "Allow"
+        } else {
+            text += " · connect Google Drive to back it up"; action = "Connect"
+        }
+        return HStack(spacing: 10) {
+            Image(systemName: connected ? "externaldrive.fill.badge.checkmark" : "iphone").foregroundStyle(Theme.accent)
+            Text(text).font(Theme.read(.caption)).foregroundStyle(Theme.muted)
+            Spacer(minLength: 8)
+            if let action {
+                Button(action) { auth.signIn() }.font(Theme.read(.footnote).weight(.semibold)).foregroundStyle(Theme.accent)
+            } else if connected {
+                Button("Sync now") { sync.syncNow(force: true) }.font(Theme.read(.footnote)).foregroundStyle(Theme.accent)
+            }
+        }
+        .padding(14).background(Theme.surface, in: RoundedRectangle(cornerRadius: 14))
     }
 
     private func semesterCard(_ s: PlanSemester) -> some View {
