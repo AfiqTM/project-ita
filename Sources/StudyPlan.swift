@@ -861,6 +861,7 @@ final class StudyPlanStore: ObservableObject {
     @Published private(set) var plan: StudyPlan?
     @Published private(set) var taken: Set<String> = []
     @Published private(set) var picks: [String: String] = [:]     // field-elective slot (course id) -> elective code
+    @Published private(set) var concentration: String?             // the area chosen once, e.g. "Artificial Intelligence"
     @Published var student: StudentType {
         didSet {
             UserDefaults.standard.set(student.rawValue, forKey: "studyplan.student")
@@ -871,7 +872,7 @@ final class StudyPlanStore: ObservableObject {
     private let stampKey = "studyplan.updated"
 
     // v2: plans saved by the earlier reader could be misread (missing or mixed-up semesters), so they are not loaded any more
-    private let planKey = "studyplan.plan.v2", takenKey = "studyplan.taken.v1", picksKey = "studyplan.picks.v1"
+    private let planKey = "studyplan.plan.v2", takenKey = "studyplan.taken.v1", picksKey = "studyplan.picks.v1", concKey = "studyplan.concentration.v1"
 
     init() {
         UserDefaults.standard.removeObject(forKey: "studyplan.plan.v1")
@@ -879,6 +880,7 @@ final class StudyPlanStore: ObservableObject {
         if let d = UserDefaults.standard.data(forKey: planKey), let p = try? JSONDecoder().decode(StudyPlan.self, from: d) { plan = p }
         taken = Set(UserDefaults.standard.stringArray(forKey: takenKey) ?? [])
         picks = (UserDefaults.standard.dictionary(forKey: picksKey) as? [String: String]) ?? [:]
+        concentration = UserDefaults.standard.string(forKey: concKey)
     }
 
     /// Always written on the phone first
@@ -887,6 +889,7 @@ final class StudyPlanStore: ObservableObject {
         else { UserDefaults.standard.removeObject(forKey: planKey) }
         UserDefaults.standard.set(Array(taken), forKey: takenKey)
         UserDefaults.standard.set(picks, forKey: picksKey)
+        if let c = concentration { UserDefaults.standard.set(c, forKey: concKey) } else { UserDefaults.standard.removeObject(forKey: concKey) }
     }
     /// A change made on this device: kept locally, and (when Google Drive is connected) sent to Drive by SyncManager.
     /// With no Drive connection the change waits and goes up as soon as Drive is connected.
@@ -905,7 +908,7 @@ final class StudyPlanStore: ObservableObject {
         if at <= 0 && plan == nil { return nil }                      // never used
         // data saved before sync existed counts as the oldest, so a copy already in Drive is never overwritten by it
         return SyncStudy(updated: ms(Date(timeIntervalSince1970: at > 0 ? at : 1)), plan: plan, taken: Array(taken).sorted(),
-                         picks: picks, student: student.rawValue)
+                         picks: picks, student: student.rawValue, concentration: concentration)
     }
     func applySync(_ s: SyncStudy) {
         applying = true
@@ -913,6 +916,7 @@ final class StudyPlanStore: ObservableObject {
         plan = s.plan
         taken = Set(s.taken)
         picks = s.picks
+        concentration = s.concentration
         if let t = StudentType(rawValue: s.student) { student = t }
         persist()
         UserDefaults.standard.set(Double(s.updated) / 1000, forKey: stampKey)
@@ -923,11 +927,11 @@ final class StudyPlanStore: ObservableObject {
         plan = p
         let ids = Set(p.semesters.flatMap(\.courses).map(\.id))
         taken = taken.intersection(ids)
-        let codes = Set((p.electives ?? []).map(\.code))
-        picks = picks.filter { ids.contains($0.key) && codes.contains($0.value) }
-        save()
+        picks = [:]
+        if let c = concentration, areaNames.contains(c) { fill(c) }       // refill for the new plan
+        else { concentration = nil; save() }
     }
-    func remove() { plan = nil; taken = []; picks = [:]; save() }
+    func remove() { plan = nil; taken = []; picks = [:]; concentration = nil; save() }
     func resetProgress() { taken = []; save() }
 
     func isTaken(_ c: PlanCourse) -> Bool { taken.contains(c.id) }
@@ -947,7 +951,8 @@ final class StudyPlanStore: ObservableObject {
         guard let code = picks[slot.id] else { return nil }
         return plan?.electives?.first { $0.code == code }
     }
-    // ---- automatic placement: the student only says WHICH elective; the app finds the semester slot for it ----
+    // ---- concentration: the student chooses an area once (e.g. Artificial Intelligence); its courses are then put into the
+    // field-elective slots of the plan automatically, each in the earliest semester where its prerequisites are done ----
     private func codeKey(_ s: String) -> String { s.filter { !$0.isWhitespace } }
     private func prereqCodes(_ e: FieldElective) -> [String] {
         guard let re = try? NSRegularExpression(pattern: "[A-Z]{2,5}\\s?\\d{4}[A-Z]?") else { return [] }
@@ -960,23 +965,42 @@ final class StudyPlanStore: ObservableObject {
         guard let key = picks.first(where: { $0.value == e.code })?.key else { return nil }
         return allPlanCourses.first { $0.id == key }
     }
+    /// the concentration areas of the plan's elective list, in the order the PDF prints them
+    var areaNames: [String] {
+        var out: [String] = []
+        for e in plan?.electives ?? [] where !out.contains(e.area) { out.append(e.area) }
+        return out
+    }
+    func electives(in area: String) -> [FieldElective] { (plan?.electives ?? []).filter { $0.area == area } }
 
-    /// Puts every picked elective in the earliest free slot where its prerequisites are already behind it: a plan subject
-    /// that comes in an earlier semester, and an elective prerequisite (e.g. Machine Learning) in an earlier slot.
-    /// Electives are placed prerequisites first, so adding or removing one re-sorts the others. An elective in a slot
-    /// that is already ticked as finished stays where it is. When nothing fits, the latest free slot is used (the
-    /// warning on the row says why).
-    private func replan(adding extra: FieldElective? = nil) {
-        let list = plan?.electives ?? []
-        let slots = electiveSlots
+    /// Chooses the concentration and fills the slots. Choosing a different area later refills them (ticks on the
+    /// field-elective rows are cleared then, because they belonged to the old courses).
+    func chooseConcentration(_ area: String) {
+        guard areaNames.contains(area) else { return }
+        if concentration != nil { for s in electiveSlots { taken.remove(s.id) } }
+        concentration = area
+        fill(area)
+    }
+    func clearConcentration() {
+        for s in electiveSlots { taken.remove(s.id) }
+        concentration = nil
+        picks = [:]
+        save()
+    }
+    /// Core courses first, then non-core, as many as there are slots (an area with more courses than slots leaves the last ones out)
+    private func fill(_ area: String) {
+        let all = electives(in: area)
+        let chosen = Array((all.filter { $0.core } + all.filter { !$0.core }).prefix(electiveSlots.count))
+        replan(chosen)
+    }
+
+    /// Puts each course in the earliest free slot where its prerequisites are already behind it: a plan subject in an
+    /// earlier semester, or another course of the concentration (e.g. Machine Learning) in an earlier semester.
+    /// Prerequisites are placed first. When nothing fits, the latest free slot is used and the row shows why.
+    private func replan(_ list: [FieldElective]) {
         var newPicks: [String: String] = [:]
-        var free = slots
-        var pending: [FieldElective] = []
-        for s in slots {
-            guard let code = picks[s.id], let e = list.first(where: { $0.code == code }) else { continue }
-            if taken.contains(s.id) { newPicks[s.id] = code; free.removeAll { $0.id == s.id } } else { pending.append(e) }
-        }
-        if let extra { pending.append(extra) }
+        var free = electiveSlots
+        var pending = list
         while !pending.isEmpty {
             let i = pending.firstIndex { e in
                 !prereqCodes(e).contains { p in pending.contains { codeKey($0.code) == p && $0.code != e.code } }
@@ -990,26 +1014,6 @@ final class StudyPlanStore: ObservableObject {
         picks = newPicks
         save()
     }
-
-    // ---- concentration area: the first elective added fixes the area (e.g. Artificial Intelligence); after that only
-    // electives of that area can be added. It follows from the picks, so removing them all releases it again. ----
-    func concentration() -> String? {
-        let codes = Set(picks.values)
-        return (plan?.electives ?? []).first { codes.contains($0.code) }?.area
-    }
-    func canAdd(_ e: FieldElective) -> Bool {
-        guard !picks.values.contains(e.code), picks.count < electiveSlots.count else { return false }
-        guard let area = concentration() else { return true }
-        return e.area == area
-    }
-    @discardableResult func addElective(_ e: FieldElective) -> Bool {
-        guard canAdd(e) else { return false }
-        replan(adding: e)
-        return true
-    }
-    func removeElective(from slot: PlanCourse) { picks.removeValue(forKey: slot.id); replan() }
-    /// Start over with the concentration: clears the field-elective choices (ticks stay)
-    func clearConcentration() { picks = [:]; save() }
     private var allPlanCourses: [PlanCourse] { (plan?.semesters ?? []).flatMap(\.courses) }
     /// the other slot that already holds this elective
     func slotUsing(_ e: FieldElective, except slot: PlanCourse) -> PlanCourse? {
@@ -1099,7 +1103,6 @@ struct StudyPlanTrackerView: View {
     @State private var collapsed: Set<String> = []
     @State private var confirmRemove = false
     @State private var adding = false
-    @State private var confirmConcentration = false
 
     var body: some View {
         ScrollView {
@@ -1132,10 +1135,7 @@ struct StudyPlanTrackerView: View {
         .confirmationDialog("Remove the study plan and your ticks?", isPresented: $confirmRemove, titleVisibility: .visible) {
             Button("Remove", role: .destructive) { store.remove() }
         }
-        .confirmationDialog("Change your concentration?", isPresented: $confirmConcentration, titleVisibility: .visible) {
-            Button("Clear field elective choices", role: .destructive) { store.clearConcentration() }
-        } message: { Text("This clears the field electives you picked so you can choose another area. Your ticks stay.") }
-        .sheet(isPresented: $adding) { ElectiveAddView() }
+        .sheet(isPresented: $adding) { ConcentrationPickerView() }
         .overlay { if busy { ProgressView(busyText).padding(20).background(Theme.surface, in: RoundedRectangle(cornerRadius: 12)) } }
     }
 
@@ -1217,28 +1217,27 @@ struct StudyPlanTrackerView: View {
 
         saveStatusRow
 
-        // field electives: add one and it is placed in the right semester; the first one fixes the concentration
-        if !(plan.electives ?? []).isEmpty {
+        // concentration: chosen once, then the field-elective slots below fill themselves
+        if !store.areaNames.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 10) {
-                    Image(systemName: store.concentration() == nil ? "square.stack.3d.up" : "lock.fill").foregroundStyle(Theme.accent)
+                    Image(systemName: store.concentration == nil ? "square.stack.3d.up" : "lock.fill").foregroundStyle(Theme.accent)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Field electives · \(store.picks.count) of \(store.electiveSlots.count) placed")
-                            .font(Theme.read(.caption)).foregroundStyle(Theme.muted)
-                        Text(store.concentration() ?? "No concentration yet")
+                        Text("Concentration").font(Theme.read(.caption)).foregroundStyle(Theme.muted)
+                        Text(store.concentration ?? "Not chosen yet")
                             .font(Theme.font(.subheadline.weight(.semibold))).foregroundStyle(Theme.txt)
                     }
                     Spacer()
-                    if store.concentration() != nil {
-                        Button("Change") { confirmConcentration = true }
-                            .font(Theme.read(.footnote)).foregroundStyle(Theme.accent)
+                    if store.concentration != nil {
+                        Text("\(store.picks.count) of \(store.electiveSlots.count) placed")
+                            .font(Theme.read(.caption)).foregroundStyle(Theme.muted)
                     }
                 }
                 Button { adding = true } label: {
-                    Label("Add field elective", systemImage: "plus.circle.fill").font(Theme.font(.subheadline.weight(.semibold)))
-                }
-                .foregroundStyle(store.picks.count < store.electiveSlots.count ? Theme.accent : Theme.muted)
-                .disabled(store.picks.count >= store.electiveSlots.count)
+                    Label(store.concentration == nil ? "Choose concentration" : "Change concentration",
+                          systemImage: store.concentration == nil ? "plus.circle.fill" : "arrow.triangle.2.circlepath")
+                        .font(Theme.font(.subheadline.weight(.semibold)))
+                }.foregroundStyle(Theme.accent)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(14).background(Theme.surface, in: RoundedRectangle(cornerRadius: 14))
@@ -1352,7 +1351,7 @@ struct StudyPlanTrackerView: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(el?.name ?? c.name).font(Theme.read(.subheadline)).foregroundStyle(Theme.txt)
                     .strikethrough(done, color: Theme.muted).opacity(done ? 0.6 : 1)
-                Text(el.map { "\($0.code) · \(c.name) · \($0.core ? "Core" : "Non-core")" } ?? "Field Elective · filled automatically when you add one")
+                Text(el.map { "\($0.code) · \(c.name) · \($0.core ? "Core" : "Non-core")" } ?? (store.concentration == nil ? "Field Elective · choose a concentration first" : "Field Elective · no more courses in this concentration"))
                     .font(Theme.read(.caption)).foregroundStyle(Theme.muted)
                 if let el {
                     Text(el.area).font(Theme.read(.caption)).foregroundStyle(Theme.muted)
@@ -1361,11 +1360,6 @@ struct StudyPlanTrackerView: View {
                             .foregroundStyle(issues.isEmpty ? Theme.muted : Color.orange)
                     }
                     ForEach(issues, id: \.self) { Text("⚠︎ \($0)").font(Theme.read(.caption)).foregroundStyle(Color.orange) }
-                }
-                if el != nil {
-                    Button { store.removeElective(from: c) } label: {
-                        Text("Remove").font(Theme.read(.caption).weight(.semibold)).foregroundStyle(Theme.accent)
-                    }.buttonStyle(.plain).padding(.top, 2)
                 }
             }
             Spacer(minLength: 8)
@@ -1414,78 +1408,57 @@ struct StudyPlanTrackerView: View {
 }
 
 
-// MARK: - Add a field elective (the app picks the semester)
+// MARK: - Choose the concentration (once)
 
-struct ElectiveAddView: View {
+struct ConcentrationPickerView: View {
     @ObservedObject private var store = StudyPlanStore.shared
     @Environment(\.dismiss) private var dismiss
-
-    private var locked: String? { store.concentration() }
-    private var areas: [(name: String, list: [FieldElective])] {
-        var order: [String] = []
-        var map: [String: [FieldElective]] = [:]
-        for e in store.plan?.electives ?? [] where locked == nil || e.area == locked {
-            if map[e.area] == nil { order.append(e.area) }
-            map[e.area, default: []].append(e)
-        }
-        return order.map { (name: $0, list: map[$0] ?? []) }
-    }
+    @State private var pending: String?
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    if let locked {
-                        Label("Your concentration is \(locked), so only its electives are shown. To switch area, use Change on the tracker screen.",
-                              systemImage: "lock.fill")
-                            .font(Theme.read(.caption)).foregroundStyle(Theme.muted)
-                    } else {
-                        Text("Your first choice sets your concentration. After that you can only add electives from the same area. Each one is placed in the earliest semester where its prerequisites are done.")
-                            .font(Theme.read(.caption)).foregroundStyle(Theme.muted)
-                    }
-                    ForEach(areas, id: \.name) { area in
-                        VStack(alignment: .leading, spacing: 0) {
-                            Text(area.name).font(Theme.font(.footnote.weight(.semibold))).foregroundStyle(Theme.txt).padding(14)
-                            ForEach(area.list) { e in
-                                Divider().overlay(Theme.line)
-                                row(e)
-                            }
-                        }
-                        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14))
-                    }
+                    Text("Choose your concentration once. Its courses are put into your field elective slots automatically, each in the semester where its prerequisites are done. Courses from other areas are not mixed in.")
+                        .font(Theme.read(.caption)).foregroundStyle(Theme.muted)
+                    ForEach(store.areaNames, id: \.self) { area in card(area) }
                 }
                 .padding(16)
             }
             .background(Theme.bg.ignoresSafeArea())
-            .navigationTitle("Add a field elective")
+            .navigationTitle("Concentration")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .navigationBarTrailing) { Button("Done") { dismiss() } } }
+            .confirmationDialog("Switch to \(pending ?? "")?",
+                                isPresented: Binding(get: { pending != nil }, set: { if !$0 { pending = nil } }),
+                                titleVisibility: .visible) {
+                Button("Switch and refill", role: .destructive) {
+                    if let a = pending { store.chooseConcentration(a); dismiss() }
+                }
+            } message: { Text("Your field elective slots are refilled with this area's courses, and their ticks are cleared.") }
         }
     }
 
-    private func row(_ e: FieldElective) -> some View {
-        let placed = store.slot(of: e)
-        let ok = store.canAdd(e)
+    private func card(_ area: String) -> some View {
+        let list = store.electives(in: area)
+        let current = store.concentration == area
         return Button {
-            if store.addElective(e) { dismiss() }
+            if store.concentration == nil || current { store.chooseConcentration(area); dismiss() } else { pending = area }
         } label: {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: placed != nil ? "checkmark.circle.fill" : "plus.circle")
-                    .font(.title3).foregroundStyle(placed != nil ? Theme.accent : Theme.muted)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(e.name).font(Theme.read(.subheadline)).foregroundStyle(Theme.txt)
-                    Text("\(e.code) · \(e.core ? "Core" : "Non-core")").font(Theme.read(.caption)).foregroundStyle(Theme.muted)
-                    if !e.prereq.isEmpty {
-                        Text("Prerequisite: \(e.prereq)").font(Theme.read(.caption)).foregroundStyle(Theme.muted)
-                    }
-                    if let placed {
-                        Text("Placed in Year \(placed.year), Semester \(placed.sem)").font(Theme.read(.caption)).foregroundStyle(Theme.accent)
-                    }
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Image(systemName: current ? "checkmark.circle.fill" : "circle")
+                        .font(.title3).foregroundStyle(current ? Theme.accent : Theme.muted)
+                    Text(area).font(Theme.font(.subheadline.weight(.semibold))).foregroundStyle(Theme.txt)
+                    Spacer()
+                    Text("\(list.count) courses").font(Theme.read(.caption)).foregroundStyle(Theme.muted)
                 }
-                Spacer(minLength: 0)
+                ForEach(list) { e in
+                    Text("• \(e.name)\(e.core ? "" : " (non-core)")").font(Theme.read(.caption)).foregroundStyle(Theme.muted)
+                }
             }
-            .padding(.horizontal, 14).padding(.vertical, 10).contentShape(Rectangle())
-            .opacity(ok || placed != nil ? 1 : 0.5)
-        }.buttonStyle(.plain).disabled(!ok)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14).background(Theme.surface, in: RoundedRectangle(cornerRadius: 14))
+        }.buttonStyle(.plain)
     }
 }
