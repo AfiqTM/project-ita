@@ -716,15 +716,15 @@ struct ProfileView: View {
                                    subtitle: autoAtt.state.master ? "On · \(autoAtt.enabledCount) subject\(autoAtt.enabledCount == 1 ? "" : "s")" : "Off",
                                    showLine: true)
                     }
-                    NavigationLink { SemesterResourcesView() } label: {
-                        ProfileRow(icon: "books.vertical", title: "Semester Resources",
-                                   subtitle: "Academic calendar, weekly calendar, CS study plan", showLine: true)
-                    }
                     NavigationLink { StudyPlanTrackerView() } label: {
-                        ProfileRow(icon: "checklist", title: "Study Plan Tracker",
+                        ProfileRow(icon: "calendar.badge.checkmark", title: "Study Plan Tracker",
                                    subtitle: studyPlan.plan == nil ? "Upload your study plan PDF"
                                        : "\(Int((studyPlan.percent * 100).rounded()))% · \(Int(studyPlan.creditsTaken)) of \(Int(studyPlan.totalRequired)) credits",
-                                   showLine: false)
+                                   showLine: true)
+                    }
+                    NavigationLink { SemesterResourcesView() } label: {
+                        ProfileRow(icon: "books.vertical", title: "Semester Resources",
+                                   subtitle: "Academic calendar, weekly calendar, CS study plan", showLine: false)
                     }
                 }
                 .buttonStyle(.plain)
