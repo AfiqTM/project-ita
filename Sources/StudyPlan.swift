@@ -104,13 +104,26 @@ enum StudyPlanReader {
                 if r.width <= 0 || r.height <= 0 { continue }
                 items.append((ch, r.minX, r.maxX, r.midY))
             }
+            // PDFKit gives each glyph its own ink box (i, l, k sit higher than a, e, r), so a letter's own height is not
+            // a reliable line position. Every glyph takes the height of the text line PDFKit says it belongs to instead.
+            let lineRects: [CGRect] = (page.selection(for: page.bounds)?.selectionsByLine() ?? []).map { $0.bounds(for: page) }
+                .filter { $0.width > 0 && $0.height > 0 }
+            if !lineRects.isEmpty {
+                for k in items.indices {
+                    let cx = (items[k].x0 + items[k].x1) / 2
+                    var best: CGFloat?
+                    var bestD = CGFloat.greatestFiniteMagnitude
+                    for r in lineRects where cx >= r.minX - 0.5 && cx <= r.maxX + 0.5 {
+                        let d = abs(r.midY - items[k].y)
+                        if d < bestD && d <= r.height / 2 + 2 { bestD = d; best = r.midY }
+                    }
+                    if let best { items[k].y = best }
+                }
+            }
             items.sort { $0.y > $1.y }                       // top of the page first (PDF y grows upwards)
             var groupsOfChars: [[(ch: String, x0: CGFloat, x1: CGFloat, y: CGFloat)]] = []
-            // PDFKit gives each glyph's own ink box, so tall letters (i, l, k, d) sit higher than short ones (a, e, r).
-            // A fixed tolerance around a running mean splits one line apart; instead start a new line only where the
-            // sorted heights jump (line spacing is far larger than the spread inside one line).
             for it in items {
-                if let prev = groupsOfChars.last?.last, prev.y - it.y <= 4 { groupsOfChars[groupsOfChars.count - 1].append(it) }
+                if let prev = groupsOfChars.last?.last, prev.y - it.y <= 2.5 { groupsOfChars[groupsOfChars.count - 1].append(it) }
                 else { groupsOfChars.append([it]) }
             }
             for g in groupsOfChars {
