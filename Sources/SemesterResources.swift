@@ -55,7 +55,7 @@ struct SemesterResourcesView: View {
                 .background(Theme.accent.opacity(0.14))
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             VStack(alignment: .leading, spacing: 4) {
-                Text(r.title).foregroundColor(Theme.txt).fontWeight(.semibold).textGlow(radius: 3).rocksHeading(12, pt: 18)
+                Text(r.title).foregroundColor(Theme.txt).textGlow(radius: 3).rocksHeading(12, normal: .subheadline.weight(.semibold), pt: 15)
                 Text(r.subtitle).font(Theme.font(.caption)).foregroundColor(Theme.muted).multilineTextAlignment(.leading)
                 if r.pages > 0 {
                     Text("PDF · \(r.pages) page\(r.pages == 1 ? "" : "s")")

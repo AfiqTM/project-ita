@@ -743,7 +743,7 @@ struct ProfileView: View {
                     UNUserNotificationCenter.current().setBadgeCount(0) { _ in }
                     app.signOut()
                 } label: {
-                    Text("Sign out").frame(maxWidth: .infinity).padding(.vertical, 12)
+                    Text("Sign out").font(Theme.font(.subheadline).weight(.semibold)).frame(maxWidth: .infinity).padding(.vertical, 12)
                         .background(Theme.surface2).foregroundColor(.red.opacity(0.85))
                         .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
@@ -768,7 +768,7 @@ struct ProfileRow: View {
         HStack(spacing: 14) {
             Image(systemName: icon).foregroundColor(Theme.accent).frame(width: 26).textGlow()
             VStack(alignment: .leading, spacing: 3) {
-                Text(title).foregroundColor(Theme.txt).fontWeight(.semibold).textGlow(radius: 3).rocksHeading(12, pt: 18)
+                Text(title).foregroundColor(Theme.txt).textGlow(radius: 3).rocksHeading(12, normal: .subheadline.weight(.semibold), pt: 15)
                 Text(subtitle).font(Theme.font(.caption)).foregroundColor(Theme.muted).lineLimit(1)
             }
             Spacer()
