@@ -663,6 +663,7 @@ struct ProfileView: View {
     @EnvironmentObject var todos: TodoStore
     @EnvironmentObject var driveAuth: DriveAuth
     @ObservedObject private var themes = ThemeStore.shared
+    @ObservedObject private var studyPlan = StudyPlanStore.shared
     @ObservedObject private var autoAtt = AutoAttendance.shared
 
     /// "AFIQ TAUFIQ BIN MUHAMMAD 2412345" -> "Afiq" (the short name shown under My Profile)
@@ -717,7 +718,13 @@ struct ProfileView: View {
                     }
                     NavigationLink { SemesterResourcesView() } label: {
                         ProfileRow(icon: "books.vertical", title: "Semester Resources",
-                                   subtitle: "Academic calendar, weekly calendar, CS study plan", showLine: false)
+                                   subtitle: "Academic calendar, weekly calendar, CS study plan", showLine: true)
+                    }
+                    NavigationLink { StudyPlanTrackerView() } label: {
+                        ProfileRow(icon: "checklist", title: "Study Plan Tracker",
+                                   subtitle: studyPlan.plan == nil ? "Upload your study plan PDF"
+                                       : "\(Int((studyPlan.percent * 100).rounded()))% · \(Int(studyPlan.creditsTaken)) of \(Int(studyPlan.totalRequired)) credits",
+                                   showLine: false)
                     }
                 }
                 .buttonStyle(.plain)
