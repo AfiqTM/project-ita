@@ -912,10 +912,69 @@ final class StudyPlanStore: ObservableObject {
         guard let code = picks[slot.id] else { return nil }
         return plan?.electives?.first { $0.code == code }
     }
-    func pick(_ e: FieldElective?, for slot: PlanCourse) {
-        if let e { picks[slot.id] = e.code } else { picks.removeValue(forKey: slot.id) }
+    // ---- automatic placement: the student only says WHICH elective; the app finds the semester slot for it ----
+    private func codeKey(_ s: String) -> String { s.filter { !$0.isWhitespace } }
+    private func prereqCodes(_ e: FieldElective) -> [String] {
+        guard let re = try? NSRegularExpression(pattern: "[A-Z]{2,5}\\s?\\d{4}[A-Z]?") else { return [] }
+        let ns = e.prereq as NSString
+        return re.matches(in: e.prereq, range: NSRange(location: 0, length: ns.length)).map { codeKey(ns.substring(with: $0.range)) }
+    }
+    /// the field-elective rows of the plan, earliest semester first
+    var electiveSlots: [PlanCourse] { allPlanCourses.filter { isSlot($0) } }
+    func slot(of e: FieldElective) -> PlanCourse? {
+        guard let key = picks.first(where: { $0.value == e.code })?.key else { return nil }
+        return allPlanCourses.first { $0.id == key }
+    }
+
+    /// Puts every picked elective in the earliest free slot where its prerequisites are already behind it: a plan subject
+    /// that comes in an earlier semester, and an elective prerequisite (e.g. Machine Learning) in an earlier slot.
+    /// Electives are placed prerequisites first, so adding or removing one re-sorts the others. An elective in a slot
+    /// that is already ticked as finished stays where it is. When nothing fits, the latest free slot is used (the
+    /// warning on the row says why).
+    private func replan(adding extra: FieldElective? = nil) {
+        let list = plan?.electives ?? []
+        let slots = electiveSlots
+        var newPicks: [String: String] = [:]
+        var free = slots
+        var pending: [FieldElective] = []
+        for s in slots {
+            guard let code = picks[s.id], let e = list.first(where: { $0.code == code }) else { continue }
+            if taken.contains(s.id) { newPicks[s.id] = code; free.removeAll { $0.id == s.id } } else { pending.append(e) }
+        }
+        if let extra { pending.append(extra) }
+        while !pending.isEmpty {
+            let i = pending.firstIndex { e in
+                !prereqCodes(e).contains { p in pending.contains { codeKey($0.code) == p && $0.code != e.code } }
+            } ?? 0
+            let e = pending.remove(at: i)
+            guard !free.isEmpty else { break }
+            let fit = free.firstIndex { issues(for: e, in: $0, picks: newPicks).isEmpty } ?? (free.count - 1)
+            newPicks[free[fit].id] = e.code
+            free.remove(at: fit)
+        }
+        picks = newPicks
         save()
     }
+
+    // ---- concentration area: the first elective added fixes the area (e.g. Artificial Intelligence); after that only
+    // electives of that area can be added. It follows from the picks, so removing them all releases it again. ----
+    func concentration() -> String? {
+        let codes = Set(picks.values)
+        return (plan?.electives ?? []).first { codes.contains($0.code) }?.area
+    }
+    func canAdd(_ e: FieldElective) -> Bool {
+        guard !picks.values.contains(e.code), picks.count < electiveSlots.count else { return false }
+        guard let area = concentration() else { return true }
+        return e.area == area
+    }
+    @discardableResult func addElective(_ e: FieldElective) -> Bool {
+        guard canAdd(e) else { return false }
+        replan(adding: e)
+        return true
+    }
+    func removeElective(from slot: PlanCourse) { picks.removeValue(forKey: slot.id); replan() }
+    /// Start over with the concentration: clears the field-elective choices (ticks stay)
+    func clearConcentration() { picks = [:]; save() }
     private var allPlanCourses: [PlanCourse] { (plan?.semesters ?? []).flatMap(\.courses) }
     /// the other slot that already holds this elective
     func slotUsing(_ e: FieldElective, except slot: PlanCourse) -> PlanCourse? {
@@ -924,7 +983,8 @@ final class StudyPlanStore: ObservableObject {
     }
     /// Why this elective does not fit this slot yet: a prerequisite that comes later in the plan, or an elective
     /// prerequisite (e.g. Machine Learning) that is not picked in an earlier slot
-    func issues(for e: FieldElective, in slot: PlanCourse) -> [String] {
+    func issues(for e: FieldElective, in slot: PlanCourse, picks given: [String: String]? = nil) -> [String] {
+        let picks = given ?? self.picks
         let here = slot.year * 10 + slot.sem
         var out: [String] = []
         guard let re = try? NSRegularExpression(pattern: "[A-Z]{2,5}\\s?\\d{4}[A-Z]?") else { return out }
@@ -1001,7 +1061,8 @@ struct StudyPlanTrackerView: View {
     @State private var failed = false
     @State private var collapsed: Set<String> = []
     @State private var confirmRemove = false
-    @State private var choosing: PlanCourse?
+    @State private var adding = false
+    @State private var confirmConcentration = false
 
     var body: some View {
         ScrollView {
@@ -1034,7 +1095,10 @@ struct StudyPlanTrackerView: View {
         .confirmationDialog("Remove the study plan and your ticks?", isPresented: $confirmRemove, titleVisibility: .visible) {
             Button("Remove", role: .destructive) { store.remove() }
         }
-        .sheet(item: $choosing) { slot in ElectivePickerView(slot: slot) }
+        .confirmationDialog("Change your concentration?", isPresented: $confirmConcentration, titleVisibility: .visible) {
+            Button("Clear field elective choices", role: .destructive) { store.clearConcentration() }
+        } message: { Text("This clears the field electives you picked so you can choose another area. Your ticks stay.") }
+        .sheet(isPresented: $adding) { ElectiveAddView() }
         .overlay { if busy { ProgressView(busyText).padding(20).background(Theme.surface, in: RoundedRectangle(cornerRadius: 12)) } }
     }
 
@@ -1114,6 +1178,33 @@ struct StudyPlanTrackerView: View {
         }
         .padding(14).background(Theme.surface, in: RoundedRectangle(cornerRadius: 14))
 
+        // field electives: add one and it is placed in the right semester; the first one fixes the concentration
+        if !(plan.electives ?? []).isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 10) {
+                    Image(systemName: store.concentration() == nil ? "square.stack.3d.up" : "lock.fill").foregroundStyle(Theme.accent)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Field electives · \(store.picks.count) of \(store.electiveSlots.count) placed")
+                            .font(Theme.read(.caption)).foregroundStyle(Theme.muted)
+                        Text(store.concentration() ?? "No concentration yet")
+                            .font(Theme.font(.subheadline.weight(.semibold))).foregroundStyle(Theme.txt)
+                    }
+                    Spacer()
+                    if store.concentration() != nil {
+                        Button("Change") { confirmConcentration = true }
+                            .font(Theme.read(.footnote)).foregroundStyle(Theme.accent)
+                    }
+                }
+                Button { adding = true } label: {
+                    Label("Add field elective", systemImage: "plus.circle.fill").font(Theme.font(.subheadline.weight(.semibold)))
+                }
+                .foregroundStyle(store.picks.count < store.electiveSlots.count ? Theme.accent : Theme.muted)
+                .disabled(store.picks.count >= store.electiveSlots.count)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14).background(Theme.surface, in: RoundedRectangle(cornerRadius: 14))
+        }
+
         // categories
         VStack(alignment: .leading, spacing: 10) {
             Text("By category").font(Theme.font(.footnote.weight(.semibold))).foregroundStyle(Theme.muted)
@@ -1192,7 +1283,7 @@ struct StudyPlanTrackerView: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(el?.name ?? c.name).font(Theme.read(.subheadline)).foregroundStyle(Theme.txt)
                     .strikethrough(done, color: Theme.muted).opacity(done ? 0.6 : 1)
-                Text(el.map { "\($0.code) · \(c.name) · \($0.core ? "Core" : "Non-core")" } ?? "Field Elective · not chosen yet")
+                Text(el.map { "\($0.code) · \(c.name) · \($0.core ? "Core" : "Non-core")" } ?? "Field Elective · filled automatically when you add one")
                     .font(Theme.read(.caption)).foregroundStyle(Theme.muted)
                 if let el {
                     Text(el.area).font(Theme.read(.caption)).foregroundStyle(Theme.muted)
@@ -1202,9 +1293,11 @@ struct StudyPlanTrackerView: View {
                     }
                     ForEach(issues, id: \.self) { Text("⚠︎ \($0)").font(Theme.read(.caption)).foregroundStyle(Color.orange) }
                 }
-                Button { choosing = c } label: {
-                    Text(el == nil ? "Choose a course" : "Change").font(Theme.read(.caption).weight(.semibold)).foregroundStyle(Theme.accent)
-                }.buttonStyle(.plain).padding(.top, 2)
+                if el != nil {
+                    Button { store.removeElective(from: c) } label: {
+                        Text("Remove").font(Theme.read(.caption).weight(.semibold)).foregroundStyle(Theme.accent)
+                    }.buttonStyle(.plain).padding(.top, 2)
+                }
             }
             Spacer(minLength: 8)
             Text(fmt(c.credits)).font(Theme.font(.subheadline.weight(.semibold))).foregroundStyle(Theme.txt)
@@ -1252,44 +1345,38 @@ struct StudyPlanTrackerView: View {
 }
 
 
-// MARK: - Field elective picker
+// MARK: - Add a field elective (the app picks the semester)
 
-struct ElectivePickerView: View {
-    let slot: PlanCourse
+struct ElectiveAddView: View {
     @ObservedObject private var store = StudyPlanStore.shared
     @Environment(\.dismiss) private var dismiss
 
+    private var locked: String? { store.concentration() }
     private var areas: [(name: String, list: [FieldElective])] {
         var order: [String] = []
         var map: [String: [FieldElective]] = [:]
-        for e in store.plan?.electives ?? [] {
+        for e in store.plan?.electives ?? [] where locked == nil || e.area == locked {
             if map[e.area] == nil { order.append(e.area) }
             map[e.area, default: []].append(e)
         }
         return order.map { (name: $0, list: map[$0] ?? []) }
     }
 
-    private func pickedCount(_ list: [FieldElective]) -> Int {
-        list.filter { e in store.picks.values.contains(e.code) }.count
-    }
-
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    Text("\(slot.name) · Year \(slot.year), Semester \(slot.sem)")
-                        .font(Theme.read(.footnote)).foregroundStyle(Theme.muted)
-                    if store.elective(for: slot) != nil {
-                        Button("Clear this choice") { store.pick(nil, for: slot); dismiss() }
-                            .font(Theme.read(.footnote)).foregroundStyle(Color.orange)
+                    if let locked {
+                        Label("Your concentration is \(locked), so only its electives are shown. To switch area, use Change on the tracker screen.",
+                              systemImage: "lock.fill")
+                            .font(Theme.read(.caption)).foregroundStyle(Theme.muted)
+                    } else {
+                        Text("Your first choice sets your concentration. After that you can only add electives from the same area. Each one is placed in the earliest semester where its prerequisites are done.")
+                            .font(Theme.read(.caption)).foregroundStyle(Theme.muted)
                     }
                     ForEach(areas, id: \.name) { area in
                         VStack(alignment: .leading, spacing: 0) {
-                            HStack {
-                                Text(area.name).font(Theme.font(.footnote.weight(.semibold))).foregroundStyle(Theme.txt)
-                                Spacer()
-                                Text("\(pickedCount(area.list)) picked").font(Theme.read(.caption)).foregroundStyle(Theme.muted)
-                            }.padding(14)
+                            Text(area.name).font(Theme.font(.footnote.weight(.semibold))).foregroundStyle(Theme.txt).padding(14)
                             ForEach(area.list) { e in
                                 Divider().overlay(Theme.line)
                                 row(e)
@@ -1301,38 +1388,35 @@ struct ElectivePickerView: View {
                 .padding(16)
             }
             .background(Theme.bg.ignoresSafeArea())
-            .navigationTitle("Choose a field elective")
+            .navigationTitle("Add a field elective")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .navigationBarTrailing) { Button("Done") { dismiss() } } }
         }
     }
 
     private func row(_ e: FieldElective) -> some View {
-        let selected = store.picks[slot.id] == e.code
-        let usedBy = store.slotUsing(e, except: slot)
-        let issues = store.issues(for: e, in: slot)
+        let placed = store.slot(of: e)
+        let ok = store.canAdd(e)
         return Button {
-            guard usedBy == nil else { return }
-            store.pick(selected ? nil : e, for: slot)
-            dismiss()
+            if store.addElective(e) { dismiss() }
         } label: {
             HStack(alignment: .top, spacing: 12) {
-                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                    .font(.title3).foregroundStyle(selected ? Theme.accent : Theme.muted)
+                Image(systemName: placed != nil ? "checkmark.circle.fill" : "plus.circle")
+                    .font(.title3).foregroundStyle(placed != nil ? Theme.accent : Theme.muted)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(e.name).font(Theme.read(.subheadline)).foregroundStyle(Theme.txt)
                     Text("\(e.code) · \(e.core ? "Core" : "Non-core")").font(Theme.read(.caption)).foregroundStyle(Theme.muted)
                     if !e.prereq.isEmpty {
-                        Text("Prerequisite: \(e.prereq)").font(Theme.read(.caption))
-                            .foregroundStyle(issues.isEmpty ? Theme.muted : Color.orange)
+                        Text("Prerequisite: \(e.prereq)").font(Theme.read(.caption)).foregroundStyle(Theme.muted)
                     }
-                    ForEach(issues, id: \.self) { Text("⚠︎ \($0)").font(Theme.read(.caption)).foregroundStyle(Color.orange) }
-                    if let u = usedBy { Text("Already chosen for \(u.name)").font(Theme.read(.caption)).foregroundStyle(Theme.muted) }
+                    if let placed {
+                        Text("Placed in Year \(placed.year), Semester \(placed.sem)").font(Theme.read(.caption)).foregroundStyle(Theme.accent)
+                    }
                 }
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 14).padding(.vertical, 10).contentShape(Rectangle())
-            .opacity(usedBy == nil ? 1 : 0.5)
-        }.buttonStyle(.plain)
+            .opacity(ok || placed != nil ? 1 : 0.5)
+        }.buttonStyle(.plain).disabled(!ok)
     }
 }
