@@ -252,7 +252,7 @@ struct TodoListView: View {
                 let list = todos.pending
                 if list.isEmpty {
                     VStack(spacing: 8) {
-                        Image(systemName: "checklist").font(Theme.font(.largeTitle)).foregroundColor(Theme.accent)
+                        TodoBookIcon(size: 40).foregroundColor(Theme.accent)
                         Text("Nothing to do").foregroundColor(Theme.txt).fontWeight(.semibold)
                         Text("Tap + to add work, an extra class or a chapter to revise.")
                             .font(Theme.font(.footnote)).foregroundColor(Theme.muted).multilineTextAlignment(.center)
@@ -588,5 +588,33 @@ struct TodoDetailSheet: View {
             .sheet(isPresented: $editing) { TodoEditSheet(existing: current) }
         }
         .navigationViewStyle(.stack)
+    }
+}
+
+
+// MARK: - To-Do icon: a book with a checklist on its cover (no SF Symbol has this, so it is drawn)
+
+struct TodoBookShape: Shape {
+    func path(in r: CGRect) -> Path {
+        let k = r.width / 24
+        func pt(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: r.minX + x * k, y: r.minY + y * k) }
+        var p = Path()
+        p.addRoundedRect(in: CGRect(x: r.minX + 4 * k, y: r.minY + 2.5 * k, width: 16 * k, height: 19 * k),
+                         cornerSize: CGSize(width: 2 * k, height: 2 * k))
+        p.move(to: pt(7.5, 2.5)); p.addLine(to: pt(7.5, 21.5))                          // spine
+        for y in [CGFloat(8), 12.5, 17] {
+            p.move(to: pt(9.4, y)); p.addLine(to: pt(10.6, y + 1.2)); p.addLine(to: pt(12.4, y - 1.3))   // tick
+            p.move(to: pt(14, y)); p.addLine(to: pt(17.6, y))                                          // line of text
+        }
+        return p
+    }
+}
+
+struct TodoBookIcon: View {
+    var size: CGFloat = 22
+    var body: some View {
+        TodoBookShape()
+            .stroke(style: StrokeStyle(lineWidth: max(1.4, size * 0.075), lineCap: .round, lineJoin: .round))
+            .frame(width: size, height: size)
     }
 }
