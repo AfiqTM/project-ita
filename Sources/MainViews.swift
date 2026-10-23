@@ -706,7 +706,7 @@ struct ProfileView: View {
                 VStack(spacing: 0) {
                     NavigationLink { TodoListView() } label: {
                         let n = todos.pending.count
-                        ProfileRow(icon: "checklist", title: "To-Do List",
+                        ProfileRow(icon: "todo.book", title: "To-Do List",
                                    subtitle: n == 0 ? "Nothing to do" : "\(n) to do", badge: n, showLine: true)
                     }
                     NavigationLink { CAMSCalculatorScreen() } label: {
@@ -780,7 +780,9 @@ struct ProfileRow: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            Image(systemName: icon).foregroundColor(Theme.accent).frame(width: 26).textGlow()
+            Group {
+                if icon == "todo.book" { TodoBookIcon(size: 22) } else { Image(systemName: icon) }
+            }.foregroundColor(Theme.accent).frame(width: 26).textGlow()
             VStack(alignment: .leading, spacing: 3) {
                 Text(title).foregroundColor(Theme.txt).textGlow(radius: 3).rocksHeading(12, normal: .subheadline.weight(.semibold), pt: 15)
                 Text(subtitle).font(Theme.font(.caption)).foregroundColor(Theme.muted).lineLimit(subtitleLines)
