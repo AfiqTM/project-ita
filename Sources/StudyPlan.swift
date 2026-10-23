@@ -106,7 +106,7 @@ enum StudyPlanReader {
             }
             // PDFKit gives each glyph its own ink box (i, l, k sit higher than a, e, r), so a letter's own height is not
             // a reliable line position. Every glyph takes the height of the text line PDFKit says it belongs to instead.
-            let lineRects: [CGRect] = (page.selection(for: page.bounds)?.selectionsByLine() ?? []).map { $0.bounds(for: page) }
+            let lineRects: [CGRect] = (page.selection(for: page.bounds(for: .cropBox))?.selectionsByLine() ?? []).map { $0.bounds(for: page) }
                 .filter { $0.width > 0 && $0.height > 0 }
             if !lineRects.isEmpty {
                 for k in items.indices {
