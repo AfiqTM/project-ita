@@ -36,12 +36,24 @@ struct PlanSemester: Codable, Identifiable, Hashable {
 
 struct PlanRequirement: Codable, Hashable { var category: String; var hours: Double }
 
+/// One course from the "List of field electives" page (grouped by concentration area)
+struct FieldElective: Codable, Identifiable, Hashable {
+    var code: String
+    var name: String
+    var area: String
+    var core: Bool
+    var prereq: String          // "" when none
+    var credits: Double
+    var id: String { code }
+}
+
 struct StudyPlan: Codable {
     var title: String
     var totalRequired: Double
     var requirements: [PlanRequirement]
     var semesters: [PlanSemester]
     var warnings: [String]?         // what did not add up when the PDF was read (nil when everything matched)
+    var electives: [FieldElective]? = nil   // the field-elective list, when the PDF has one
 }
 
 enum StudentType: String, Codable, CaseIterable, Identifiable {
@@ -640,6 +652,54 @@ enum StudyPlanReader {
         return c
     }
 
+    // ---- the list of field electives (separate from the plan: it only feeds the picker) ----
+    private static let elHdrRx = try? NSRegularExpression(pattern: "Course Code Course Name Core / Non-core Pre-? ?requisite Credit Hours")
+    private static let elTailRx = try? NSRegularExpression(pattern: "\\d\\s+([A-Z][A-Z ]*[A-Z])\\s*$")
+    private static let elRowRx = try? NSRegularExpression(pattern:
+        "(\(codeP))\\s+(.+?)\\s+(Non-core|Core)\\s+(None|-|\(codesP))\\s+(\\d{1,2}(?:\\.\\d)?)(?=\\s+\(codeP)|\\s*$)")
+
+    static func parseElectives(_ raw: String) -> [FieldElective] {
+        var t = normStream(raw)
+        guard let s = t.range(of: "LIST OF FIELD ELECTIVES") else { return [] }
+        t = String(t[s.lowerBound...])
+        for end in ["PROPOSED STUDY PLAN", "YEAR 1 SEMESTER 1"] {
+            if let e = t.range(of: end) { t = String(t[..<e.lowerBound]) }
+        }
+        guard let hx = elHdrRx, let tail = elTailRx, let rx = elRowRx else { return [] }
+        let ns = t as NSString
+        let hs = hx.matches(in: t, range: NSRange(location: 0, length: ns.length))
+        if hs.isEmpty { return [] }
+        func chunk(_ k: Int) -> String {                       // the text between header k-1 and header k
+            let from = k == 0 ? 0 : hs[k - 1].range.location + hs[k - 1].range.length
+            let to = k < hs.count ? hs[k].range.location : ns.length
+            return ns.substring(with: NSRange(location: from, length: max(0, to - from)))
+        }
+        // an area's name sits right before its table, i.e. at the end of the previous chunk
+        var heads: [String] = []
+        if let m = groups("AREAS\\s+([A-Z][A-Z ]*[A-Z])\\s*$", in: chunk(0)).first, m.count > 1 { heads.append(m[1]) }
+        else { heads.append("Electives") }
+        var out: [FieldElective] = []
+        for k in 1...hs.count {
+            var body = chunk(k)
+            if k < hs.count {
+                let bns = body as NSString
+                if let m = tail.firstMatch(in: body, range: NSRange(location: 0, length: bns.length)) {
+                    heads.append(bns.substring(with: m.range(at: 1)))
+                    body = bns.substring(to: m.range(at: 1).location)
+                } else { heads.append("Electives") }
+            }
+            let area = heads[k - 1].capitalized
+            let bns = body as NSString
+            for m in rx.matches(in: body, range: NSRange(location: 0, length: bns.length)) {
+                func g(_ i: Int) -> String { bns.substring(with: m.range(at: i)) }
+                let pre = g(4)
+                out.append(FieldElective(code: g(1), name: cleanName(g(2)), area: area, core: g(3) == "Core",
+                                         prereq: (pre == "None" || pre == "-") ? "" : pre, credits: toCredit(g(5))))
+            }
+        }
+        return out
+    }
+
     // ---- where the tokens come from ----
 
     /// The PDF's text layer. Every character is asked for as a selection: the selection hands over the character AND its
@@ -755,8 +815,14 @@ enum StudyPlanReader {
         // first try: the PDF's text in stored order (fast, no positions involved)
         var pageText: [String] = []
         for p in 0..<doc.pageCount { pageText.append(doc.page(at: p)?.string ?? "") }
+        let electives = parseElectives(pageText.joined(separator: "\n"))
+        func done(_ c: Candidate) -> StudyPlan {
+            var p = finish(c)
+            if !electives.isEmpty { p.electives = electives }
+            return p
+        }
         var best = interpretStream(pageText.joined(separator: "\n"))
-        if let b = best, b.score == 0 { return finish(b) }
+        if let b = best, b.score == 0 { return done(b) }
 
         // second try: the text layer with the position of every character
         var toks: [Tok] = []
@@ -765,7 +831,7 @@ enum StudyPlanReader {
             await Task.yield()                           // keep the spinner moving
         }
         best = better(best, interpret(toks))
-        if let b = best, b.score == 0 { return finish(b) }
+        if let b = best, b.score == 0 { return done(b) }
 
         // the numbers did not add up (or there was no usable text, e.g. a scan): read the pages as pictures instead
         progress?("Double-checking with text recognition…")
@@ -782,7 +848,7 @@ enum StudyPlanReader {
             ocr += words
         }
         best = better(best, interpret(ocr))
-        return best.map { finish($0) }
+        return best.map { done($0) }
     }
 }
 
@@ -794,24 +860,27 @@ final class StudyPlanStore: ObservableObject {
 
     @Published private(set) var plan: StudyPlan?
     @Published private(set) var taken: Set<String> = []
+    @Published private(set) var picks: [String: String] = [:]     // field-elective slot (course id) -> elective code
     @Published var student: StudentType {
         didSet { UserDefaults.standard.set(student.rawValue, forKey: "studyplan.student") }
     }
 
     // v2: plans saved by the earlier reader could be misread (missing or mixed-up semesters), so they are not loaded any more
-    private let planKey = "studyplan.plan.v2", takenKey = "studyplan.taken.v1"
+    private let planKey = "studyplan.plan.v2", takenKey = "studyplan.taken.v1", picksKey = "studyplan.picks.v1"
 
     init() {
         UserDefaults.standard.removeObject(forKey: "studyplan.plan.v1")
         student = StudentType(rawValue: UserDefaults.standard.string(forKey: "studyplan.student") ?? "") ?? .local
         if let d = UserDefaults.standard.data(forKey: planKey), let p = try? JSONDecoder().decode(StudyPlan.self, from: d) { plan = p }
         taken = Set(UserDefaults.standard.stringArray(forKey: takenKey) ?? [])
+        picks = (UserDefaults.standard.dictionary(forKey: picksKey) as? [String: String]) ?? [:]
     }
 
     private func save() {
         if let p = plan, let d = try? JSONEncoder().encode(p) { UserDefaults.standard.set(d, forKey: planKey) }
         else { UserDefaults.standard.removeObject(forKey: planKey) }
         UserDefaults.standard.set(Array(taken), forKey: takenKey)
+        UserDefaults.standard.set(picks, forKey: picksKey)
     }
 
     /// A newly read plan replaces the old one; ticks are kept for subjects that are still in it
@@ -819,9 +888,11 @@ final class StudyPlanStore: ObservableObject {
         plan = p
         let ids = Set(p.semesters.flatMap(\.courses).map(\.id))
         taken = taken.intersection(ids)
+        let codes = Set((p.electives ?? []).map(\.code))
+        picks = picks.filter { ids.contains($0.key) && codes.contains($0.value) }
         save()
     }
-    func remove() { plan = nil; taken = []; save() }
+    func remove() { plan = nil; taken = []; picks = [:]; save() }
     func resetProgress() { taken = []; save() }
 
     func isTaken(_ c: PlanCourse) -> Bool { taken.contains(c.id) }
@@ -832,6 +903,45 @@ final class StudyPlanStore: ObservableObject {
     func setAll(_ s: PlanSemester, _ value: Bool) {
         for c in visible(s) { if value { taken.insert(c.id) } else { taken.remove(c.id) } }
         save()
+    }
+
+
+    // ---- field electives: each "Field Elective I..VI" row of the plan is a slot the student fills with a real course ----
+    func isSlot(_ c: PlanCourse) -> Bool { c.category == "Field Elective" && !(plan?.electives ?? []).isEmpty }
+    func elective(for slot: PlanCourse) -> FieldElective? {
+        guard let code = picks[slot.id] else { return nil }
+        return plan?.electives?.first { $0.code == code }
+    }
+    func pick(_ e: FieldElective?, for slot: PlanCourse) {
+        if let e { picks[slot.id] = e.code } else { picks.removeValue(forKey: slot.id) }
+        save()
+    }
+    private var allPlanCourses: [PlanCourse] { (plan?.semesters ?? []).flatMap(\.courses) }
+    /// the other slot that already holds this elective
+    func slotUsing(_ e: FieldElective, except slot: PlanCourse) -> PlanCourse? {
+        guard let key = picks.first(where: { $0.key != slot.id && $0.value == e.code })?.key else { return nil }
+        return allPlanCourses.first { $0.id == key }
+    }
+    /// Why this elective does not fit this slot yet: a prerequisite that comes later in the plan, or an elective
+    /// prerequisite (e.g. Machine Learning) that is not picked in an earlier slot
+    func issues(for e: FieldElective, in slot: PlanCourse) -> [String] {
+        let here = slot.year * 10 + slot.sem
+        var out: [String] = []
+        guard let re = try? NSRegularExpression(pattern: "[A-Z]{2,5}\\s?\\d{4}[A-Z]?") else { return out }
+        let ns = e.prereq as NSString
+        for m in re.matches(in: e.prereq, range: NSRange(location: 0, length: ns.length)) {
+            let code = ns.substring(with: m.range)
+            let want = code.filter { !$0.isWhitespace }
+            if let pc = allPlanCourses.first(where: { $0.code.filter { !$0.isWhitespace } == want }) {
+                if pc.year * 10 + pc.sem >= here { out.append("\(code) is only in Year \(pc.year), Semester \(pc.sem)") }
+            } else if (plan?.electives ?? []).contains(where: { $0.code.filter { !$0.isWhitespace } == want }) {
+                let holder = picks.first { $0.value.filter { !$0.isWhitespace } == want }?.key
+                if let holder, let hc = allPlanCourses.first(where: { $0.id == holder }) {
+                    if hc.year * 10 + hc.sem >= here { out.append("\(code) is picked in a later slot") }
+                } else { out.append("\(code) is not picked yet") }
+            }
+        }
+        return out
     }
 
     // ---- the Excel logic ----
@@ -891,6 +1001,7 @@ struct StudyPlanTrackerView: View {
     @State private var failed = false
     @State private var collapsed: Set<String> = []
     @State private var confirmRemove = false
+    @State private var choosing: PlanCourse?
 
     var body: some View {
         ScrollView {
@@ -923,6 +1034,7 @@ struct StudyPlanTrackerView: View {
         .confirmationDialog("Remove the study plan and your ticks?", isPresented: $confirmRemove, titleVisibility: .visible) {
             Button("Remove", role: .destructive) { store.remove() }
         }
+        .sheet(item: $choosing) { slot in ElectivePickerView(slot: slot) }
         .overlay { if busy { ProgressView(busyText).padding(20).background(Theme.surface, in: RoundedRectangle(cornerRadius: 12)) } }
     }
 
@@ -1063,7 +1175,44 @@ struct StudyPlanTrackerView: View {
         .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14))
     }
 
-    private func courseRow(_ c: PlanCourse) -> some View {
+    @ViewBuilder private func courseRow(_ c: PlanCourse) -> some View {
+        if store.isSlot(c) { electiveRow(c) } else { plainRow(c) }
+    }
+
+    /// A field-elective slot: shows the chosen course (or asks to choose one); the circle still ticks it as finished
+    private func electiveRow(_ c: PlanCourse) -> some View {
+        let done = store.isTaken(c)
+        let el = store.elective(for: c)
+        let issues = el.map { store.issues(for: $0, in: c) } ?? []
+        return HStack(alignment: .top, spacing: 12) {
+            Button { store.toggle(c) } label: {
+                Image(systemName: done ? "checkmark.circle.fill" : "circle")
+                    .font(.title3).foregroundStyle(done ? Theme.accent : Theme.muted)
+            }.buttonStyle(.plain)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(el?.name ?? c.name).font(Theme.read(.subheadline)).foregroundStyle(Theme.txt)
+                    .strikethrough(done, color: Theme.muted).opacity(done ? 0.6 : 1)
+                Text(el.map { "\($0.code) · \(c.name) · \($0.core ? "Core" : "Non-core")" } ?? "Field Elective · not chosen yet")
+                    .font(Theme.read(.caption)).foregroundStyle(Theme.muted)
+                if let el {
+                    Text(el.area).font(Theme.read(.caption)).foregroundStyle(Theme.muted)
+                    if !el.prereq.isEmpty {
+                        Text("Prerequisite: \(el.prereq)").font(Theme.read(.caption))
+                            .foregroundStyle(issues.isEmpty ? Theme.muted : Color.orange)
+                    }
+                    ForEach(issues, id: \.self) { Text("⚠︎ \($0)").font(Theme.read(.caption)).foregroundStyle(Color.orange) }
+                }
+                Button { choosing = c } label: {
+                    Text(el == nil ? "Choose a course" : "Change").font(Theme.read(.caption).weight(.semibold)).foregroundStyle(Theme.accent)
+                }.buttonStyle(.plain).padding(.top, 2)
+            }
+            Spacer(minLength: 8)
+            Text(fmt(c.credits)).font(Theme.font(.subheadline.weight(.semibold))).foregroundStyle(Theme.txt)
+        }
+        .padding(.horizontal, 14).padding(.vertical, 10)
+    }
+
+    private func plainRow(_ c: PlanCourse) -> some View {
         let done = store.isTaken(c)
         let missing = store.missingPrereq(c)
         return Button { store.toggle(c) } label: {
@@ -1099,5 +1248,91 @@ struct StudyPlanTrackerView: View {
                 }
             }.frame(height: height)
         }
+    }
+}
+
+
+// MARK: - Field elective picker
+
+struct ElectivePickerView: View {
+    let slot: PlanCourse
+    @ObservedObject private var store = StudyPlanStore.shared
+    @Environment(\.dismiss) private var dismiss
+
+    private var areas: [(name: String, list: [FieldElective])] {
+        var order: [String] = []
+        var map: [String: [FieldElective]] = [:]
+        for e in store.plan?.electives ?? [] {
+            if map[e.area] == nil { order.append(e.area) }
+            map[e.area, default: []].append(e)
+        }
+        return order.map { (name: $0, list: map[$0] ?? []) }
+    }
+
+    private func pickedCount(_ list: [FieldElective]) -> Int {
+        list.filter { e in store.picks.values.contains(e.code) }.count
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("\(slot.name) · Year \(slot.year), Semester \(slot.sem)")
+                        .font(Theme.read(.footnote)).foregroundStyle(Theme.muted)
+                    if store.elective(for: slot) != nil {
+                        Button("Clear this choice") { store.pick(nil, for: slot); dismiss() }
+                            .font(Theme.read(.footnote)).foregroundStyle(Color.orange)
+                    }
+                    ForEach(areas, id: \.name) { area in
+                        VStack(alignment: .leading, spacing: 0) {
+                            HStack {
+                                Text(area.name).font(Theme.font(.footnote.weight(.semibold))).foregroundStyle(Theme.txt)
+                                Spacer()
+                                Text("\(pickedCount(area.list)) picked").font(Theme.read(.caption)).foregroundStyle(Theme.muted)
+                            }.padding(14)
+                            ForEach(area.list) { e in
+                                Divider().overlay(Theme.line)
+                                row(e)
+                            }
+                        }
+                        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14))
+                    }
+                }
+                .padding(16)
+            }
+            .background(Theme.bg.ignoresSafeArea())
+            .navigationTitle("Choose a field elective")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .navigationBarTrailing) { Button("Done") { dismiss() } } }
+        }
+    }
+
+    private func row(_ e: FieldElective) -> some View {
+        let selected = store.picks[slot.id] == e.code
+        let usedBy = store.slotUsing(e, except: slot)
+        let issues = store.issues(for: e, in: slot)
+        return Button {
+            guard usedBy == nil else { return }
+            store.pick(selected ? nil : e, for: slot)
+            dismiss()
+        } label: {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                    .font(.title3).foregroundStyle(selected ? Theme.accent : Theme.muted)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(e.name).font(Theme.read(.subheadline)).foregroundStyle(Theme.txt)
+                    Text("\(e.code) · \(e.core ? "Core" : "Non-core")").font(Theme.read(.caption)).foregroundStyle(Theme.muted)
+                    if !e.prereq.isEmpty {
+                        Text("Prerequisite: \(e.prereq)").font(Theme.read(.caption))
+                            .foregroundStyle(issues.isEmpty ? Theme.muted : Color.orange)
+                    }
+                    ForEach(issues, id: \.self) { Text("⚠︎ \($0)").font(Theme.read(.caption)).foregroundStyle(Color.orange) }
+                    if let u = usedBy { Text("Already chosen for \(u.name)").font(Theme.read(.caption)).foregroundStyle(Theme.muted) }
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 14).padding(.vertical, 10).contentShape(Rectangle())
+            .opacity(usedBy == nil ? 1 : 0.5)
+        }.buttonStyle(.plain)
     }
 }
