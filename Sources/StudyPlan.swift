@@ -106,12 +106,12 @@ enum StudyPlanReader {
             }
             items.sort { $0.y > $1.y }                       // top of the page first (PDF y grows upwards)
             var groupsOfChars: [[(ch: String, x0: CGFloat, x1: CGFloat, y: CGFloat)]] = []
+            // PDFKit gives each glyph's own ink box, so tall letters (i, l, k, d) sit higher than short ones (a, e, r).
+            // A fixed tolerance around a running mean splits one line apart; instead start a new line only where the
+            // sorted heights jump (line spacing is far larger than the spread inside one line).
             for it in items {
-                if var last = groupsOfChars.last {
-                    let mean = last.map(\.y).reduce(0, +) / CGFloat(last.count)
-                    if abs(it.y - mean) <= 3.5 { last.append(it); groupsOfChars[groupsOfChars.count - 1] = last; continue }
-                }
-                groupsOfChars.append([it])
+                if let prev = groupsOfChars.last?.last, prev.y - it.y <= 4 { groupsOfChars[groupsOfChars.count - 1].append(it) }
+                else { groupsOfChars.append([it]) }
             }
             for g in groupsOfChars {
                 let cs = g.sorted { $0.x0 < $1.x0 }
