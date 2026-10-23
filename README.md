@@ -102,3 +102,7 @@ Paste an OAuth **iOS** client ID from Google Cloud Console into the setup sectio
 
 The Siri / Shortcuts support (App Intents, Spotlight index of assignments and announcements, attendance notes) was taken out of the
 app. All of it is kept in `Archive/Siri/` with a README that says how to bring it back. Nothing there is compiled or shipped.
+
+## Semester resources
+
+Others > Academic Tools > Semester Resources opens three PDFs that ship inside the app: Academic Calendar, Weekly Calendar and CS Study Plan (`Sources/SemesterResources/`). For a new semester, replace the files there with the same names and update the dates in the subtitles in `Sources/SemesterResources.swift`.

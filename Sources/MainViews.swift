@@ -665,6 +665,13 @@ struct ProfileView: View {
     @ObservedObject private var themes = ThemeStore.shared
     @ObservedObject private var autoAtt = AutoAttendance.shared
 
+    /// "AFIQ TAUFIQ BIN MUHAMMAD 2412345" -> "Afiq" (the short name shown under My Profile)
+    private var shortName: String {
+        let words = (app.site?.fullname ?? "").split(whereSeparator: \.isWhitespace).map(String.init).filter { !$0.allSatisfy(\.isNumber) }
+        guard let first = words.first else { return "Your details" }
+        return first.prefix(1).uppercased() + first.dropFirst().lowercased()
+    }
+
     private func sectionTitle(_ t: String) -> some View {
         Text(t).font(Theme.font(.footnote).weight(.semibold)).foregroundColor(Theme.muted)
             .textCase(.uppercase).padding(.horizontal, 6).padding(.bottom, -8)
@@ -681,7 +688,7 @@ struct ProfileView: View {
                                         imageURL: app.site?.userpictureurl)
                     } label: {
                         ProfileRow(icon: "person.crop.circle", title: "My Profile",
-                                   subtitle: app.site?.fullname ?? "Your details", showLine: false)
+                                   subtitle: shortName, showLine: false)
                     }
                 }
                 .buttonStyle(.plain)
@@ -706,7 +713,11 @@ struct ProfileView: View {
                     NavigationLink { AutoAttendanceView() } label: {
                         ProfileRow(icon: "checkmark.circle", title: "Auto Attendance",
                                    subtitle: autoAtt.state.master ? "On · \(autoAtt.enabledCount) subject\(autoAtt.enabledCount == 1 ? "" : "s")" : "Off",
-                                   showLine: false)
+                                   showLine: true)
+                    }
+                    NavigationLink { SemesterResourcesView() } label: {
+                        ProfileRow(icon: "books.vertical", title: "Semester Resources",
+                                   subtitle: "Academic calendar, weekly calendar, CS study plan", showLine: false)
                     }
                 }
                 .buttonStyle(.plain)
