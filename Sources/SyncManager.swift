@@ -3,7 +3,7 @@ import SwiftUI
 // MARK: - Sync between the app and the iTa'leem userscript
 //
 // One JSON file in the root of the user's Google Drive ("iTaleem-sync.json") holds to-dos, CAMS marks,
-// pins and files saved to a subject. The app and the website both merge into it: for every item
+// pins, files saved to a subject and the Study Plan Tracker. The app and the website both merge into it: for every item
 // the copy with the newer `updated` time wins. Deleted to-dos stay as hidden tombstones so the
 // deletion reaches the other device too. All times in the file are milliseconds since 1970.
 
@@ -27,12 +27,22 @@ struct SyncTodo: Codable, Equatable {
 }
 struct SyncCams: Codable { var updated: Int64; var groups: [CamsGroup] }
 struct SyncList: Codable { var updated: Int64; var list: [DriveRef] }
+/// The Study Plan Tracker: the plan read from the PDF, the ticks, the field-elective placement and the student type.
+/// `plan == nil` with a newer time means the plan was removed on another device.
+struct SyncStudy: Codable {
+    var updated: Int64
+    var plan: StudyPlan?
+    var taken: [String]
+    var picks: [String: String]
+    var student: String
+}
 struct SyncDoc: Codable {
     var version = 1
     var todos: [SyncTodo] = []
     var cams: [String: SyncCams] = [:]
     var pins: SyncList?
     var subj: [String: SyncList] = [:]
+    var study: SyncStudy?
 
     init() {}
     init(from d: Decoder) throws {
@@ -42,6 +52,7 @@ struct SyncDoc: Codable {
         cams = try c.decodeIfPresent([String: SyncCams].self, forKey: .cams) ?? [:]
         pins = try c.decodeIfPresent(SyncList.self, forKey: .pins)
         subj = try c.decodeIfPresent([String: SyncList].self, forKey: .subj) ?? [:]
+        study = try? c.decodeIfPresent(SyncStudy.self, forKey: .study)     // an unreadable plan never blocks the rest
     }
 }
 
@@ -159,6 +170,7 @@ final class SyncManager: ObservableObject {
         d.pins = SyncList(updated: ms(lib.pinsUpdated), list: lib.pins)
         for (cid, list) in lib.bySubject { d.subj[cid] = SyncList(updated: ms(lib.subjectUpdated[cid] ?? Date(timeIntervalSince1970: 1)), list: list) }
         for (cid, at) in lib.subjectUpdated where d.subj[cid] == nil { d.subj[cid] = SyncList(updated: ms(at), list: []) }
+        d.study = StudyPlanStore.shared.syncSnapshot
         return d
     }
 
@@ -213,6 +225,15 @@ final class SyncManager: ObservableObject {
             default: break
             }
         }
+
+        switch (local.study, remote.study) {
+        case let (l?, r?):
+            if r.updated > l.updated { out.study = r; applyLocal = true }
+            else { out.study = l; if l.updated > r.updated { push = true } }
+        case let (l?, nil): out.study = l; push = true
+        case let (nil, r?): out.study = r; applyLocal = true
+        default: break
+        }
         return (out, applyLocal, push)
     }
 
@@ -229,6 +250,7 @@ final class SyncManager: ObservableObject {
         for (key, c) in doc.cams { if let id = Int(key) { CamsStore.applySync(id, c.groups, at: fromMs(c.updated)) } }
         lib.applySync(pins: doc.pins.map { ($0.list, fromMs($0.updated)) },
                       subjects: doc.subj.mapValues { ($0.list, fromMs($0.updated)) })
+        if let s = doc.study { StudyPlanStore.shared.applySync(s) }
         NotificationCenter.default.post(name: .syncApplied, object: nil)
     }
 
