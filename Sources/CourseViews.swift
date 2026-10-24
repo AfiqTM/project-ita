@@ -19,6 +19,7 @@ struct CourseDetailView: View {
     @State private var photoReady = true                     // false while pages are sliding after leaving / returning to Course
     @State private var tapped = false                       // the last tab change came from tapping a tab (pages slide the whole way)
     @State private var bottomInset: CGFloat = 0             // height of the floating bottom bar (+ home indicator)
+    @State private var groupsOpened = false                 // the Groups page is built only after it has been opened once
     @State private var groupModules: [Module] = []          // the course's Group Selection activities (the Groups tab shows only when there is one)
     @ObservedObject private var themes = ThemeStore.shared
 
@@ -40,22 +41,22 @@ struct CourseDetailView: View {
 
     @ViewBuilder private func page(_ t: CourseTab) -> some View {
         switch t {
-        case .course: CourseContentView(courseId: course.id, course: course) { y in
+        case .course: CourseContentView(courseId: course.id, course: course, onModules: { updateGroupModules($0) }) { y in
             let v = max(0, y)
             if abs(scroll.y - v) > 0.3 { scroll.y = v }
         }
         case .participants: ParticipantsView(courseId: course.id)
-        case .groups: CourseGroupsTab(courseId: course.id, modules: groupModules)
+        case .groups:
+            if groupsOpened { CourseGroupsTab(courseId: course.id, modules: groupModules) } else { Color.clear }
         case .drive: CourseDriveTab(courseId: course.id)
         case .todo: CourseTodoTab(courseId: course.id)
         case .grades: GradesView(courseId: course.id)
         }
     }
 
-    /// Group Selection activities of this course. A failed load keeps what is already known (no flicker offline).
-    private func loadGroupModules() async {
-        guard let sections: [CourseSection] = try? await MoodleAPI.shared.call("core_course_get_contents", ["courseid": course.id]) else { return }
-        let found = sections.flatMap(\.modules).filter { CourseGroups.isSelection($0) && $0.uservisible != false }
+    /// Group Selection activities of this course, taken from the contents the Course tab already downloads (no second request)
+    private func updateGroupModules(_ modules: [Module]) {
+        let found = modules.filter { CourseGroups.isSelection($0) && $0.uservisible != false }
         if found.map(\.id) != groupModules.map(\.id) { groupModules = found }
     }
 
@@ -92,14 +93,10 @@ struct CourseDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         // the open tab goes away when its last item is removed
         .onChange(of: tabs) { new in if !new.contains(tab) { tab = .course } }
-        // look for a Group Selection activity: saved copy first (so the tab is there offline), then the live list
-        .task {
-            await OfflineCache.paintFromCache { await loadGroupModules() }
-            await loadGroupModules()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .offlineBackOnline)) { _ in Task { await loadGroupModules() } }
-        .onFreshData { await loadGroupModules() }
+        // the Groups page only starts loading once it is opened (or a swipe heads for it): it fetches the whole participant list
+        .onChange(of: anticipated) { a in if a == .groups { groupsOpened = true } }
         .onChange(of: tab) { t in
+            if t == .groups { groupsOpened = true }
             anticipated = nil
             if t != .course {
                 photoReady = false                      // gone at once when leaving Course
@@ -199,6 +196,7 @@ struct TopFadeMask: View {
 struct CourseContentView: View {
     let courseId: Int
     var course: Course? = nil
+    var onModules: ([Module]) -> Void = { _ in }       // every activity of the course (the parent looks for Group Selection)
     var onScroll: (CGFloat) -> Void = { _ in }
     @State private var sections: [CourseSection] = []
     @State private var loading = true
@@ -241,6 +239,7 @@ struct CourseContentView: View {
     private func load() async {
         do {
             sections = try await MoodleAPI.shared.call("core_course_get_contents", ["courseid": courseId])
+            onModules(sections.flatMap(\.modules))
         } catch {
             if !(error is CancellationError) { self.error = error.localizedDescription }
         }
