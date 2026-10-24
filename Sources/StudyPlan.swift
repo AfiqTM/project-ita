@@ -1215,8 +1215,6 @@ struct StudyPlanTrackerView: View {
         }
         .padding(14).background(Theme.surface, in: RoundedRectangle(cornerRadius: 14))
 
-        saveStatusRow
-
         // concentration: chosen once, then the field-elective slots below fill themselves
         if !store.areaNames.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
@@ -1262,36 +1260,6 @@ struct StudyPlanTrackerView: View {
 
         // semesters
         ForEach(plan.semesters) { s in semesterCard(s) }
-    }
-
-    /// Where the plan is saved: always on the phone, and in Google Drive too once it is connected
-    private var saveStatusRow: some View {
-        let connected = auth.isSignedIn && auth.canWrite
-        var text = "Saved on this phone only"
-        var action: String? = nil
-        if connected {
-            switch sync.state {
-            case .syncing: text = "Saved on this phone · saving to Google Drive…"
-            case .ok(let d): text = "Saved on this phone and Google Drive · " + d.formatted(date: .omitted, time: .shortened)
-            case .failed(let m): text = "Saved on this phone · Drive: " + m
-            default: text = "Saved on this phone and Google Drive"
-            }
-        } else if auth.isSignedIn {
-            text += " · allow Drive access to back it up"; action = "Allow"
-        } else {
-            text += " · connect Google Drive to back it up"; action = "Connect"
-        }
-        return HStack(spacing: 10) {
-            Image(systemName: connected ? "externaldrive.fill.badge.checkmark" : "iphone").foregroundStyle(Theme.accent)
-            Text(text).font(Theme.read(.caption)).foregroundStyle(Theme.muted)
-            Spacer(minLength: 8)
-            if let action {
-                Button(action) { auth.signIn() }.font(Theme.read(.footnote).weight(.semibold)).foregroundStyle(Theme.accent)
-            } else if connected {
-                Button("Sync now") { sync.syncNow(force: true) }.font(Theme.read(.footnote)).foregroundStyle(Theme.accent)
-            }
-        }
-        .padding(14).background(Theme.surface, in: RoundedRectangle(cornerRadius: 14))
     }
 
     private func semesterCard(_ s: PlanSemester) -> some View {
