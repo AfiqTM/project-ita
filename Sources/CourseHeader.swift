@@ -70,8 +70,37 @@ extension Person {
     @Published private(set) var people: [Person] = []
     private static var cache: [Int: [Person]] = [:]
 
+    /// The lecturers are kept on the phone (per course), so they are in the header from the very first frame, with no
+    /// wait for the participant list. They are looked up again in the background at most every 12 hours.
+    private struct Saved: Codable { let id: Int; let fullname: String; let small: String?; let large: String? }
+    private static let refreshAfter: TimeInterval = 12 * 3600
+    private static func key(_ id: Int) -> String { "lecturers.\(id)" }
+    private static func stamp(_ id: Int) -> String { "lecturers.\(id).saved" }
+
+    private static func saved(_ courseId: Int) -> [Person] {
+        if let c = cache[courseId] { return c }
+        guard let d = UserDefaults.standard.data(forKey: key(courseId)),
+              let rows = try? JSONDecoder().decode([Saved].self, from: d) else { return [] }
+        let list = rows.map { Person(id: $0.id, fullname: $0.fullname, profileimageurlsmall: $0.small, profileimageurl: $0.large) }
+        cache[courseId] = list
+        return list
+    }
+
+    private static func save(_ list: [Person], _ courseId: Int) {
+        cache[courseId] = list
+        let rows = list.map { Saved(id: $0.id, fullname: $0.fullname, small: $0.profileimageurlsmall, large: $0.profileimageurl) }
+        if let d = try? JSONEncoder().encode(rows) {
+            UserDefaults.standard.set(d, forKey: key(courseId))
+            UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: stamp(courseId))
+        }
+    }
+
+    init(courseId: Int) { people = Self.saved(courseId) }
+
     func load(courseId: Int) async {
-        if let c = Self.cache[courseId] { people = c }
+        // already known and looked up recently: nothing to fetch (the participant list is a big download)
+        let last = UserDefaults.standard.double(forKey: Self.stamp(courseId))
+        if !people.isEmpty, Date().timeIntervalSince1970 - last < Self.refreshAfter { return }
         var teachers: [Person] = []
         if let all: [Person] = try? await MoodleAPI.shared.call("core_enrol_get_enrolled_users", ["courseid": courseId]) {
             // 1) anyone with a teaching role (editingteacher, teacher, ...)
@@ -89,8 +118,10 @@ extension Person {
 
         let withPictures = await ProfileImages.upgraded(teachers)
         guard !withPictures.isEmpty else { return }
-        Self.cache[courseId] = withPictures
-        people = withPictures
+        Self.save(withPictures, courseId)
+        // only touch the screen when something actually changed (no flicker)
+        if withPictures.map(\.id) != people.map(\.id) || withPictures.map(\.fullname) != people.map(\.fullname)
+            || withPictures.map(\.profileimageurl) != people.map(\.profileimageurl) { people = withPictures }
     }
 
     private struct ContactCourse: Decodable { let contacts: [Contact]?; struct Contact: Decodable { let id: Int } }
@@ -109,7 +140,12 @@ extension Person {
 
 struct CourseHeaderView: View {
     let course: Course
-    @StateObject private var lecturers = CourseLecturers()
+    @StateObject private var lecturers: CourseLecturers
+
+    init(course: Course) {
+        self.course = course
+        _lecturers = StateObject(wrappedValue: CourseLecturers(courseId: course.id))
+    }
 
     /// "Subject • Section 02 • Semester 1" on one line when it fits; otherwise the subject, then the section and semester
     /// on the next line (so a line never starts or ends with a loose dot)
