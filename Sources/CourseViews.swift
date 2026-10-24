@@ -20,8 +20,14 @@ struct CourseDetailView: View {
     @State private var tapped = false                       // the last tab change came from tapping a tab (pages slide the whole way)
     @State private var bottomInset: CGFloat = 0             // height of the floating bottom bar (+ home indicator)
     @State private var groupsOpened = false                 // the Groups page is built only after it has been opened once
-    @State private var groupModules: [Module] = []          // the course's Group Selection activities (the Groups tab shows only when there is one)
+    @State private var groupModules: [Module] = []          // the course's Group Selection activities (filled once the contents are known)
+    @State private var groupTab: Bool                       // show the Groups tab: remembered per course, so the tab row never changes after the page opens
     @ObservedObject private var themes = ThemeStore.shared
+
+    init(course: Course) {
+        self.course = course
+        _groupTab = State(initialValue: CourseGroups.remembered(course.id))
+    }
 
     private var todoCount: Int { todos.count(for: course.id) }
     private var driveCount: Int { drive.files(for: course.id).count }
@@ -31,7 +37,7 @@ struct CourseDetailView: View {
     private var tabs: [CourseTab] {
         CourseTab.allCases.filter { t in
             switch t {
-            case .groups: return !groupModules.isEmpty
+            case .groups: return groupTab
             case .drive: return driveCount > 0
             case .todo: return todoCount > 0
             default: return true
@@ -58,6 +64,10 @@ struct CourseDetailView: View {
     private func updateGroupModules(_ modules: [Module]) {
         let found = modules.filter { CourseGroups.isSelection($0) && $0.uservisible != false }
         if found.map(\.id) != groupModules.map(\.id) { groupModules = found }
+        // Adding or removing a pager page rebuilds the Course page (that was the lag), so the tab row only changes
+        // when the answer differs from the remembered one: the first visit of a course with groups, or when the activity is gone
+        if groupTab != !found.isEmpty { groupTab = !found.isEmpty }
+        CourseGroups.remember(course.id, groupTab)
     }
 
     private var photoOn: Bool { true }      // every theme has a cover photo (the Light theme uses its own bright version)

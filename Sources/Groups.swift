@@ -472,6 +472,13 @@ struct GroupChoiceView: View {
 // MARK: - Groups tab of the course page
 
 enum CourseGroups {
+    /// Whether this course had a Group Selection activity the last time its contents were read (so the Groups tab is in
+    /// place from the first frame; the tab row changing later is what made opening a course lag)
+    static func remembered(_ courseId: Int) -> Bool { UserDefaults.standard.bool(forKey: "groupTab.\(courseId)") }
+    static func remember(_ courseId: Int, _ on: Bool) {
+        if on != remembered(courseId) { UserDefaults.standard.set(on, forKey: "groupTab.\(courseId)") }
+    }
+
     /// A "Group Selection" activity (choicegroup, or the groupselect plugin): its presence means the course wants a group chosen
     static func isSelection(_ m: Module) -> Bool {
         m.modname == "choicegroup" || m.modname == "groupselect" || (m.url ?? "").contains("groupselect")
@@ -493,7 +500,10 @@ struct CourseGroupsTab: View {
     let modules: [Module]
 
     var body: some View {
-        if modules.count == 1, let m = modules.first {
+        if modules.isEmpty {
+            // the tab is remembered from an earlier visit; the activity list is still on its way
+            ProgressView().tint(Theme.accent).frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if modules.count == 1, let m = modules.first {
             GroupChoiceView(courseId: courseId, module: m, embedded: true)
         } else {
             ScrollView {
