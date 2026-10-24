@@ -1,0 +1,151 @@
+diff --git a/Sources/CourseViews.swift b/Sources/CourseViews.swift
+index b9a1c6f..dbedb04 100644
+--- a/Sources/CourseViews.swift
++++ b/Sources/CourseViews.swift
+@@ -4,7 +4,7 @@ import WebKit
+ // MARK: - Course detail (Course / Participants / Grades tabs; groups live under the Group Selection activity)
+ 
+ enum CourseTab: String, CaseIterable, Identifiable {
+-    case course = "Course", participants = "Participants", drive = "My Drive", todo = "To-Do", grades = "Grades"
++    case course = "Course", participants = "Participants", groups = "Groups", drive = "My Drive", todo = "To-Do", grades = "Grades"
+     var id: String { rawValue }
+ }
+ 
+@@ -19,15 +19,18 @@ struct CourseDetailView: View {
+     @State private var photoReady = true                     // false while pages are sliding after leaving / returning to Course
+     @State private var tapped = false                       // the last tab change came from tapping a tab (pages slide the whole way)
+     @State private var bottomInset: CGFloat = 0             // height of the floating bottom bar (+ home indicator)
++    @State private var groupModules: [Module] = []          // the course's Group Selection activities (the Groups tab shows only when there is one)
+     @ObservedObject private var themes = ThemeStore.shared
+ 
+     private var todoCount: Int { todos.count(for: course.id) }
+     private var driveCount: Int { drive.files(for: course.id).count }
+ 
++    // Groups only appears when the course needs a group chosen (it has a Group Selection activity);
+     // My Drive / To-Do only appear when something is saved for this subject
+     private var tabs: [CourseTab] {
+         CourseTab.allCases.filter { t in
+             switch t {
++            case .groups: return !groupModules.isEmpty
+             case .drive: return driveCount > 0
+             case .todo: return todoCount > 0
+             default: return true
+@@ -42,12 +45,20 @@ struct CourseDetailView: View {
+             if abs(scroll.y - v) > 0.3 { scroll.y = v }
+         }
+         case .participants: ParticipantsView(courseId: course.id)
++        case .groups: CourseGroupsTab(courseId: course.id, modules: groupModules)
+         case .drive: CourseDriveTab(courseId: course.id)
+         case .todo: CourseTodoTab(courseId: course.id)
+         case .grades: GradesView(courseId: course.id)
+         }
+     }
+ 
++    /// Group Selection activities of this course. A failed load keeps what is already known (no flicker offline).
++    private func loadGroupModules() async {
++        guard let sections: [CourseSection] = try? await MoodleAPI.shared.call("core_course_get_contents", ["courseid": course.id]) else { return }
++        let found = sections.flatMap(\.modules).filter { CourseGroups.isSelection($0) && $0.uservisible != false }
++        if found.map(\.id) != groupModules.map(\.id) { groupModules = found }
++    }
++
+     private var photoOn: Bool { true }      // every theme has a cover photo (the Light theme uses its own bright version)
+ 
+     /// The photo is only shown while the Course tab is open, settled, and no swipe toward another tab is under way
+@@ -81,6 +92,13 @@ struct CourseDetailView: View {
+         .navigationBarTitleDisplayMode(.inline)
+         // the open tab goes away when its last item is removed
+         .onChange(of: tabs) { new in if !new.contains(tab) { tab = .course } }
++        // look for a Group Selection activity: saved copy first (so the tab is there offline), then the live list
++        .task {
++            await OfflineCache.paintFromCache { await loadGroupModules() }
++            await loadGroupModules()
++        }
++        .onReceive(NotificationCenter.default.publisher(for: .offlineBackOnline)) { _ in Task { await loadGroupModules() } }
++        .onFreshData { await loadGroupModules() }
+         .onChange(of: tab) { t in
+             anticipated = nil
+             if t != .course {
+diff --git a/Sources/Groups.swift b/Sources/Groups.swift
+index 3f58123..67716c5 100644
+--- a/Sources/Groups.swift
++++ b/Sources/Groups.swift
+@@ -149,6 +149,9 @@ private struct GroupEntry: Identifiable {
+ struct GroupChoiceView: View {
+     let courseId: Int
+     let module: Module
++    /// True when shown as the course page's Groups tab: no nav title of its own (the course keeps its title)
++    /// and no solid background (the course page paints it, like the other tabs)
++    var embedded = false
+     @EnvironmentObject var app: AppState
+     @StateObject private var model = CourseGroupsModel()
+     @State private var options: [ChoiceGroupOption] = []
+@@ -274,9 +277,8 @@ struct GroupChoiceView: View {
+             }
+             .padding(16)
+         }
+-        .background(Theme.bg.ignoresSafeArea())
+-        .navigationTitle(module.name)
+-        .navigationBarTitleDisplayMode(.inline)
++        .background { if !embedded { Theme.bg.ignoresSafeArea() } }
++        .modifier(GroupNavTitle(title: module.name, embedded: embedded))
+         .scrollDismissesKeyboard(.interactively)
+         .refreshable { overridden = false; await load() }
+         .task { await load() }
+@@ -467,6 +469,57 @@ struct GroupChoiceView: View {
+ }
+ 
+ 
++// MARK: - Groups tab of the course page
++
++enum CourseGroups {
++    /// A "Group Selection" activity (choicegroup, or the groupselect plugin): its presence means the course wants a group chosen
++    static func isSelection(_ m: Module) -> Bool {
++        m.modname == "choicegroup" || m.modname == "groupselect" || (m.url ?? "").contains("groupselect")
++    }
++}
++
++private struct GroupNavTitle: ViewModifier {
++    let title: String
++    let embedded: Bool
++    func body(content: Content) -> some View {
++        if embedded { content } else { content.navigationTitle(title).navigationBarTitleDisplayMode(.inline) }
++    }
++}
++
++/// The Groups tab: the group list of the course's Group Selection activity (join / switch / leave, members).
++/// With more than one such activity, each gets a row that opens its own screen.
++struct CourseGroupsTab: View {
++    let courseId: Int
++    let modules: [Module]
++
++    var body: some View {
++        if modules.count == 1, let m = modules.first {
++            GroupChoiceView(courseId: courseId, module: m, embedded: true)
++        } else {
++            ScrollView {
++                VStack(spacing: 0) {
++                    ForEach(modules) { m in
++                        NavigationLink { GroupChoiceView(courseId: courseId, module: m) } label: {
++                            HStack(spacing: 12) {
++                                Image(systemName: "person.3").foregroundColor(Theme.accent).frame(width: 24)
++                                Text(m.name).foregroundColor(Theme.txt).multilineTextAlignment(.leading)
++                                Spacer()
++                                Image(systemName: "chevron.right").font(Theme.font(.caption)).foregroundColor(Theme.muted)
++                            }
++                            .padding(14)
++                            .contentShape(Rectangle())
++                            .overlay(Rectangle().fill(Theme.line).frame(height: 1), alignment: .bottom)
++                        }
++                        .buttonStyle(.plain)
++                    }
++                }
++                .glowCard()
++                .padding(16)
++            }
++        }
++    }
++}
++
+ // MARK: - Quiet join / leave (group select plugin)
+ 
+ struct BackgroundGroupAction: Equatable {

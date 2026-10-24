@@ -57,7 +57,11 @@ struct RootView: View {
                 .badge(notifs.count)   // unread notifications
                 .tag(2)
             NavigationStack { SiteBrowserView(browser: browser) }
-                .tabItem { Label("Website", systemImage: "globe") }
+                .tabItem {
+                    // IIUM logo (WebsiteTab asset): a template image, so the tab bar tints it like the other icons
+                    // (accent when selected, grey when not) and the theme's navbar colour shows through the cut-outs
+                    Label { Text("Website") } icon: { Image("WebsiteTab").renderingMode(.template) }
+                }
                 .tag(3)
             NavigationStack(path: $othersPath) {
                 ProfileView()

@@ -1,0 +1,180 @@
+diff --git a/Sources/Assets.xcassets/WebsiteTab.imageset/Contents.json b/Sources/Assets.xcassets/WebsiteTab.imageset/Contents.json
+new file mode 100644
+index 0000000..abe3ef0
+--- /dev/null
++++ b/Sources/Assets.xcassets/WebsiteTab.imageset/Contents.json
+@@ -0,0 +1,14 @@
++{
++  "images" : [
++    { "filename" : "website@1x.png", "idiom" : "universal", "scale" : "1x" },
++    { "filename" : "website@2x.png", "idiom" : "universal", "scale" : "2x" },
++    { "filename" : "website@3x.png", "idiom" : "universal", "scale" : "3x" }
++  ],
++  "info" : {
++    "author" : "xcode",
++    "version" : 1
++  },
++  "properties" : {
++    "template-rendering-intent" : "template"
++  }
++}
+diff --git a/Sources/Assets.xcassets/WebsiteTab.imageset/website@1x.png b/Sources/Assets.xcassets/WebsiteTab.imageset/website@1x.png
+new file mode 100644
+index 0000000000000000000000000000000000000000..851bb68c00ee0ae7b7ee3e4c3d5008d333417d33
+GIT binary patch
+literal 696
+zcmV;p0!RIcP)<h;3K|Lk000e1NJLTq000>P000>X1ONa4Zs1Mm0007iNkl<Zc$}To
+z-)oj-7zgmr^SsadZeu^*NE&R5#5bDDQ7pF1Kr%I==s+q6M8y0Havk)pP8LPB47BV(
+zOl5Qsp(h%8&_P5;Ws7P_nJy!&hC=BZHm14fdF~G0{jy01eNQg#i~G9yUibHVT`WaG
+z;fDAxL^qsbK`c{N#fU3nK_tIfDam|X?MFc{p?^_!2^!I=-wGTQyx~p3UR3mJoxQP$
+zSR(U^XWcIMppB;8Dm8`Ad@k~vQNs$-g_2m}SM84ZO35vzRq?uJHK_rcT(DeL?<qzs
+zcei#Y9P)^6Kj{LUe%51y{XWv+F1dJtTw=Mu4Ex$X>(H!MuO>X~Lt|cbMVF+`DM2JS
+zZ?!EZ9P_8$rsRmVIOt<*#Rg0&hy)S^nSR^Vv>Nw`5rd0<@~RPK%WTu;kZ}cBBGTlD
+zia{+_=}>djx3)`+>UPPUy8Z5wmptlTxh$3%Qn6dv4qH`RRd&il))-SZ?S5N5ufbm3
+zUNBSdB}LJ75JWa;bXsbq^^VKHj3Q>{tWa`BP_@eeorX;s69ixSMb#<?jCfJ-ouVR%
+z;JT-6Mx*m;+H~p!188;81#N0x^S)GES3efX^m$6J{m$8J$_z?cyyr>lop#tM1wmd{
+zKZsPEl<V@G$L)07WtSbb(<WQoCKz)^U6na0Q_UJY;AK0k)27ce_`vt>^M^gE8Z=AA
+zbt%ck&ba6?i7({Zodpw?`9W;RMw8Bo>$Y4l|B!7~`r8^$xF(T_<UVy$;;d1-=FGo%
+z#7cT};9bGn-VwZoE<H+USUQ)<thI~!j0=Kq+@m-@PxDy1E+V-mgMvM-{r9?9Kw<XH
+e<mOB1f8ZaeuEV<NDvkC40000<MNUMnLSTYk=24gc
+
+literal 0
+HcmV?d00001
+
+diff --git a/Sources/Assets.xcassets/WebsiteTab.imageset/website@2x.png b/Sources/Assets.xcassets/WebsiteTab.imageset/website@2x.png
+new file mode 100644
+index 0000000000000000000000000000000000000000..b06c709bab92c5fa016e55a945663d9b2b35b049
+GIT binary patch
+literal 1845
+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
+
+literal 0
+HcmV?d00001
+
+diff --git a/Sources/Assets.xcassets/WebsiteTab.imageset/website@3x.png b/Sources/Assets.xcassets/WebsiteTab.imageset/website@3x.png
+new file mode 100644
+index 0000000000000000000000000000000000000000..6e37a79951f49b10be2c21d16e1628e0012d9f7f
+GIT binary patch
+literal 3406
+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
+
+literal 0
+HcmV?d00001
+
+diff --git a/Sources/MainViews.swift b/Sources/MainViews.swift
+index 07c1808..01dcc3d 100644
+--- a/Sources/MainViews.swift
++++ b/Sources/MainViews.swift
+@@ -57,7 +57,11 @@ struct RootView: View {
+                 .badge(notifs.count)   // unread notifications
+                 .tag(2)
+             NavigationStack { SiteBrowserView(browser: browser) }
+-                .tabItem { Label("Website", systemImage: "globe") }
++                .tabItem {
++                    // IIUM logo (WebsiteTab asset): a template image, so the tab bar tints it like the other icons
++                    // (accent when selected, grey when not) and the theme's navbar colour shows through the cut-outs
++                    Label { Text("Website") } icon: { Image("WebsiteTab").renderingMode(.template) }
++                }
+                 .tag(3)
+             NavigationStack(path: $othersPath) {
+                 ProfileView()

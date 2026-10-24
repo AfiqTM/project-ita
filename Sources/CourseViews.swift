@@ -4,7 +4,7 @@ import WebKit
 // MARK: - Course detail (Course / Participants / Grades tabs; groups live under the Group Selection activity)
 
 enum CourseTab: String, CaseIterable, Identifiable {
-    case course = "Course", participants = "Participants", drive = "My Drive", todo = "To-Do", grades = "Grades"
+    case course = "Course", participants = "Participants", groups = "Groups", drive = "My Drive", todo = "To-Do", grades = "Grades"
     var id: String { rawValue }
 }
 
@@ -19,15 +19,18 @@ struct CourseDetailView: View {
     @State private var photoReady = true                     // false while pages are sliding after leaving / returning to Course
     @State private var tapped = false                       // the last tab change came from tapping a tab (pages slide the whole way)
     @State private var bottomInset: CGFloat = 0             // height of the floating bottom bar (+ home indicator)
+    @State private var groupModules: [Module] = []          // the course's Group Selection activities (the Groups tab shows only when there is one)
     @ObservedObject private var themes = ThemeStore.shared
 
     private var todoCount: Int { todos.count(for: course.id) }
     private var driveCount: Int { drive.files(for: course.id).count }
 
+    // Groups only appears when the course needs a group chosen (it has a Group Selection activity);
     // My Drive / To-Do only appear when something is saved for this subject
     private var tabs: [CourseTab] {
         CourseTab.allCases.filter { t in
             switch t {
+            case .groups: return !groupModules.isEmpty
             case .drive: return driveCount > 0
             case .todo: return todoCount > 0
             default: return true
@@ -42,10 +45,18 @@ struct CourseDetailView: View {
             if abs(scroll.y - v) > 0.3 { scroll.y = v }
         }
         case .participants: ParticipantsView(courseId: course.id)
+        case .groups: CourseGroupsTab(courseId: course.id, modules: groupModules)
         case .drive: CourseDriveTab(courseId: course.id)
         case .todo: CourseTodoTab(courseId: course.id)
         case .grades: GradesView(courseId: course.id)
         }
+    }
+
+    /// Group Selection activities of this course. A failed load keeps what is already known (no flicker offline).
+    private func loadGroupModules() async {
+        guard let sections: [CourseSection] = try? await MoodleAPI.shared.call("core_course_get_contents", ["courseid": course.id]) else { return }
+        let found = sections.flatMap(\.modules).filter { CourseGroups.isSelection($0) && $0.uservisible != false }
+        if found.map(\.id) != groupModules.map(\.id) { groupModules = found }
     }
 
     private var photoOn: Bool { true }      // every theme has a cover photo (the Light theme uses its own bright version)
@@ -81,6 +92,13 @@ struct CourseDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         // the open tab goes away when its last item is removed
         .onChange(of: tabs) { new in if !new.contains(tab) { tab = .course } }
+        // look for a Group Selection activity: saved copy first (so the tab is there offline), then the live list
+        .task {
+            await OfflineCache.paintFromCache { await loadGroupModules() }
+            await loadGroupModules()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .offlineBackOnline)) { _ in Task { await loadGroupModules() } }
+        .onFreshData { await loadGroupModules() }
         .onChange(of: tab) { t in
             anticipated = nil
             if t != .course {

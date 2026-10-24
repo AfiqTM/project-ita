@@ -149,6 +149,9 @@ private struct GroupEntry: Identifiable {
 struct GroupChoiceView: View {
     let courseId: Int
     let module: Module
+    /// True when shown as the course page's Groups tab: no nav title of its own (the course keeps its title)
+    /// and no solid background (the course page paints it, like the other tabs)
+    var embedded = false
     @EnvironmentObject var app: AppState
     @StateObject private var model = CourseGroupsModel()
     @State private var options: [ChoiceGroupOption] = []
@@ -274,9 +277,8 @@ struct GroupChoiceView: View {
             }
             .padding(16)
         }
-        .background(Theme.bg.ignoresSafeArea())
-        .navigationTitle(module.name)
-        .navigationBarTitleDisplayMode(.inline)
+        .background { if !embedded { Theme.bg.ignoresSafeArea() } }
+        .modifier(GroupNavTitle(title: module.name, embedded: embedded))
         .scrollDismissesKeyboard(.interactively)
         .refreshable { overridden = false; await load() }
         .task { await load() }
@@ -466,6 +468,57 @@ struct GroupChoiceView: View {
     }
 }
 
+
+// MARK: - Groups tab of the course page
+
+enum CourseGroups {
+    /// A "Group Selection" activity (choicegroup, or the groupselect plugin): its presence means the course wants a group chosen
+    static func isSelection(_ m: Module) -> Bool {
+        m.modname == "choicegroup" || m.modname == "groupselect" || (m.url ?? "").contains("groupselect")
+    }
+}
+
+private struct GroupNavTitle: ViewModifier {
+    let title: String
+    let embedded: Bool
+    func body(content: Content) -> some View {
+        if embedded { content } else { content.navigationTitle(title).navigationBarTitleDisplayMode(.inline) }
+    }
+}
+
+/// The Groups tab: the group list of the course's Group Selection activity (join / switch / leave, members).
+/// With more than one such activity, each gets a row that opens its own screen.
+struct CourseGroupsTab: View {
+    let courseId: Int
+    let modules: [Module]
+
+    var body: some View {
+        if modules.count == 1, let m = modules.first {
+            GroupChoiceView(courseId: courseId, module: m, embedded: true)
+        } else {
+            ScrollView {
+                VStack(spacing: 0) {
+                    ForEach(modules) { m in
+                        NavigationLink { GroupChoiceView(courseId: courseId, module: m) } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "person.3").foregroundColor(Theme.accent).frame(width: 24)
+                                Text(m.name).foregroundColor(Theme.txt).multilineTextAlignment(.leading)
+                                Spacer()
+                                Image(systemName: "chevron.right").font(Theme.font(.caption)).foregroundColor(Theme.muted)
+                            }
+                            .padding(14)
+                            .contentShape(Rectangle())
+                            .overlay(Rectangle().fill(Theme.line).frame(height: 1), alignment: .bottom)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .glowCard()
+                .padding(16)
+            }
+        }
+    }
+}
 
 // MARK: - Quiet join / leave (group select plugin)
 
