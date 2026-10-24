@@ -1,6 +1,11 @@
 import SwiftUI
 import UserNotifications
 
+extension Notification.Name {
+    /// The Courses tab was tapped again while its list is already showing
+    static let coursesScrollToTop = Notification.Name("coursesScrollToTop")
+}
+
 struct RootView: View {
     @EnvironmentObject var app: AppState
     @Environment(\.scenePhase) private var scenePhase
@@ -17,13 +22,17 @@ struct RootView: View {
     /// The tab selection; tapping the tab that is already open sends Courses back to its main list
     private var selection: Binding<Int> {
         Binding(get: { tab }, set: { new in
-            if new == tab && new == 0 { popToRootAnimated() }
+            if new == tab && new == 0 {
+                // already on Courses: leave any open screen first; if the list itself is showing, scroll it to the top
+                if !popToRootAnimated() { NotificationCenter.default.post(name: .coursesScrollToTop, object: nil) }
+            }
             tab = new
         })
     }
 
     /// Tapping the open Courses tab again: slide back out of every screen to the main course list (the normal back animation)
-    private func popToRootAnimated() {
+    @discardableResult
+    private func popToRootAnimated() -> Bool {
         func nav(in vc: UIViewController) -> UINavigationController? {
             if let n = vc as? UINavigationController { return n }
             for c in vc.children { if let n = nav(in: c) { return n } }
@@ -38,8 +47,9 @@ struct RootView: View {
         let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
         guard let root = scenes.flatMap(\.windows).first(where: \.isKeyWindow)?.rootViewController,
               let tabs = tabBar(in: root), let selected = tabs.selectedViewController,
-              let n = nav(in: selected), n.viewControllers.count > 1 else { return }
+              let n = nav(in: selected), n.viewControllers.count > 1 else { return false }
         n.popToRootViewController(animated: true)
+        return true
     }
 
     var body: some View {
@@ -225,12 +235,24 @@ struct CoursesView: View {
     }
 
     var body: some View {
+        ScrollViewReader { proxy in
+            list
+                // tapping the Courses tab again while the list is showing: back to the top
+                .onReceive(NotificationCenter.default.publisher(for: .coursesScrollToTop)) { _ in
+                    searchFocused = false
+                    withAnimation(.easeInOut(duration: 0.35)) { proxy.scrollTo("coursesTop", anchor: .top) }
+                }
+        }
+    }
+
+    private var list: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 // intro animation per theme (Themes.swift): gunshot, Pac-Man or decoding symbols
                 GreetingBar(hello: "Hello,", name: firstTwoNames) {
                     MessagesButton()   // chat icon + unread badge (Messages.swift)
                 }
+                .id("coursesTop")
 
                 searchBar
                 suggestionList
