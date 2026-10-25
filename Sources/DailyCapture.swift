@@ -143,7 +143,9 @@ enum DailyCapture {
             drafts = [DailyDraft(kind: .note, classDate: nil, startMin: nil, newDate: nil, newStartMin: nil, venue: nil,
                                  summary: note.count > 160 ? String(note.prefix(157)) + "…" : note)]
         }
+        let before = DailyInfoStore.shared.entries.count
         let added = DailyInfoStore.shared.addCaptured(drafts, course: course, text: clean)
+        let isNew = DailyInfoStore.shared.entries.count > before
 
         let first = added[0]
         var bits = [first.kind.title]
@@ -151,7 +153,7 @@ enum DailyCapture {
         if let d = first.newDate ?? first.classDate { bits.append(shortDay(d)) }
         let extra = added.count > 1 ? " (+\(added.count - 1) more)" : ""
         let unsure = (first.kind == .note && drafts.count == 1) ? " I wasn't sure what it was, so it is saved as a notice." : ""
-        return Outcome(message: "Added to Daily summary: " + bits.joined(separator: " · ") + extra + "." + unsure, entries: added)
+        return Outcome(message: (isNew ? "Added to Daily summary: " : "Already in Daily summary: ") + bits.joined(separator: " · ") + extra + "." + unsure, entries: added)
     }
 
     private static func shortDay(_ d: Date) -> String {

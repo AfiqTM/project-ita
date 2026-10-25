@@ -140,6 +140,15 @@ final class DailyInfoStore: ObservableObject {
         let now = Date()
         var added: [DailyEntry] = []
         for d in drafts {
+            // the same thing sent twice (two screenshots of one announcement, or its reminder) is kept once
+            if let same = entries.first(where: {
+                $0.hidden != true && $0.kind == d.kind && $0.courseId == course?.id
+                    && $0.classDate == d.classDate && $0.newDate == d.newDate
+                    && ($0.kind != .venue || $0.venue == d.venue)
+            }) {
+                added.append(same)
+                continue
+            }
             let e = DailyEntry(
                 id: "s" + UUID().uuidString, kind: d.kind, courseId: course?.id, courseName: course?.subjectName,
                 summary: d.summary, classDate: d.classDate, startMin: d.startMin, newDate: d.newDate,
@@ -485,7 +494,14 @@ enum DailyRules {
             var d = DailyDraft(kind: kind, classDate: nil, startMin: nil, newDate: nil, newStartMin: nil,
                                venue: nil, summary: tidy(s))
             if kind == .rescheduled {
-                if ds.count >= 2 { d.classDate = ds[0]; d.newDate = ds[1]; d.newStartMin = start }
+                if ds.count >= 2 {
+                    // "Tomorrow's replacement class for 4th Nov": the day after "for" is the class being replaced,
+                    // the other day is when the replacement happens (reading order would turn it around)
+                    if let orig = replacedDay(in: s, ref: posted), ds.contains(orig), let new = ds.first(where: { $0 != orig }) {
+                        d.classDate = orig; d.newDate = new
+                    } else { d.classDate = ds[0]; d.newDate = ds[1] }
+                    d.newStartMin = start
+                }
                 else if let one = ds.first {
                     if has(s, toAfterVerb) { d.newDate = one; d.newStartMin = start }
                     else { d.classDate = one; d.startMin = start }
@@ -499,6 +515,13 @@ enum DailyRules {
             if keys.insert(key).inserted { out.append(d) }
         }
         return Array(out.prefix(4))
+    }
+
+    /// "replacement / make-up class for <day>": that day is the class being replaced
+    private static func replacedDay(in s: String, ref: Date) -> Date? {
+        let pattern = #"(?:replacement|make[- ]?up|ganti)[^.\n]{0,40}?\bfor\b\s*(.{1,24})"#
+        guard let g = groups(pattern, s).first, g.count > 1 else { return nil }
+        return dates(in: g[1], ref: ref).first
     }
 
     // MARK: sentences and kinds
