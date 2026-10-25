@@ -1,0 +1,45 @@
+diff --git a/Sources/DailyInfoView.swift b/Sources/DailyInfoView.swift
+--- a/Sources/DailyInfoView.swift
++++ b/Sources/DailyInfoView.swift
+@@ -653,6 +653,7 @@
+         private var observation: NSKeyValueObservation?
+         private weak var scroll: UIScrollView?
+         private weak var bar: UITabBar?
++        private var settle: DispatchWorkItem?
+ 
+         override func didMoveToWindow() {
+             super.didMoveToWindow()
+@@ -699,9 +700,30 @@
+             guard w > 0 else { return }
+             let x = convert(bounds, to: nil).minX            // 0 when Daily summary fills the screen, -w when it is fully left
+             let p = min(max(-x / w, 0), 1)
+-            let eased = p * p * (3 - 2 * p)                    // smoothstep: eases in and out with the finger
+-            bar.alpha = eased
+-            bar.isUserInteractionEnabled = eased > 0.6
++            // smootherstep (6p^5 - 15p^4 + 10p^3): flatter at both ends than smoothstep, so the bar neither jumps away at
++            // the start of the swipe nor snaps off at the very end
++            let eased = p * p * p * (p * (p * 6 - 15) + 10)
++            let moving = (scroll?.isTracking ?? false) || (scroll?.isDragging ?? false) || (scroll?.isDecelerating ?? false)
++            if moving {
++                settle?.cancel()
++                bar.alpha = eased                              // follows the finger / the pages, frame by frame
++                bar.isUserInteractionEnabled = eased > 0.6
++            } else {
++                // the pages have stopped: ease whatever is left to the resting value (fully there or fully gone)
++                let target: CGFloat = p > 0.5 ? 1 : 0
++                guard abs(bar.alpha - target) > 0.01 else { bar.alpha = target; bar.isUserInteractionEnabled = target > 0.5; return }
++                settle?.cancel()
++                let work = DispatchWorkItem { [weak self, weak bar] in
++                    guard let bar else { return }
++                    UIView.animate(withDuration: 0.18, delay: 0, options: [.curveEaseOut, .beginFromCurrentState, .allowUserInteraction]) {
++                        bar.alpha = target
++                    }
++                    bar.isUserInteractionEnabled = target > 0.5
++                    self?.settle = nil
++                }
++                settle = work
++                DispatchQueue.main.async(execute: work)
++            }
+         }
+ 
+         private func restoreBar() {
