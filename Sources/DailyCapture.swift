@@ -189,7 +189,8 @@ struct SendToDailySummaryIntent: AppIntent {
         categoryName: "Daily summary")
     static var openAppWhenRun = false
 
-    @Parameter(title: "Screenshot", supportedTypeIdentifiers: ["public.image", "public.png", "public.jpeg", "public.heic", "public.data"])
+    @Parameter(title: "Screenshot", supportedTypeIdentifiers: ["public.image", "public.png", "public.jpeg", "public.heic", "public.data"],
+               inputConnectionBehavior: .connectToPreviousIntentResult)
     var screenshot: IntentFile?
 
     static var parameterSummary: some ParameterSummary { Summary("Send \(\.$screenshot) to Daily Summary") }

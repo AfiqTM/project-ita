@@ -105,7 +105,6 @@ struct RootView: View {
             Task { await assignments.load(uid: uid); await notifs.refresh(uid: uid) }
         }
         // Newer data was saved in the background (slow connection): show it at once
-        .environment(\.coursesTabActive, tab == 0)   // the Daily summary pager may only move the tab bar on this tab
         .onFreshData {
             guard let uid = app.site?.userid else { return }
             await assignments.load(uid: uid)

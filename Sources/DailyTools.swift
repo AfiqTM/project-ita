@@ -213,7 +213,7 @@ struct DailyBackTapGuide: View {
     @Environment(\.dismiss) private var dismiss
 
     private let steps: [(String, String)] = [
-        ("Make the Shortcut", "Open the Shortcuts app, tap + and add two actions: Take Screenshot, then Send to Daily Summary (search for iTa'leem). Name it \"Daily summary\"."),
+        ("Make the Shortcut", "Open the Shortcuts app, tap + and add two actions: Take Screenshot, then Send to Daily Summary (search for iTa'leem). In the second action, tap the grey \"Screenshot\" box and pick the Screenshot output of the first action (until you do, the box stays grey and nothing is passed on). Name it \"Daily summary\"."),
         ("Turn on Back Tap", "Settings > Accessibility > Touch > Back Tap > Double Tap, then choose that Shortcut."),
         ("Use it", "On any screen with a message about a cancelled class, an assignment or a quiz, double-tap the back of the iPhone. The screenshot is read on the phone and the result shows up here."),
     ]
