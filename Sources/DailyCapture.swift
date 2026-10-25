@@ -46,16 +46,37 @@ enum DailyCapture {
         }
     }
 
-    /// OCR breaks a sentence at the edge of the screen: join lines unless one ends a sentence
+    /// OCR breaks a sentence at the edge of the screen: join lines unless one ends a sentence.
+    /// Chat screenshots (WhatsApp): the time under a bubble ends that message, "Today" / "Yesterday" is only the day divider,
+    /// and link lines are dropped, so one message is never read together with the one before it.
     private static func tidy(_ raw: String) -> String {
         var out = ""
+        var inLink = false
+        let clock = #"\d{1,2}[:.]\d{2}\s?(AM|PM)"#       // upper case: the way chats print the time under a message
+        func newMessage() { if !out.isEmpty && !out.hasSuffix("\n") { out += "\n" } }
         for line in raw.components(separatedBy: "\n") {
-            let t = line.trimmingCharacters(in: .whitespaces)
+            var t = line.trimmingCharacters(in: .whitespaces)
             if t.isEmpty { continue }
-            if let last = out.last, ".!?:;".contains(last) { out += "\n" } else if !out.isEmpty { out += " " }
-            out += t
+            if t.lowercased().hasPrefix("http") { inLink = true; continue }          // a link, wrapped over several lines
+            if inLink {
+                if !t.contains(" ") && t.count > 6 { continue }
+                inLink = false
+            }
+            if t.range(of: "^" + clock + "$", options: .regularExpression) != nil { newMessage(); continue }
+            if t.lowercased() == "today" || t.lowercased() == "yesterday" { newMessage(); continue }
+            var endsMessage = false
+            if let r = t.range(of: "\\s" + clock + "$", options: .regularExpression) {
+                t = String(t[t.startIndex..<r.lowerBound]).trimmingCharacters(in: .whitespaces)
+                endsMessage = true
+            }
+            if !t.isEmpty {
+                if out.isEmpty || out.hasSuffix("\n") { /* start of a message */ }
+                else if let last = out.last, ".!?:;".contains(last) { out += "\n" } else { out += " " }
+                out += t
+            }
+            if endsMessage { newMessage() }
         }
-        return out
+        return out.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     // MARK: finding the subject
