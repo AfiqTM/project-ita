@@ -135,7 +135,8 @@ struct DailyInfoView: View {
     @State private var showPhotos = false
     @State private var reading = false
     @State private var readResult: String?
-    @State private var fading: Set<String> = []     // rows (or restores) that are fading out, just before they leave the list
+    @State private var fading: Set<String> = []       // rows that are fading out (first step of removing one)
+    @State private var collapsing: Set<String> = []   // rows that are closing up (second step), just before they leave the list
 
     private var visible: [DailyEntry] {
         store.entries.filter { e in
@@ -170,32 +171,42 @@ struct DailyInfoView: View {
                 if let n = store.scanNote {
                     Text(n).font(Theme.font(.footnote)).foregroundColor(Theme.muted)
                 }
-                ForEach(groups, id: \.title) { g in
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(g.title).font(Theme.font(.subheadline).weight(.semibold)).foregroundColor(Theme.muted)
-                        VStack(spacing: 0) {
-                            ForEach(g.items) { e in
-                                DailyRow(entry: e, isNew: highlight.contains(e.id))
-                                    .opacity(fading.contains(e.id) ? 0 : 1)
-                                    .onTapGesture { editing = e }
-                                    .contextMenu { menu(e) }
-                                    // it is already invisible when it leaves (see fadeOut), so nothing is left to draw
-                                    // over the rows that move up into its place
-                                    .transition(.asymmetric(insertion: .opacity, removal: .identity))
+                // One block for all the days, each day carrying its own 16 pt gap, so a day that closes up takes its gap with it
+                // and nothing pops when it finally leaves the list
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(groups, id: \.title) { g in
+                        let dayGone = g.items.allSatisfy { collapsing.contains($0.id) }
+                        let dayFading = g.items.allSatisfy { fading.contains($0.id) }
+                        Collapsible(collapsed: dayGone, clip: false) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(g.title).font(Theme.font(.subheadline).weight(.semibold)).foregroundColor(Theme.muted)
+                                VStack(spacing: 0) {
+                                    ForEach(g.items) { e in
+                                        // a day that is going closes as one piece; otherwise just this row closes
+                                        Collapsible(collapsed: collapsing.contains(e.id) && !dayGone, clip: true) {
+                                            DailyRow(entry: e, isNew: highlight.contains(e.id))
+                                                .opacity(fading.contains(e.id) ? 0 : 1)
+                                                .onTapGesture { editing = e }
+                                                .contextMenu { menu(e) }
+                                        }
+                                        .transition(.asymmetric(insertion: .opacity, removal: .identity))
+                                    }
+                                }
+                                .glowCard(radius: 12)
                             }
+                            .padding(.bottom, 16)
+                            // the last entry of a day takes the day's heading and card with it
+                            .opacity(dayFading ? 0 : 1)
                         }
-                        .glowCard(radius: 12)
+                        .transition(.asymmetric(insertion: .opacity, removal: .identity))
                     }
-                    // the last entry of a day takes the day's heading and card with it
-                    .opacity(g.items.allSatisfy { fading.contains($0.id) } ? 0 : 1)
-                    .transition(.asymmetric(insertion: .opacity, removal: .identity))
                 }
-                if visible.isEmpty { emptyState.transition(.opacity) }
+                if visible.isEmpty { emptyState.padding(.top, -16).transition(.opacity) }   // -16: the empty block above still has its gap
                 Spacer(minLength: 110)
             }
             .padding(16)
             // every add / remove / restore / filter change moves the list the same way, whoever made the change
-            .animation(.snappy(duration: 0.32), value: visible.map(\.id))
+            .animation(.easeInOut(duration: 0.35), value: visible.map(\.id))
         }
         .background(Theme.bg.ignoresSafeArea())
         .refreshable { await store.scan(courses: catalog.courses, force: true) }
@@ -311,16 +322,24 @@ struct DailyInfoView: View {
         .buttonStyle(.plain)
     }
 
-    /// Remove / restore in two steps: wait for the context menu to close, fade the row out where it stands, and only then
-    /// take it out of the list so the rows below slide up. Removing it while it is still visible left its text drawn
-    /// over the row that moved into its place.
+    /// Remove / restore in three steps, so the list never draws a row over another one:
+    /// 1. wait until the context menu has gone, then fade the row out where it stands;
+    /// 2. close the gap it leaves (its height, or the whole day's block, shrinks to nothing) so the rows below glide up;
+    /// 3. take it out of the data with no animation: it is already invisible and has no height, so nothing moves.
     private func fadeOut(_ id: String, then change: @escaping () -> Void) {
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 420_000_000)
-            withAnimation(.easeOut(duration: 0.2)) { fading.insert(id) }
-            try? await Task.sleep(nanoseconds: 220_000_000)
-            withAnimation(.snappy(duration: 0.3)) { change() }
-            fading.remove(id)
+            withAnimation(.easeOut(duration: 0.18)) { fading.insert(id) }
+            try? await Task.sleep(nanoseconds: 190_000_000)
+            withAnimation(.easeInOut(duration: 0.34)) { collapsing.insert(id) }
+            try? await Task.sleep(nanoseconds: 360_000_000)
+            var t = Transaction()
+            t.disablesAnimations = true
+            withTransaction(t) {
+                change()
+                fading.remove(id)
+                collapsing.remove(id)
+            }
         }
     }
 
@@ -659,5 +678,38 @@ struct TabBarSlider: UIViewControllerRepresentable {
                 bar.isUserInteractionEnabled = true
             }
         }
+    }
+}
+
+
+// MARK: - A view that can close up to nothing (used when an entry is removed)
+
+private struct CollapseHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
+/// Measures its content, and when `collapsed` turns on animates its height down to zero (SwiftUI can't animate to or from
+/// "natural height", so the height is measured first). `clip` hides what overflows while it closes (not for the day blocks:
+/// clipping them would cut off the card's glow).
+private struct Collapsible<Content: View>: View {
+    let collapsed: Bool
+    var clip = true
+    @ViewBuilder let content: () -> Content
+    @State private var height: CGFloat?
+
+    var body: some View {
+        content()
+            .background(GeometryReader { g in Color.clear.preference(key: CollapseHeightKey.self, value: g.size.height) })
+            .onPreferenceChange(CollapseHeightKey.self) { h in if !collapsed && h > 0 { height = h } }
+            .frame(height: collapsed ? 0 : height, alignment: .top)
+            .modifier(OptionalClip(on: clip))
+    }
+}
+
+private struct OptionalClip: ViewModifier {
+    let on: Bool
+    func body(content: Content) -> some View {
+        if on { content.clipped() } else { content }
     }
 }
