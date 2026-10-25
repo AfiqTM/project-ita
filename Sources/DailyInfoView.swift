@@ -72,9 +72,10 @@ struct CoursesHome: View {
             .frame(width: geo.size.width, height: geo.size.height)
             // Apply hidden toolbars to the ROOT container to prevent SwiftUI transition ghosting
             .toolbar(.hidden, for: .navigationBar)
-            // The tab bar slides away on Daily summary and comes back on My courses. It is only moved (transform + fade),
-            // never hidden through .toolbar(.hidden, for: .tabBar): hiding makes SwiftUI / UIKit re-lay out the safe areas
-            // under the pages, which was the jump (page shoots up, then settles back). Moving it changes no layout at all.
+            // The tab bar fades away on Daily summary and comes back on My courses. Only its opacity changes: hiding it through
+            // .toolbar(.hidden, for: .tabBar) re-laid out the safe areas under the pages (the page jumped), and moving it with a
+            // transform made it jump up before it faded (UIKit sets the bar's frame on every layout pass, which is undefined
+            // while a transform is set). A fade touches neither.
             .background(TabBarSlider(hidden: page == 0))
             .background(Theme.bg.ignoresSafeArea())
             .overlay(alignment: .top) {
@@ -176,15 +177,20 @@ struct DailyInfoView: View {
                                 DailyRow(entry: e, isNew: highlight.contains(e.id))
                                     .onTapGesture { editing = e }
                                     .contextMenu { menu(e) }
+                                    .transition(.asymmetric(insertion: .opacity,
+                                                            removal: .opacity.combined(with: .move(edge: .leading))))
                             }
                         }
                         .glowCard(radius: 12)
                     }
+                    .transition(.opacity)
                 }
-                if visible.isEmpty { emptyState }
+                if visible.isEmpty { emptyState.transition(.opacity) }
                 Spacer(minLength: 110)
             }
             .padding(16)
+            // every add / remove / restore / filter change moves the list the same way, whoever made the change
+            .animation(.snappy(duration: 0.32), value: visible.map(\.id))
         }
         .background(Theme.bg.ignoresSafeArea())
         .refreshable { await store.scan(courses: catalog.courses, force: true) }
@@ -305,14 +311,14 @@ struct DailyInfoView: View {
         if e.hidden == true {
             Button {
                 Task { @MainActor in
-                    try? await Task.sleep(nanoseconds: 250_000_000)
+                    try? await Task.sleep(nanoseconds: 420_000_000)
                     withAnimation(.snappy) { store.unhide(e.id) }
                 }
             } label: { Label("Restore", systemImage: "arrow.uturn.backward") }
         } else {
             Button(role: .destructive) {
                 Task { @MainActor in
-                    try? await Task.sleep(nanoseconds: 250_000_000)
+                    try? await Task.sleep(nanoseconds: 420_000_000)
                     withAnimation(.snappy) { store.remove(e.id) }
                 }
             } label: {
@@ -598,9 +604,9 @@ struct DailyEditSheet: View {
 }
 
 
-// MARK: - Slide the tab bar away without touching the layout
+// MARK: - Fade the tab bar away without touching the layout
 
-/// Moves the tab bar off the bottom of the screen (and fades it) with a transform, so no safe area changes
+/// Fades the tab bar out (and stops it taking touches); no frame, transform or safe area is changed
 struct TabBarSlider: UIViewControllerRepresentable {
     var hidden: Bool
 
@@ -619,13 +625,9 @@ struct TabBarSlider: UIViewControllerRepresentable {
 
         private func apply(animated: Bool) {
             guard let bar = tabBarController?.tabBar else { return }
-            let distance = bar.frame.height + (bar.window?.safeAreaInsets.bottom ?? 0) + 48
-            let change = {
-                bar.transform = self.wantHidden ? CGAffineTransform(translationX: 0, y: distance) : .identity
-                bar.alpha = self.wantHidden ? 0 : 1
-            }
+            let change = { bar.alpha = self.wantHidden ? 0 : 1 }
             if animated {
-                UIView.animate(withDuration: 0.28, delay: 0, options: [.curveEaseInOut, .beginFromCurrentState, .allowUserInteraction], animations: change)
+                UIView.animate(withDuration: 0.22, delay: 0, options: [.curveEaseInOut, .beginFromCurrentState, .allowUserInteraction], animations: change)
             } else { change() }
             bar.isUserInteractionEnabled = !wantHidden
         }
@@ -641,7 +643,6 @@ struct TabBarSlider: UIViewControllerRepresentable {
             onScreen = false
             // another tab or a pushed screen: the bar must be normal there
             if let bar = tabBarController?.tabBar {
-                bar.transform = .identity
                 bar.alpha = 1
                 bar.isUserInteractionEnabled = true
             }
