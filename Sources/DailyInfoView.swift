@@ -77,9 +77,7 @@ struct CoursesHome: View {
             .ignoresSafeArea(.container, edges: [.top, .bottom])
             // Apply hidden toolbars to the ROOT container to prevent SwiftUI transition ghosting
             .toolbar(.hidden, for: .navigationBar)
-            .toolbar(.hidden, for: .tabBar)
             .background(Theme.bg.ignoresSafeArea())
-            .background(PagerTabBarLink(page: page).allowsHitTesting(false))
             .overlay(alignment: .top) {
                 LinearGradient(colors: [Theme.bg.opacity(0.92), Theme.bg.opacity(0)], startPoint: .top, endPoint: .bottom)
                     .frame(height: top + 8)
@@ -421,7 +419,7 @@ struct DailyInfoView: View {
                     }
                 }
                 if visible.isEmpty { emptyState }
-                Spacer(minLength: 50)
+                Spacer(minLength: 110)
             }
             .padding(16)
         }
