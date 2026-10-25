@@ -1,0 +1,29 @@
+diff --git a/Sources/DailyInfoView.swift b/Sources/DailyInfoView.swift
+--- a/Sources/DailyInfoView.swift
++++ b/Sources/DailyInfoView.swift
+@@ -44,6 +44,13 @@
+ 
+     private let tabBarClearance: CGFloat = 96
+ 
++    private var windowHeight: CGFloat {
++        UIApplication.shared.connectedScenes
++            .compactMap { $0 as? UIWindowScene }
++            .flatMap { $0.windows }
++            .first { $0.isKeyWindow }?.bounds.height ?? 0
++    }
++
+     private var windowTopInset: CGFloat {
+         UIApplication.shared.connectedScenes
+             .compactMap { $0 as? UIWindowScene }
+@@ -70,8 +77,9 @@
+             .tabViewStyle(.page(indexDisplayMode: .never))
+             .noBottomEdgeEffect()
+             .ignoresSafeArea(.container, edges: [.top, .bottom])
+-            // pinned to the full screen so the pages never change size
+-            .frame(width: geo.size.width, height: geo.size.height)
++            // pinned to the full screen so the pages never change size. Never shorter than the window itself: a pager a few points
++            // short left a strip of plain background under the tab bar (the pages stopped above the bottom edge of the screen)
++            .frame(width: geo.size.width, height: max(geo.size.height, windowHeight), alignment: .top)
+             // Apply hidden toolbars to the ROOT container to prevent SwiftUI transition ghosting
+             .toolbar(.hidden, for: .navigationBar)
+             // The tab bar fades away on Daily summary and comes back on My courses, in step with the finger (TabBarFollower).
