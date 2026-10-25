@@ -68,6 +68,9 @@ struct CoursesHome: View {
             .tabViewStyle(.page(indexDisplayMode: .never))
             .noBottomEdgeEffect()
             .ignoresSafeArea(.container, edges: [.top, .bottom])
+            // pinned to the full screen: hiding the tab bar changes the bottom safe area, and without a fixed size the pages
+            // were re-laid out (page jumps up, then settles back) while the bar slid away or came back
+            .frame(width: geo.size.width, height: geo.size.height)
             // Apply hidden toolbars to the ROOT container to prevent SwiftUI transition ghosting
             .toolbar(.hidden, for: .navigationBar)
             // The tab bar slides away when Daily summary is the open page and comes back on My courses: one animation per page
@@ -83,6 +86,8 @@ struct CoursesHome: View {
                     .allowsHitTesting(false)
             }
         }
+        // the container itself no longer follows the safe area, so its size stays the same when the tab bar hides / shows
+        .ignoresSafeArea(.container, edges: [.top, .bottom])
         .onChange(of: page) { new in
             guard new == 1 else { return }
             Task { @MainActor in
