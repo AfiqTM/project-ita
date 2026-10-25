@@ -39,12 +39,23 @@ private extension View {
     }
 }
 
+/// True while the Courses tab is the open tab. The Daily summary pager only moves the tab bar while this is true, so no other tab
+/// can ever be left with a hidden or half-slid bar.
+private struct CoursesTabActiveKey: EnvironmentKey { static let defaultValue = true }
+extension EnvironmentValues {
+    var coursesTabActive: Bool {
+        get { self[CoursesTabActiveKey.self] }
+        set { self[CoursesTabActiveKey.self] = newValue }
+    }
+}
+
 // MARK: - Page container: Daily summary (left)  <-  swipe left to right  ->  My courses (right)
 
 struct CoursesHome: View {
     @EnvironmentObject var catalog: CourseCatalog
     @ObservedObject private var store = DailyInfoStore.shared
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.coursesTabActive) private var tabActive
     @State private var page = 1            // 0 = Daily summary (left), 1 = My courses (right, home)
 
     private let tabBarClearance: CGFloat = 96
@@ -78,6 +89,7 @@ struct CoursesHome: View {
             // Apply hidden toolbars to the ROOT container to prevent SwiftUI transition ghosting
             .toolbar(.hidden, for: .navigationBar)
             .background(Theme.bg.ignoresSafeArea())
+            .background(PagerTabBarLink(page: page, active: tabActive).allowsHitTesting(false))
             .overlay(alignment: .top) {
                 LinearGradient(colors: [Theme.bg.opacity(0.92), Theme.bg.opacity(0)], startPoint: .top, endPoint: .bottom)
                     .frame(height: top + 8)
@@ -136,6 +148,7 @@ private struct PagerPageProbe: UIViewRepresentable {
 
 private struct PagerTabBarLink: UIViewRepresentable {
     let page: Int
+    let active: Bool
 
     static func probeTag(for index: Int) -> Int { 77_100 + index }
 
@@ -147,13 +160,13 @@ private struct PagerTabBarLink: UIViewRepresentable {
         v.backgroundColor = .clear
         let c = context.coordinator
         c.probe = v
-        c.set(page: page)
+        c.set(page: page, active: active)
         v.windowChanged = { [weak c] in c?.windowChanged() }
         return v
     }
 
     func updateUIView(_ v: ProbeView, context: Context) {
-        context.coordinator.set(page: page)
+        context.coordinator.set(page: page, active: active)
     }
 
     static func dismantleUIView(_ v: ProbeView, coordinator: Coordinator) {
@@ -191,16 +204,41 @@ private struct PagerTabBarLink: UIViewRepresentable {
         private var busyFrames = 0
         private var lastTimestamp: CFTimeInterval?
 
-        func set(page: Int) {
+        private var active = true
+
+        func set(page: Int, active now: Bool) {
+            let was = active
+            active = now
             let t: CGFloat = page == 0 ? 0 : 1
             target = t
+            guard now else {
+                // another tab is open: give the bar back untouched and stop watching
+                if was { release() }
+                return
+            }
             if !attached { progress = t }
+            if !was || link == nil {
+                // the Courses tab is open again: the bar follows the page it is on
+                progress = t
+                if probe?.window != nil { startLink() }
+            }
             wake()
             syncFromScroll()
         }
 
+        /// Puts every tab bar back exactly as it was and stops the display link and the scroll observer
+        private func release() {
+            offsetObservation?.invalidate()
+            offsetObservation = nil
+            pagingScrollView = nil
+            link?.invalidate()
+            link = nil
+            lastTimestamp = nil
+            write(1)
+        }
+
         func windowChanged() {
-            if let w = probe?.window {
+            if let w = probe?.window, active {
                 window = w
                 w.backgroundColor = UIColor(Theme.bg)
                 if !attached { attached = true; progress = target }
@@ -234,7 +272,7 @@ private struct PagerTabBarLink: UIViewRepresentable {
         }
 
         private func syncFromScroll() {
-            guard let w = window ?? probe?.window else { return }
+            guard active, let w = window ?? probe?.window else { return }
             if let live = sampledProgress(in: w) {
                 progress = live
                 busyFrames = 90
@@ -244,6 +282,7 @@ private struct PagerTabBarLink: UIViewRepresentable {
         }
 
         fileprivate func tick(_ link: CADisplayLink) {
+            guard active else { link.invalidate(); self.link = nil; return }
             let now = link.timestamp
             let rawDt = lastTimestamp.map { now - $0 } ?? (1.0 / 60.0)
             let dt = CGFloat(min(max(rawDt, 1.0 / 120.0), 1.0 / 30.0))
