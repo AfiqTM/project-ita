@@ -312,7 +312,6 @@ final class DailyInfoStore: ObservableObject {
         }
         if reached > 0 { lastScan = Date() }
         if reached == 0 { scanNote = "Couldn't read the announcements. Showing what was saved." }
-        else if aiReady && !cands.isEmpty && ai.isEmpty { scanNote = "The AI server didn't answer, so the basic reader was used." }
         else { scanNote = nil }
         save()
     }
