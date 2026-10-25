@@ -2,6 +2,7 @@ import SwiftUI
 import UIKit
 import Vision
 import ImageIO
+import UniformTypeIdentifiers
 import AppIntents
 
 // MARK: - Send a screenshot to Daily summary
@@ -188,7 +189,7 @@ struct SendToDailySummaryIntent: AppIntent {
         categoryName: "Daily summary")
     static var openAppWhenRun = false
 
-    @Parameter(title: "Screenshot", supportedTypeIdentifiers: ["public.image"])
+    @Parameter(title: "Screenshot", supportedTypeIdentifiers: ["public.image", "public.png", "public.jpeg", "public.heic", "public.data"])
     var screenshot: IntentFile?
 
     static var parameterSummary: some ParameterSummary { Summary("Send \(\.$screenshot) to Daily Summary") }
@@ -198,13 +199,16 @@ struct SendToDailySummaryIntent: AppIntent {
         var data: Data? = screenshot?.data
         if (data?.isEmpty ?? true), let u = screenshot?.fileURL { data = try? Data(contentsOf: u) }   // some senders only give a file
         if data?.isEmpty == true { data = nil }
+        // what actually arrived, shown if nothing could be read (so a failing Shortcut can be diagnosed)
+        var got = "screenshot: " + (screenshot == nil ? "none" : "\(screenshot?.filename ?? "?"), \(screenshot?.data.count ?? 0) bytes, \(screenshot?.type?.identifier ?? "?")")
         var text: String?
         if data == nil {                                     // nothing handed over: use what was copied
             if let img = UIPasteboard.general.image { data = img.pngData() }
             else if let s = UIPasteboard.general.string { text = s }
         }
+        if data == nil && text == nil { got += "; clipboard: empty" }
         let r = await DailyCapture.process(imageData: data, text: text)
-        return .result(dialog: "\(r.message)")
+        return .result(dialog: "\(r.entries.isEmpty ? r.message + " [" + got + "]" : r.message)")
     }
 }
 
