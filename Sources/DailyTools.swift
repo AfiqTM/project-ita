@@ -213,7 +213,7 @@ struct DailyBackTapGuide: View {
     @Environment(\.dismiss) private var dismiss
 
     private let steps: [(String, String)] = [
-        ("Make the Shortcut", "Open the Shortcuts app, tap + and add two actions: Take Screenshot, then Send to Daily Summary (search for iTa'leem). In the second action, tap the grey \"Screenshot\" box and pick the Screenshot output of the first action (until you do, the box stays grey and nothing is passed on). Name it \"Daily summary\"."),
+        ("Make the Shortcut", "Open the Shortcuts app, tap + and add two actions: Take Screenshot, then Send to Daily Summary (search for iTa'leem). Add the second action directly under the first so its Screenshot field fills itself in; if it is empty, tap it and pick the Screenshot output of Take Screenshot. If you made the Shortcut before, delete the old Send to Daily Summary action and add it again. Name it \"Daily summary\"."),
         ("Turn on Back Tap", "Settings > Accessibility > Touch > Back Tap > Double Tap, then choose that Shortcut."),
         ("Use it", "On any screen with a message about a cancelled class, an assignment or a quiz, double-tap the back of the iPhone. The screenshot is read on the phone and the result shows up here."),
     ]
@@ -240,7 +240,7 @@ struct DailyBackTapGuide: View {
                             .background(Theme.accent).foregroundColor(Theme.onAccent)
                             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     }
-                    Text("Copied a message instead? \"Send to Daily Summary\" with no screenshot uses the picture or text on the clipboard. The subject is found from its name, course code or short form (DES, SE...). Anything it can't place is saved as a notice so you can edit it.")
+                    Text("Copied a message instead? \"Send Clipboard to Daily Summary\" (its own action, no Screenshot field) uses the picture or text on the clipboard. The subject is found from its name, course code or short form (DES, SE...). Anything it can't place is saved as a notice so you can edit it.")
                         .font(Theme.read(.footnote)).foregroundColor(Theme.muted)
                 }
                 .padding(20)

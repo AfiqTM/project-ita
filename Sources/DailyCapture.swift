@@ -119,7 +119,7 @@ enum DailyCapture {
         guard clean.count > 5 else {
             let why: String
             if imageData == nil && (text ?? "").isEmpty {
-                why = "No screenshot reached the action. In the Shortcut, put Take Screenshot first and make sure Send to Daily Summary's Screenshot field is set to \"Screenshot\"."
+                why = "The screenshot was empty. In the Shortcut, delete Send to Daily Summary, add it again right after Take Screenshot and check its field says \"Screenshot\"."
             } else if imageData != nil {
                 why = "I couldn't read any text in that picture."
             } else { why = "There was no text to read." }
@@ -185,31 +185,45 @@ private extension CGImagePropertyOrientation {
 struct SendToDailySummaryIntent: AppIntent {
     static var title: LocalizedStringResource = "Send to Daily Summary"
     static var description = IntentDescription(
-        "Reads a screenshot and adds the class change, assignment or quiz in it to Daily summary. With no screenshot it uses the picture on the clipboard.",
+        "Reads a screenshot and adds the class change, assignment or quiz in it to Daily summary.",
         categoryName: "Daily summary")
     static var openAppWhenRun = false
 
-    @Parameter(title: "Screenshot", supportedTypeIdentifiers: ["public.image", "public.png", "public.jpeg", "public.heic", "public.data"],
+    // Not optional on purpose: Shortcuts only fills a required field with the previous action's output (Take Screenshot)
+    // by itself. An optional field is left empty, nothing is passed on and the action sees "screenshot: none".
+    @Parameter(title: "Screenshot", supportedTypeIdentifiers: ["public.image", "public.png", "public.jpeg", "public.heic"],
                inputConnectionBehavior: .connectToPreviousIntentResult)
-    var screenshot: IntentFile?
+    var screenshot: IntentFile
 
     static var parameterSummary: some ParameterSummary { Summary("Send \(\.$screenshot) to Daily Summary") }
 
     @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        var data: Data? = screenshot?.data
-        if (data?.isEmpty ?? true), let u = screenshot?.fileURL { data = try? Data(contentsOf: u) }   // some senders only give a file
+        var data: Data? = screenshot.data
+        if data?.isEmpty ?? true, let u = screenshot.fileURL { data = try? Data(contentsOf: u) }   // some senders only give a file
         if data?.isEmpty == true { data = nil }
-        // what actually arrived, shown if nothing could be read (so a failing Shortcut can be diagnosed)
-        var got = "screenshot: " + (screenshot == nil ? "none" : "\(screenshot?.filename ?? "?"), \(screenshot?.data.count ?? 0) bytes, \(screenshot?.type?.identifier ?? "?")")
-        var text: String?
-        if data == nil {                                     // nothing handed over: use what was copied
-            if let img = UIPasteboard.general.image { data = img.pngData() }
-            else if let s = UIPasteboard.general.string { text = s }
-        }
-        if data == nil && text == nil { got += "; clipboard: empty" }
-        let r = await DailyCapture.process(imageData: data, text: text)
+        let got = "screenshot: \(screenshot.filename), \(screenshot.data.count) bytes, \(screenshot.type?.identifier ?? "?")"
+        let r = await DailyCapture.process(imageData: data, text: nil)
         return .result(dialog: "\(r.entries.isEmpty ? r.message + " [" + got + "]" : r.message)")
+    }
+}
+
+/// For a copied picture or message: no Shortcut wiring needed, it reads the clipboard
+struct SendClipboardToDailySummaryIntent: AppIntent {
+    static var title: LocalizedStringResource = "Send Clipboard to Daily Summary"
+    static var description = IntentDescription(
+        "Reads the picture or text on the clipboard and adds the class change, assignment or quiz in it to Daily summary.",
+        categoryName: "Daily summary")
+    static var openAppWhenRun = false
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        var data: Data?
+        var text: String?
+        if let img = UIPasteboard.general.image { data = img.pngData() }
+        else if let s = UIPasteboard.general.string { text = s }
+        let r = await DailyCapture.process(imageData: data, text: text)
+        return .result(dialog: "\(r.message)")
     }
 }
 
@@ -236,5 +250,8 @@ struct iTaleemShortcuts: AppShortcutsProvider {
         AppShortcut(intent: SendToDailySummaryIntent(),
                     phrases: ["Send to \(.applicationName) Daily Summary", "Add to \(.applicationName) Daily Summary"],
                     shortTitle: "Send to Daily Summary", systemImageName: "tray.and.arrow.down")
+        AppShortcut(intent: SendClipboardToDailySummaryIntent(),
+                    phrases: ["Send clipboard to \(.applicationName) Daily Summary"],
+                    shortTitle: "Send Clipboard", systemImageName: "doc.on.clipboard")
     }
 }
