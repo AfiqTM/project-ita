@@ -43,6 +43,15 @@ enum DailyTool: String, CaseIterable, Identifiable {
     }
 }
 
+/// The tool's icon. "todo.book" is not an SF Symbol (it is drawn, see TodoBookIcon), so Image(systemName:) shows nothing for it
+private struct DailyToolIcon: View {
+    let tool: DailyTool
+    var size: CGFloat = 16
+    var body: some View {
+        if tool.icon == "todo.book" { TodoBookIcon(size: size) } else { Image(systemName: tool.icon) }
+    }
+}
+
 @MainActor
 final class DailyToolStore: ObservableObject {
     static let shared = DailyToolStore()
@@ -140,7 +149,7 @@ private struct DailyToolTile: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top) {
-                Image(systemName: tool.icon)
+                DailyToolIcon(tool: tool, size: 18)
                     .font(Theme.font(.subheadline).weight(.semibold)).foregroundColor(Theme.accent)
                     .frame(width: 32, height: 32).background(Theme.accent.opacity(0.16)).clipShape(Circle())
                 Spacer(minLength: 0)
@@ -178,7 +187,7 @@ private struct DailyToolPicker: View {
                             dismiss()
                         } label: {
                             HStack(spacing: 14) {
-                                Image(systemName: t.icon).font(Theme.font(.body)).foregroundColor(Theme.accent).frame(width: 26)
+                                DailyToolIcon(tool: t, size: 22).font(Theme.font(.body)).foregroundColor(Theme.accent).frame(width: 26)
                                 Text(t.fullTitle).foregroundColor(Theme.txt)
                                 Spacer()
                                 if store.slots[slot] == t {
