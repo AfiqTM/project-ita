@@ -135,6 +135,7 @@ struct DailyInfoView: View {
     @State private var showPhotos = false
     @State private var reading = false
     @State private var readResult: String?
+    @State private var fading: Set<String> = []     // rows (or restores) that are fading out, just before they leave the list
 
     private var visible: [DailyEntry] {
         store.entries.filter { e in
@@ -175,15 +176,19 @@ struct DailyInfoView: View {
                         VStack(spacing: 0) {
                             ForEach(g.items) { e in
                                 DailyRow(entry: e, isNew: highlight.contains(e.id))
+                                    .opacity(fading.contains(e.id) ? 0 : 1)
                                     .onTapGesture { editing = e }
                                     .contextMenu { menu(e) }
-                                    .transition(.asymmetric(insertion: .opacity,
-                                                            removal: .opacity.combined(with: .move(edge: .leading))))
+                                    // it is already invisible when it leaves (see fadeOut), so nothing is left to draw
+                                    // over the rows that move up into its place
+                                    .transition(.asymmetric(insertion: .opacity, removal: .identity))
                             }
                         }
                         .glowCard(radius: 12)
                     }
-                    .transition(.opacity)
+                    // the last entry of a day takes the day's heading and card with it
+                    .opacity(g.items.allSatisfy { fading.contains($0.id) } ? 0 : 1)
+                    .transition(.asymmetric(insertion: .opacity, removal: .identity))
                 }
                 if visible.isEmpty { emptyState.transition(.opacity) }
                 Spacer(minLength: 110)
@@ -306,21 +311,28 @@ struct DailyInfoView: View {
         .buttonStyle(.plain)
     }
 
+    /// Remove / restore in two steps: wait for the context menu to close, fade the row out where it stands, and only then
+    /// take it out of the list so the rows below slide up. Removing it while it is still visible left its text drawn
+    /// over the row that moved into its place.
+    private func fadeOut(_ id: String, then change: @escaping () -> Void) {
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 420_000_000)
+            withAnimation(.easeOut(duration: 0.2)) { fading.insert(id) }
+            try? await Task.sleep(nanoseconds: 220_000_000)
+            withAnimation(.snappy(duration: 0.3)) { change() }
+            fading.remove(id)
+        }
+    }
+
     @ViewBuilder private func menu(_ e: DailyEntry) -> some View {
         Button { editing = e } label: { Label("Edit", systemImage: "pencil") }
         if e.hidden == true {
             Button {
-                Task { @MainActor in
-                    try? await Task.sleep(nanoseconds: 420_000_000)
-                    withAnimation(.snappy) { store.unhide(e.id) }
-                }
+                fadeOut(e.id) { store.unhide(e.id) }
             } label: { Label("Restore", systemImage: "arrow.uturn.backward") }
         } else {
             Button(role: .destructive) {
-                Task { @MainActor in
-                    try? await Task.sleep(nanoseconds: 420_000_000)
-                    withAnimation(.snappy) { store.remove(e.id) }
-                }
+                fadeOut(e.id) { store.remove(e.id) }
             } label: {
                 Label(e.source == .manual ? "Delete" : "Remove", systemImage: "trash")
             }
