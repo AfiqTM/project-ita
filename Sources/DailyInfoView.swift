@@ -68,16 +68,14 @@ struct CoursesHome: View {
             .tabViewStyle(.page(indexDisplayMode: .never))
             .noBottomEdgeEffect()
             .ignoresSafeArea(.container, edges: [.top, .bottom])
-            // pinned to the full screen: hiding the tab bar changes the bottom safe area, and without a fixed size the pages
-            // were re-laid out (page jumps up, then settles back) while the bar slid away or came back
+            // pinned to the full screen so the pages never change size
             .frame(width: geo.size.width, height: geo.size.height)
             // Apply hidden toolbars to the ROOT container to prevent SwiftUI transition ghosting
             .toolbar(.hidden, for: .navigationBar)
-            // The tab bar slides away when Daily summary is the open page and comes back on My courses: one animation per page
-            // change, done by SwiftUI itself (moving the UIKit bar by hand fought with the system and flickered). It only
-            // applies to this tab, so no other tab can lose its bar.
-            .toolbar(page == 0 ? Visibility.hidden : Visibility.visible, for: .tabBar)
-            .animation(.easeInOut(duration: 0.28), value: page)
+            // The tab bar slides away on Daily summary and comes back on My courses. It is only moved (transform + fade),
+            // never hidden through .toolbar(.hidden, for: .tabBar): hiding makes SwiftUI / UIKit re-lay out the safe areas
+            // under the pages, which was the jump (page shoots up, then settles back). Moving it changes no layout at all.
+            .background(TabBarSlider(hidden: page == 0))
             .background(Theme.bg.ignoresSafeArea())
             .overlay(alignment: .top) {
                 LinearGradient(colors: [Theme.bg.opacity(0.92), Theme.bg.opacity(0)], startPoint: .top, endPoint: .bottom)
@@ -596,5 +594,57 @@ struct DailyEditSheet: View {
         e.notes = n.isEmpty ? nil : n
         if existing == nil { DailyInfoStore.shared.add(e) } else { DailyInfoStore.shared.update(e) }
         dismiss()
+    }
+}
+
+
+// MARK: - Slide the tab bar away without touching the layout
+
+/// Moves the tab bar off the bottom of the screen (and fades it) with a transform, so no safe area changes
+struct TabBarSlider: UIViewControllerRepresentable {
+    var hidden: Bool
+
+    func makeUIViewController(context: Context) -> Holder { Holder() }
+    func updateUIViewController(_ vc: Holder, context: Context) { vc.set(hidden: hidden) }
+
+    final class Holder: UIViewController {
+        private var wantHidden = false
+        private var onScreen = false
+
+        func set(hidden: Bool) {
+            guard hidden != wantHidden else { return }
+            wantHidden = hidden
+            apply(animated: onScreen)
+        }
+
+        private func apply(animated: Bool) {
+            guard let bar = tabBarController?.tabBar else { return }
+            let distance = bar.frame.height + (bar.window?.safeAreaInsets.bottom ?? 0) + 48
+            let change = {
+                bar.transform = self.wantHidden ? CGAffineTransform(translationX: 0, y: distance) : .identity
+                bar.alpha = self.wantHidden ? 0 : 1
+            }
+            if animated {
+                UIView.animate(withDuration: 0.28, delay: 0, options: [.curveEaseInOut, .beginFromCurrentState, .allowUserInteraction], animations: change)
+            } else { change() }
+            bar.isUserInteractionEnabled = !wantHidden
+        }
+
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            onScreen = true
+            apply(animated: false)
+        }
+
+        override func viewWillDisappear(_ animated: Bool) {
+            super.viewWillDisappear(animated)
+            onScreen = false
+            // another tab or a pushed screen: the bar must be normal there
+            if let bar = tabBarController?.tabBar {
+                bar.transform = .identity
+                bar.alpha = 1
+                bar.isUserInteractionEnabled = true
+            }
+        }
     }
 }
