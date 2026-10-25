@@ -235,6 +235,7 @@ private struct PagerTabBarLink: UIViewRepresentable {
             link = nil
             lastTimestamp = nil
             write(1)
+            unwatch()
         }
 
         func windowChanged() {
@@ -269,6 +270,7 @@ private struct PagerTabBarLink: UIViewRepresentable {
             link = nil
             lastTimestamp = nil
             if restoreBar { progress = 1; target = 1; write(1) }
+            unwatch()
         }
 
         private func syncFromScroll() {
@@ -362,6 +364,9 @@ private struct PagerTabBarLink: UIViewRepresentable {
             let alpha: CGFloat = clamped < 0.01 ? 0 : 1
             let interactive = clamped > 0.99
 
+            desiredTY = ty
+            desiredAlpha = alpha
+            watch(allBars)
             for bar in allBars {
                 if abs(bar.transform.ty - ty) > 0.01 || bar.transform.tx != 0 {
                     bar.transform = transform
@@ -370,6 +375,50 @@ private struct PagerTabBarLink: UIViewRepresentable {
                 if bar.isUserInteractionEnabled != interactive { bar.isUserInteractionEnabled = interactive }
                 bar.accessibilityElementsHidden = clamped < 0.5
             }
+        }
+
+        // UIKit / SwiftUI reset the bar's transform and alpha whenever the page state changes (at the halfway point of a swipe,
+        // and again when it settles). That made the bar pop back in. So the values we want are remembered and put back at once,
+        // inside the same pass, whenever something else changes them.
+        private var desiredTY: CGFloat = 0
+        private var desiredAlpha: CGFloat = 1
+        private var enforcing = false
+        private var watched: [ObjectIdentifier] = []
+        private var watchers: [NSKeyValueObservation] = []
+
+        private func watch(_ bars: [UITabBar]) {
+            let ids = bars.map { ObjectIdentifier($0) }
+            guard ids != watched else { return }
+            unwatch()
+            watched = ids
+            for bar in bars {
+                watchers.append(bar.layer.observe(\.opacity, options: [.new]) { [weak self, weak bar] _, _ in
+                    if let bar { self?.enforce(bar) }
+                })
+                watchers.append(bar.layer.observe(\.transform, options: [.new]) { [weak self, weak bar] _, _ in
+                    if let bar { self?.enforce(bar) }
+                })
+                watchers.append(bar.layer.observe(\.isHidden, options: [.new]) { [weak self, weak bar] _, _ in
+                    if let bar { self?.enforce(bar) }
+                })
+            }
+        }
+
+        private func unwatch() {
+            watchers.forEach { $0.invalidate() }
+            watchers = []
+            watched = []
+        }
+
+        private func enforce(_ bar: UITabBar) {
+            guard active, !enforcing else { return }
+            enforcing = true
+            defer { enforcing = false }
+            if abs(bar.transform.ty - desiredTY) > 0.01 || bar.transform.tx != 0 {
+                bar.transform = desiredTY == 0 ? .identity : CGAffineTransform(translationX: 0, y: desiredTY)
+            }
+            if bar.alpha != desiredAlpha { bar.alpha = desiredAlpha }
+            if bar.isHidden { bar.isHidden = false }
         }
 
         private static func findPagingScrollView(from view: UIView) -> UIScrollView? {
