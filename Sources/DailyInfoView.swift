@@ -175,7 +175,6 @@ struct DailyInfoView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 header
-                    .padding(.bottom, 4)      // a little room under the title
                 DailyToolsRow()
                 filters
                 if let n = store.scanNote {
@@ -248,7 +247,11 @@ struct DailyInfoView: View {
 
     private var header: some View {
         HStack(spacing: 12) {
-            Text("Daily summary").font(Theme.font(.largeTitle).weight(.bold)).foregroundColor(Theme.txt)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Daily summary").font(Theme.font(.largeTitle).weight(.bold)).foregroundColor(Theme.txt)
+                Text("Class changes and notices")
+                    .font(Theme.font(.footnote)).foregroundColor(Theme.muted)
+            }
             Spacer()
             if store.scanning || reading { ProgressView().tint(Theme.accent) }
             else {
