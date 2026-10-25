@@ -1,6 +1,7 @@
 import SwiftUI
 import UIKit
 import Vision
+import ImageIO
 import AppIntents
 
 // MARK: - Send a screenshot to Daily summary
@@ -25,13 +26,21 @@ enum DailyCapture {
     static func recognizeText(data: Data) async -> String {
         await withCheckedContinuation { (cont: CheckedContinuation<String, Never>) in
             DispatchQueue.global(qos: .userInitiated).async {
-                let req = VNRecognizeTextRequest()
-                req.recognitionLevel = .accurate
-                req.usesLanguageCorrection = true
-                let handler = VNImageRequestHandler(data: data, options: [:])
-                try? handler.perform([req])
-                let lines = (req.results ?? []).compactMap { ($0 as? VNRecognizedTextObservation)?.topCandidates(1).first?.string }
-                cont.resume(returning: lines.joined(separator: "\n"))
+                func run(_ make: () -> VNImageRequestHandler?) -> String {
+                    guard let handler = make() else { return "" }
+                    let req = VNRecognizeTextRequest()
+                    req.recognitionLevel = .accurate
+                    req.usesLanguageCorrection = true
+                    req.usesCPUOnly = true               // a Shortcut may run us in the background, where the GPU is off limits
+                    try? handler.perform([req])
+                    let lines = (req.results ?? []).compactMap { ($0 as? VNRecognizedTextObservation)?.topCandidates(1).first?.string }
+                    return lines.joined(separator: "\n")
+                }
+                var text = run { VNImageRequestHandler(data: data, options: [:]) }
+                if text.isEmpty, let ui = UIImage(data: data), let cg = ui.cgImage {      // a second way in (HEIC, odd colour spaces)
+                    text = run { VNImageRequestHandler(cgImage: cg, orientation: CGImagePropertyOrientation(ui.imageOrientation), options: [:]) }
+                }
+                cont.resume(returning: text)
             }
         }
     }
@@ -107,7 +116,13 @@ enum DailyCapture {
         if let d = imageData { raw = await recognizeText(data: d) }
         let clean = tidy(raw)
         guard clean.count > 5 else {
-            return Outcome(message: "I couldn't find any text to read. Nothing was added.", entries: [])
+            let why: String
+            if imageData == nil && (text ?? "").isEmpty {
+                why = "No screenshot reached the action. In the Shortcut, put Take Screenshot first and make sure Send to Daily Summary's Screenshot field is set to \"Screenshot\"."
+            } else if imageData != nil {
+                why = "I couldn't read any text in that picture."
+            } else { why = "There was no text to read." }
+            return Outcome(message: why + " Nothing was added.", entries: [])
         }
 
         let catalog = CourseCatalog()
@@ -148,6 +163,22 @@ enum DailyCapture {
     }
 }
 
+private extension CGImagePropertyOrientation {
+    init(_ o: UIImage.Orientation) {
+        switch o {
+        case .up: self = .up
+        case .down: self = .down
+        case .left: self = .left
+        case .right: self = .right
+        case .upMirrored: self = .upMirrored
+        case .downMirrored: self = .downMirrored
+        case .leftMirrored: self = .leftMirrored
+        case .rightMirrored: self = .rightMirrored
+        @unknown default: self = .up
+        }
+    }
+}
+
 // MARK: - App Intents (Shortcuts, Back Tap, Siri)
 
 struct SendToDailySummaryIntent: AppIntent {
@@ -165,6 +196,8 @@ struct SendToDailySummaryIntent: AppIntent {
     @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog {
         var data: Data? = screenshot?.data
+        if (data?.isEmpty ?? true), let u = screenshot?.fileURL { data = try? Data(contentsOf: u) }   // some senders only give a file
+        if data?.isEmpty == true { data = nil }
         var text: String?
         if data == nil {                                     // nothing handed over: use what was copied
             if let img = UIPasteboard.general.image { data = img.pngData() }
