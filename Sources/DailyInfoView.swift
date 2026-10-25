@@ -637,9 +637,9 @@ struct DailyEditSheet: View {
 // MARK: - Fade the tab bar with the swipe, without touching the layout
 
 /// Put it as a .background of the Daily summary page inside the pager. It watches where that page really is on screen and
-/// sets the tab bar's opacity from it on every frame of the swipe: fully there on My courses, gone on Daily summary, and
-/// anything in between while the finger (or the settling animation) moves the pages. Before, the bar faded on a timer once
-/// the pages had stopped, which looked like a pop after the slide. Only the alpha changes: no frame, transform or safe area.
+/// fades the tab bar from it on every frame of the swipe: fully there on My courses, gone on Daily summary, and anything in
+/// between while the finger (or the settling animation) moves the pages. Before, the bar faded on a timer once the pages had
+/// stopped, which looked like a pop after the slide. No frame, transform or safe area of the bar is changed.
 struct TabBarFollower: UIViewRepresentable {
     func makeUIView(context: Context) -> ProbeView {
         let v = ProbeView()
@@ -695,30 +695,48 @@ struct TabBarFollower: UIViewRepresentable {
 
         /// 0 = Daily summary is on screen, 1 = My courses is. Measured on the page itself (like CoursePagerProbe), because the
         /// pager's contentOffset is re-centred now and then and can't be trusted as a position.
+        ///
+        /// The bar's own alpha is NOT used: the system tab bar is a glass material, and when its alpha drops the glass is
+        /// dropped by the system part-way through, so the bar looked like it vanished at about half. Instead the bar stays at
+        /// alpha 1 and a veil in the page's background colour is laid over it and faded IN in a straight line: 0 = bar fully
+        /// visible, 1 = bar fully covered. It is covered completely exactly when the Daily page has fully arrived.
         private func follow() {
-            guard window != nil, let bar else { return }
+            guard window != nil, let bar, let host = bar.superview else { return }
             let w = window?.bounds.width ?? bounds.width
             guard w > 0 else { return }
             let x = convert(bounds, to: nil).minX            // 0 when Daily summary fills the screen, -w when it is fully left
-            let p = min(max(-x / w, 0), 1)
-            // Straight line from the page position: the bar is still faintly there until the Daily page has fully arrived and
-            // reaches exactly 0 at that moment (an S-curve left the last stretch looking already gone). Set on every frame,
-            // whether the finger or the pager's own settling animation is moving the pages, so nothing ever jumps.
-            bar.alpha = p
+            let p = min(max(-x / w, 0), 1)                   // 0 = Daily, 1 = My courses
+            let v = veil ?? makeVeil()
+            if v.superview !== host { host.insertSubview(v, aboveSubview: bar) } else { host.bringSubviewToFront(v) }
+            v.frame = bar.frame
+            v.backgroundColor = UIColor(Theme.bg)
+            v.alpha = 1 - p
+            bar.alpha = 1
             bar.isUserInteractionEnabled = p > 0.6
-            // when the pages have stopped for a moment, land exactly on 0 or 1 (guards against a rounding leftover)
+            // when the pages have stopped for a moment, land exactly on fully shown / fully covered
             settle?.cancel()
-            let work = DispatchWorkItem { [weak bar] in
-                guard let bar else { return }
-                let target: CGFloat = p > 0.5 ? 1 : 0
-                if abs(bar.alpha - target) > 0.001 { bar.alpha = target }
-                bar.isUserInteractionEnabled = target > 0.5
+            let work = DispatchWorkItem { [weak self] in
+                guard let self, let v = self.veil, let bar = self.bar else { return }
+                let target: CGFloat = p > 0.5 ? 0 : 1
+                if abs(v.alpha - target) > 0.001 { v.alpha = target }
+                bar.isUserInteractionEnabled = target < 0.5
             }
             settle = work
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
         }
 
+        private var veil: UIView?
+        private func makeVeil() -> UIView {
+            let v = UIView()
+            v.isUserInteractionEnabled = false
+            veil = v
+            return v
+        }
+
         private func restoreBar() {
+            settle?.cancel()
+            veil?.removeFromSuperview()
+            veil = nil
             guard let bar else { return }
             bar.alpha = 1
             bar.isUserInteractionEnabled = true
