@@ -1,0 +1,30 @@
+diff --git a/Sources/DailyInfoView.swift b/Sources/DailyInfoView.swift
+--- a/Sources/DailyInfoView.swift
++++ b/Sources/DailyInfoView.swift
+@@ -708,9 +708,17 @@
+             let p = min(max(-x / w, 0), 1)                   // 0 = Daily, 1 = My courses
+             let v = veil ?? makeVeil()
+             if v.superview !== host { host.insertSubview(v, aboveSubview: bar) } else { host.bringSubviewToFront(v) }
+-            v.frame = bar.frame
++            // cover only the bar's own pill (the union of its visible parts), not the whole strip down to the screen edge,
++            // and not at all while the bar is fully shown: nothing of the veil may stay on My courses
++            let parts = bar.subviews.filter { !$0.isHidden && $0.alpha > 0.01 && $0.frame.width > 1 && $0.frame.height > 1 }
++            let pill = parts.reduce(CGRect.null) { $0.union($1.frame) }
++            let area = pill.isNull ? bar.bounds : pill
++            v.frame = bar.convert(area, to: host).insetBy(dx: -1, dy: -1)
++            v.layer.cornerRadius = v.frame.height / 2
++            v.layer.masksToBounds = true
+             v.backgroundColor = UIColor(Theme.bg)
+             v.alpha = 1 - p
++            v.isHidden = v.alpha < 0.005
+             bar.alpha = 1
+             bar.isUserInteractionEnabled = p > 0.6
+             // when the pages have stopped for a moment, land exactly on fully shown / fully covered
+@@ -719,6 +727,7 @@
+                 guard let self, let v = self.veil, let bar = self.bar else { return }
+                 let target: CGFloat = p > 0.5 ? 0 : 1
+                 if abs(v.alpha - target) > 0.001 { v.alpha = target }
++                v.isHidden = target < 0.5      // fully shown bar: no veil at all
+                 bar.isUserInteractionEnabled = target < 0.5
+             }
+             settle = work
