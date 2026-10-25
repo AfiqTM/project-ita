@@ -5,7 +5,8 @@ import BackgroundTasks
 // Local notifications for:
 //  1. To-dos due in 24 h            (scheduled ahead of time, fire even if the app is closed)
 //  2. Assignments due in < 24 h     (same)
-//  3. New messages / alerts / announcements  (found by polling: every 60 s while the app is open,
+//  3. Classes in Daily summary, 1 h before they start   (scheduled ahead of time, fire even if the app is closed)
+//  4. New messages / alerts / announcements  (found by polling: every 60 s while the app is open,
 //     plus a BGAppRefreshTask in the background, whose timing iOS decides)
 
 @MainActor
@@ -102,6 +103,65 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
         defaults.set(Array(done.suffix(500)), forKey: "due.done")
     }
 
+    // MARK: 3. Daily summary: 1 hour before the class
+
+    private static let dailyPrefix = "daily.class."
+    private var dailyTask: Task<Void, Never>?
+
+    /// One local reminder per Daily summary entry that has a day and a time, 1 hour before the class starts (the new day and
+    /// time for a rescheduled class). Called every time the Daily summary changes, so edits, removals and new announcements
+    /// always leave exactly the right reminders. Entries that are removed, past, or start in less than an hour get none.
+    func scheduleDailyReminders(_ entries: [DailyEntry]) {
+        let now = Date()
+        let cal = Calendar.current
+        struct Item { let id: String; let kind: DailyKind; let course: String; let start: Date; let venue: String? }
+        let items: [Item] = entries.compactMap { e in
+            guard e.hidden != true, !e.kind.isWork, let day = e.relevantDate else { return nil }
+            // a moved class starts at its new time; if only the day was given, it keeps the old time
+            let minutes = (e.newDate != nil ? (e.newStartMin ?? e.startMin) : e.startMin)
+            guard let minutes,
+                  let start = cal.date(bySettingHour: minutes / 60, minute: minutes % 60, second: 0, of: day),
+                  start.addingTimeInterval(-3600) > now else { return nil }
+            return Item(id: e.id, kind: e.kind, course: e.courseName ?? "Class", start: start, venue: e.venue)
+        }
+        dailyTask?.cancel()
+        dailyTask = Task {
+            let center = UNUserNotificationCenter.current()
+            let pending = await center.pendingNotificationRequests()
+            guard !Task.isCancelled else { return }
+            center.removePendingNotificationRequests(
+                withIdentifiers: pending.map(\.identifier).filter { $0.hasPrefix(Self.dailyPrefix) })
+            // iOS keeps at most 64 pending notifications: the 20 soonest classes
+            for it in items.sorted(by: { $0.start < $1.start }).prefix(20) {
+                let time = it.start.formatted(date: .omitted, time: .shortened)
+                let c = UNMutableNotificationContent()
+                switch it.kind {
+                case .cancelled:
+                    c.title = "Class cancelled"
+                    c.body = "\(it.course) · was at \(time). No need to go."
+                case .online:
+                    c.title = "Online class in 1 hour"
+                    c.body = "\(it.course) · \(time)" + (it.venue.map { " · \($0)" } ?? "")
+                case .venue:
+                    c.title = "Class in 1 hour · new venue"
+                    c.body = "\(it.course) · \(time)" + (it.venue.map { " · \($0)" } ?? "")
+                case .rescheduled:
+                    c.title = "Rescheduled class in 1 hour"
+                    c.body = "\(it.course) · \(time)" + (it.venue.map { " · \($0)" } ?? "")
+                default:
+                    c.title = "Class in 1 hour"
+                    c.body = "\(it.course) · \(time)"
+                }
+                c.sound = .default
+                let fire = it.start.addingTimeInterval(-3600).timeIntervalSince(Date())
+                guard fire > 1 else { continue }
+                let req = UNNotificationRequest(identifier: Self.dailyPrefix + it.id, content: c,
+                                                trigger: UNTimeIntervalNotificationTrigger(timeInterval: fire, repeats: false))
+                try? await center.add(req)
+            }
+        }
+    }
+
     // MARK: 1b. Queued offline submission still waiting before its deadline
 
     /// Local reminder (fires even if the app is closed): 1 h before the due time, telling the user to
@@ -137,7 +197,7 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
         center.removeDeliveredNotifications(withIdentifiers: ids)
     }
 
-    // MARK: 3. New messages / alerts / announcements
+    // MARK: 4. New messages / alerts / announcements
 
     func checkIncoming(uid: Int) async {
         guard uid > 0, !checking else { return }

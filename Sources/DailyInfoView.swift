@@ -58,6 +58,8 @@ struct CoursesHome: View {
                 DailyInfoView()
                     .safeAreaInset(edge: .top, spacing: 0) { Color.clear.frame(height: top) }
                     .ignoresSafeArea(.container, edges: [.top, .bottom])
+                    // the tab bar follows the swipe (see TabBarFollower), so it fades together with the pages
+                    .background(TabBarFollower())
                     .tag(0)
                 CoursesView()
                     .safeAreaInset(edge: .top, spacing: 0) { Color.clear.frame(height: top) }
@@ -72,11 +74,10 @@ struct CoursesHome: View {
             .frame(width: geo.size.width, height: geo.size.height)
             // Apply hidden toolbars to the ROOT container to prevent SwiftUI transition ghosting
             .toolbar(.hidden, for: .navigationBar)
-            // The tab bar fades away on Daily summary and comes back on My courses. Only its opacity changes: hiding it through
-            // .toolbar(.hidden, for: .tabBar) re-laid out the safe areas under the pages (the page jumped), and moving it with a
-            // transform made it jump up before it faded (UIKit sets the bar's frame on every layout pass, which is undefined
-            // while a transform is set). A fade touches neither.
-            .background(TabBarSlider(hidden: page == 0))
+            // The tab bar fades away on Daily summary and comes back on My courses, in step with the finger (TabBarFollower).
+            // Only its opacity changes: hiding it through .toolbar(.hidden, for: .tabBar) re-laid out the safe areas under the
+            // pages (the page jumped), and moving it with a transform made it jump up before it faded (UIKit sets the bar's
+            // frame on every layout pass, which is undefined while a transform is set). A fade touches neither.
             .background(Theme.bg.ignoresSafeArea())
             .overlay(alignment: .top) {
                 LinearGradient(colors: [Theme.bg.opacity(0.92), Theme.bg.opacity(0)], startPoint: .top, endPoint: .bottom)
@@ -240,7 +241,7 @@ struct DailyInfoView: View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Daily summary").font(Theme.font(.largeTitle).weight(.bold)).foregroundColor(Theme.txt)
-                Text("Class changes, assignments and quizzes")
+                Text("Class changes and notices")
                     .font(Theme.font(.footnote)).foregroundColor(Theme.muted)
             }
             Spacer()
@@ -267,7 +268,7 @@ struct DailyInfoView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     pill("All", icon: nil, on: kindFilter == nil) { kindFilter = nil }
-                    ForEach(DailyKind.allCases) { k in
+                    ForEach(DailyKind.shown) { k in
                         pill(k.title, icon: k.icon, on: kindFilter == k) { kindFilter = (kindFilter == k ? nil : k) }
                     }
                 }
@@ -363,7 +364,7 @@ struct DailyInfoView: View {
             Image(systemName: "calendar.badge.checkmark").font(Theme.font(.largeTitle)).foregroundColor(Theme.accent)
             Text(showRemoved ? "Nothing removed" : (showPast ? "Nothing in the past" : "Nothing coming up"))
                 .fontWeight(.semibold).foregroundColor(Theme.txt)
-            Text("Cancelled, online or moved classes, assignments and quizzes found in your announcements show up here. Send a screenshot with Back Tap, or tap + to add your own.")
+            Text("Cancelled, online or moved classes found in your announcements show up here. You get a reminder 1 hour before each class that has a time. Send a screenshot with Back Tap, or tap + to add your own.")
                 .font(Theme.font(.footnote)).foregroundColor(Theme.muted).multilineTextAlignment(.center)
         }
         .padding(.vertical, 40).frame(maxWidth: .infinity)
@@ -378,13 +379,13 @@ struct DailyRow: View {
 
     private var when: String? {
         var parts: [String] = []
-        if let nd = entry.newDate, entry.kind == .rescheduled || entry.kind.isWork {
+        if let nd = entry.newDate, entry.kind == .rescheduled {
             if let cd = entry.classDate {
                 parts.append("From \(dayText(cd))" + (clockText(entry.startMin).map { " \($0)" } ?? ""))
             }
             parts.append("To \(dayText(nd))" + (clockText(entry.newStartMin).map { " \($0)" } ?? ""))
         } else if let cd = entry.classDate {
-            parts.append((entry.kind == .assignment ? "Due " : "") + dayText(cd) + (clockText(entry.startMin).map { " · \($0)" } ?? ""))
+            parts.append(dayText(cd) + (clockText(entry.startMin).map { " · \($0)" } ?? ""))
         } else if let t = clockText(entry.startMin) {
             parts.append(t)
         }
@@ -461,7 +462,8 @@ struct DailyEditSheet: View {
     init(existing: DailyEntry? = nil) {
         self.existing = existing
         let base = Calendar.current.startOfDay(for: Date())
-        _kind = State(initialValue: existing?.kind ?? .cancelled)
+        let startKind: DailyKind = (existing?.kind.isWork == false) ? (existing?.kind ?? .cancelled) : .cancelled
+        _kind = State(initialValue: startKind)
         _courseId = State(initialValue: existing?.courseId)
         _summary = State(initialValue: existing?.summary ?? "")
         _notes = State(initialValue: existing?.notes ?? "")
@@ -489,23 +491,23 @@ struct DailyEditSheet: View {
                 VStack(alignment: .leading, spacing: 18) {
                     label("Type")
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-                        ForEach(DailyKind.allCases) { chip($0) }
+                        ForEach(DailyKind.shown) { chip($0) }
                     }
 
                     label("Subject")
                     subjectMenu
 
-                    label(kind == .rescheduled ? "Original class" : (kind == .assignment ? "Due on" : (kind == .quiz ? "Held on" : "Class on")))
+                    label(kind == .rescheduled ? "Original class" : "Class on")
                     dateRow(on: $hasDate, date: $classDate, optionalLabel: "Set date")
                     timeRow(on: $hasTime, time: $time, optionalLabel: "Set time")
 
-                    if kind == .rescheduled || kind.isWork {
-                        label(kind.isWork ? "New date (only if it changed)" : "Moved to")
+                    if kind == .rescheduled {
+                        label("Moved to")
                         dateRow(on: $hasNewDate, date: $newDate, optionalLabel: "Set new date")
                         timeRow(on: $hasNewTime, time: $newTime, optionalLabel: "Set new time")
                     }
 
-                    if kind == .venue || kind == .online || kind == .rescheduled || kind == .quiz {
+                    if kind == .venue || kind == .online || kind == .rescheduled {
                         label(kind == .online ? "Platform / link (optional)" : "Room / venue (optional)")
                         TextField("", text: $venue,
                                   prompt: Text(kind == .online ? "e.g. Zoom, Google Meet" : "e.g. Room 3.12, KICT")
@@ -513,9 +515,9 @@ struct DailyEditSheet: View {
                             .foregroundColor(Theme.txt).focused($focus).dailyBox(focused: focus)
                     }
 
-                    label(kind.isWork ? "Details" : "What changed")
+                    label("What changed")
                     TextField("", text: $summary,
-                              prompt: Text("e.g. Lecture cancelled, or Assignment 2 due Friday").foregroundColor(Theme.muted.opacity(0.6)),
+                              prompt: Text("e.g. Lecture cancelled, or moved to Room 3.12").foregroundColor(Theme.muted.opacity(0.6)),
                               axis: .vertical)
                         .lineLimit(2...5).foregroundColor(Theme.txt).dailyBox()
 
@@ -613,7 +615,7 @@ struct DailyEditSheet: View {
         let n = notes.trimmingCharacters(in: .whitespacesAndNewlines)
         let v = venue.trimmingCharacters(in: .whitespacesAndNewlines)
         let cd = hasDate ? cal.startOfDay(for: classDate) : nil
-        let nd = ((kind == .rescheduled || kind.isWork) && hasNewDate) ? cal.startOfDay(for: newDate) : nil
+        let nd = (kind == .rescheduled && hasNewDate) ? cal.startOfDay(for: newDate) : nil
         var e = existing ?? DailyEntry(
             id: "m" + UUID().uuidString, kind: kind, courseId: nil, courseName: nil, summary: "",
             classDate: nil, startMin: nil, newDate: nil, newStartMin: nil, venue: nil, notes: nil,
@@ -626,8 +628,8 @@ struct DailyEditSheet: View {
         e.classDate = cd
         e.startMin = hasTime ? dateToMinutes(time) : nil
         e.newDate = nd
-        e.newStartMin = ((kind == .rescheduled || kind.isWork) && hasNewTime) ? dateToMinutes(newTime) : nil
-        e.venue = (kind == .venue || kind == .online || kind == .rescheduled || kind == .quiz) && !v.isEmpty ? v : nil
+        e.newStartMin = (kind == .rescheduled && hasNewTime) ? dateToMinutes(newTime) : nil
+        e.venue = (kind == .venue || kind == .online || kind == .rescheduled) && !v.isEmpty ? v : nil
         e.notes = n.isEmpty ? nil : n
         if existing == nil { DailyInfoStore.shared.add(e) } else { DailyInfoStore.shared.update(e) }
         dismiss()
@@ -635,48 +637,81 @@ struct DailyEditSheet: View {
 }
 
 
-// MARK: - Fade the tab bar away without touching the layout
+// MARK: - Fade the tab bar with the swipe, without touching the layout
 
-/// Fades the tab bar out (and stops it taking touches); no frame, transform or safe area is changed
-struct TabBarSlider: UIViewControllerRepresentable {
-    var hidden: Bool
+/// Put it as a .background of the Daily summary page inside the pager. It watches where that page really is on screen and
+/// sets the tab bar's opacity from it on every frame of the swipe: fully there on My courses, gone on Daily summary, and
+/// anything in between while the finger (or the settling animation) moves the pages. Before, the bar faded on a timer once
+/// the pages had stopped, which looked like a pop after the slide. Only the alpha changes: no frame, transform or safe area.
+struct TabBarFollower: UIViewRepresentable {
+    func makeUIView(context: Context) -> ProbeView {
+        let v = ProbeView()
+        v.isUserInteractionEnabled = false
+        v.backgroundColor = .clear
+        return v
+    }
 
-    func makeUIViewController(context: Context) -> Holder { Holder() }
-    func updateUIViewController(_ vc: Holder, context: Context) { vc.set(hidden: hidden) }
+    func updateUIView(_ v: ProbeView, context: Context) { v.attachIfNeeded() }
 
-    final class Holder: UIViewController {
-        private var wantHidden = false
-        private var onScreen = false
+    final class ProbeView: UIView {
+        private var observation: NSKeyValueObservation?
+        private weak var scroll: UIScrollView?
+        private weak var bar: UITabBar?
 
-        func set(hidden: Bool) {
-            guard hidden != wantHidden else { return }
-            wantHidden = hidden
-            apply(animated: onScreen)
-        }
-
-        private func apply(animated: Bool) {
-            guard let bar = tabBarController?.tabBar else { return }
-            let change = { bar.alpha = self.wantHidden ? 0 : 1 }
-            if animated {
-                UIView.animate(withDuration: 0.22, delay: 0, options: [.curveEaseInOut, .beginFromCurrentState, .allowUserInteraction], animations: change)
-            } else { change() }
-            bar.isUserInteractionEnabled = !wantHidden
-        }
-
-        override func viewDidAppear(_ animated: Bool) {
-            super.viewDidAppear(animated)
-            onScreen = true
-            apply(animated: false)
-        }
-
-        override func viewWillDisappear(_ animated: Bool) {
-            super.viewWillDisappear(animated)
-            onScreen = false
-            // another tab or a pushed screen: the bar must be normal there
-            if let bar = tabBarController?.tabBar {
-                bar.alpha = 1
-                bar.isUserInteractionEnabled = true
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            if window == nil {
+                // another tab or a pushed screen: the bar must be normal there
+                observation = nil
+                scroll = nil
+                restoreBar()
+            } else {
+                attachIfNeeded()
+                // the pager may not be in place yet during the first layout pass
+                DispatchQueue.main.async { [weak self] in self?.attachIfNeeded() }
             }
+        }
+
+        func attachIfNeeded() {
+            guard window != nil else { return }
+            if bar == nil { bar = findTabBar() }
+            guard observation == nil || scroll == nil else { return }
+            var view: UIView? = superview
+            while let v = view, !((v as? UIScrollView)?.isPagingEnabled ?? false) { view = v.superview }
+            guard let sv = view as? UIScrollView else { return }
+            scroll = sv
+            observation = sv.observe(\.contentOffset, options: [.new]) { [weak self] _, _ in
+                self?.follow()
+            }
+            follow()
+        }
+
+        private func findTabBar() -> UITabBar? {
+            var r: UIResponder? = self
+            while let n = r?.next {
+                if let vc = n as? UIViewController, let tbc = vc.tabBarController { return tbc.tabBar }
+                r = n
+            }
+            return nil
+        }
+
+        /// 0 = Daily summary is on screen, 1 = My courses is. Measured on the page itself (like CoursePagerProbe), because the
+        /// pager's contentOffset is re-centred now and then and can't be trusted as a position.
+        private func follow() {
+            guard window != nil, let bar else { return }
+            let w = window?.bounds.width ?? bounds.width
+            guard w > 0 else { return }
+            let x = convert(bounds, to: nil).minX            // 0 when Daily summary fills the screen, -w when it is fully left
+            let p = min(max(-x / w, 0), 1)
+            let eased = p * p * (3 - 2 * p)                    // smoothstep: eases in and out with the finger
+            bar.alpha = eased
+            bar.isUserInteractionEnabled = eased > 0.6
+        }
+
+        private func restoreBar() {
+            guard let bar else { return }
+            bar.alpha = 1
+            bar.isUserInteractionEnabled = true
         }
     }
 }

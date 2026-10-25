@@ -8,7 +8,7 @@ import AppIntents
 // MARK: - Send a screenshot to Daily summary
 //
 // The screenshot is read on the phone (Vision text recognition), then the same readers as for announcements look at it:
-// the AI server when it is set up, the built-in keyword reader otherwise. Class changes, assignments and quizzes become
+// the AI server when it is set up, the built-in keyword reader otherwise. Class changes become
 // entries in Daily summary; the subject is found from the text (name, course code or short form such as DES / SE).
 // Anything the readers can't place is still saved as a Notice with the text, so a screenshot is never lost.
 //
@@ -208,7 +208,7 @@ private extension CGImagePropertyOrientation {
 struct SendToDailySummaryIntent: AppIntent {
     static var title: LocalizedStringResource = "Send to Daily Summary"
     static var description = IntentDescription(
-        "Reads a screenshot and adds the class change, assignment or quiz in it to Daily summary.",
+        "Reads a screenshot and adds the class change in it to Daily summary.",
         categoryName: "Daily summary")
     static var openAppWhenRun = false
 
@@ -235,7 +235,7 @@ struct SendToDailySummaryIntent: AppIntent {
 struct SendClipboardToDailySummaryIntent: AppIntent {
     static var title: LocalizedStringResource = "Send Clipboard to Daily Summary"
     static var description = IntentDescription(
-        "Reads the picture or text on the clipboard and adds the class change, assignment or quiz in it to Daily summary.",
+        "Reads the picture or text on the clipboard and adds the class change in it to Daily summary.",
         categoryName: "Daily summary")
     static var openAppWhenRun = false
 
@@ -252,7 +252,7 @@ struct SendClipboardToDailySummaryIntent: AppIntent {
 
 struct SendTextToDailySummaryIntent: AppIntent {
     static var title: LocalizedStringResource = "Send Text to Daily Summary"
-    static var description = IntentDescription("Reads a message (for example a copied WhatsApp text) and adds the class change, assignment or quiz in it to Daily summary.",
+    static var description = IntentDescription("Reads a message (for example a copied WhatsApp text) and adds the class change in it to Daily summary.",
                                                categoryName: "Daily summary")
     static var openAppWhenRun = false
 

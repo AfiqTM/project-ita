@@ -27,8 +27,11 @@ enum DailyKind: String, Codable, CaseIterable, Identifiable {
         case .note: return "Notice"
         }
     }
-    /// Assignments and quizzes are about a date (the due day / the quiz day), not about a class that meets
+    /// Assignments and quizzes no longer belong in Daily summary (they have their own places: Tasks, the course page).
+    /// The cases stay only so that old saved data still decodes; nothing creates or shows them any more.
     var isWork: Bool { self == .assignment || self == .quiz }
+    /// The kinds Daily summary offers (filter row, Add / Edit)
+    static var shown: [DailyKind] { allCases.filter { !$0.isWork } }
     var icon: String {
         switch self {
         case .cancelled: return "xmark.circle"
@@ -132,14 +135,14 @@ final class DailyInfoStore: ObservableObject {
         var lastScan: Date?
         var version: Int?
     }
-    private static let version = 2          // 2: assignments and quizzes are read too
+    private static let version = 3          // 3: assignments and quizzes are no longer part of Daily summary
 
     /// Adds what was read from a screenshot (Back Tap / the photo picker): one entry per change found
     @discardableResult
     func addCaptured(_ drafts: [DailyDraft], course: Course?, text: String) -> [DailyEntry] {
         let now = Date()
         var added: [DailyEntry] = []
-        for d in drafts {
+        for d in drafts where !d.kind.isWork {
             // the same thing sent twice (two screenshots of one announcement, or its reminder) is kept once
             if let same = entries.first(where: {
                 $0.hidden != true && $0.kind == d.kind && $0.courseId == course?.id
@@ -164,16 +167,18 @@ final class DailyInfoStore: ObservableObject {
     private init() {
         if let d = UserDefaults.standard.data(forKey: Self.key),
            let s = try? JSONDecoder().decode(Saved.self, from: d) {
-            entries = s.entries
+            entries = s.entries.filter { !$0.kind.isWork }      // assignments / quizzes saved by an older version
             seen = Set(s.seen)
             processed = (s.version ?? 1) < Self.version ? [:] : s.processed   // read the announcements again for the new kinds
             lastScan = (s.version ?? 1) < Self.version ? nil : s.lastScan
+            NotificationManager.shared.scheduleDailyReminders(entries)
         }
     }
 
     private func save() {
         let s = Saved(entries: entries, seen: Array(seen), processed: processed, lastScan: lastScan, version: Self.version)
         if let d = try? JSONEncoder().encode(s) { UserDefaults.standard.set(d, forKey: Self.key) }
+        NotificationManager.shared.scheduleDailyReminders(entries)    // a reminder 1 h before each class
     }
 
     /// Detected changes that are still ahead and not looked at yet (dot next to the greeting on My courses)
@@ -223,6 +228,7 @@ final class DailyInfoStore: ObservableObject {
     func clear() {
         entries = []; seen = []; processed = [:]; lastScan = nil; scanNote = nil
         UserDefaults.standard.removeObject(forKey: Self.key)
+        NotificationManager.shared.scheduleDailyReminders([])
     }
 
     // MARK: scan
@@ -319,7 +325,7 @@ final class DailyInfoStore: ObservableObject {
             if e.discussionId == did && e.source == .announcement && e.edited != true && e.hidden != true { continue }
             keep.append(e)
         }
-        for d in drafts {
+        for d in drafts where !d.kind.isWork {
             let id = DailyEntry.makeID(discussion: did, kind: d.kind, day: d.classDate ?? d.newDate)
             if keep.contains(where: { $0.id == id }) { continue }
             keep.append(DailyEntry(
@@ -410,7 +416,7 @@ enum DailyInfoAI {
     }
 
     private static func draft(_ o: Out, posted: Date) -> DailyDraft? {
-        guard let k = o.kind, let kind = DailyKind(rawValue: k) else { return nil }
+        guard let k = o.kind, let kind = DailyKind(rawValue: k), !kind.isWork else { return nil }
         let df = formatter("yyyy-MM-dd")
         let cal = Calendar.current
         // a date far from the announcement is almost certainly a misreading: drop it
@@ -445,7 +451,7 @@ enum DailyInfoAI {
 // "tomorrow" are worked out from the day the announcement was posted.
 
 enum DailyRules {
-    private static let classWords = #"\b(class|classes|lecture|lectures|tutorial|tutorials|tut|lab|labs|session|sessions|kelas|kuliah|makmal|test|quiz|exam|midterm|presentation|meeting|slot)\b"#
+    private static let classWords = #"\b(class|classes|lecture|lectures|tutorial|tutorials|tut|lab|labs|session|sessions|kelas|kuliah|makmal|meeting|slot)\b"#
     private static let cancelWords = #"cancel|no class|no lecture|no tutorial|no lab|will not be held|won't be held|not be conducted|\bis off\b|\bare off\b|dibatal|tiada kelas|tiada kuliah|ditiadakan"#
     private static let reschedWords = #"reschedul|postpone|brought forward|put forward|moved to|shifted to|moved from|replacement|make[- ]?up|\bganti|ditunda|ditangguh|dijadualkan semula|dipindahkan ke|change of (date|time)|new (date|time)"#
     private static let onlineWords = #"\bonline\b|\bzoom\b|google meet|\bgmeet\b|microsoft teams|ms teams|\bwebex\b|\bvirtual\b|atas talian|dalam talian|secara maya"#
@@ -459,11 +465,6 @@ enum DailyRules {
     private static let weekdayNumber: [String: Int] = ["mon": 2, "isn": 2, "tue": 3, "sel": 3, "wed": 4, "rab": 4,
         "thu": 5, "kha": 5, "fri": 6, "jum": 6, "sat": 7, "sab": 7, "sun": 1, "aha": 1]
 
-    private static let assignWords = #"\b(assignment|assignments|assgn|project|report|homework|tugasan|projek|laporan|submission|submit|hantar|lab report|case study)\b"#
-    private static let dueWords = #"\bdue\b|deadline|submit|submission|hantar|tarikh akhir|extended|extension|dilanjutkan|closes?\b|closing|by (?:\d|mon|tue|wed|thu|fri|sat|sun|tomorrow|midnight)"#
-    private static let workWords = #"\b(quiz|quizzes|test|exam|examination|midterm|mid-term|final exam|kuiz|ujian|peperiksaan|presentation|viva)\b"#
-    private static let whenWords = #"\b(on|at|will be|is on|scheduled|held|date|akan|pada|during)\b|\d{1,2}[:.]\d{2}|\d{1,2}\s?(am|pm)\b"#
-    private static let extendWords = #"extended|extension|dilanjutkan|postpone|moved to|new deadline|pushed|changed to|brought forward|ditunda|ditangguh"#
 
     // MARK: entry point
 
@@ -475,20 +476,6 @@ enum DailyRules {
         for s in sentences(whole) {
             guard let (kind, venue) = detect(s) else { continue }
             var ds = dates(in: s, ref: posted)
-            if kind.isWork {
-                // an assignment / quiz notice is only useful with a day; the day must be in the sentence itself
-                guard !ds.isEmpty else { continue }
-                let start = AutoAttParse.times(s)?.0
-                var d = DailyDraft(kind: kind, classDate: nil, startMin: nil, newDate: nil, newStartMin: nil,
-                                   venue: nil, summary: tidy(s))
-                if ds.count >= 2 && has(s, extendWords) { d.classDate = ds[0]; d.newDate = ds[1]; d.newStartMin = start }
-                else if has(s, extendWords) { d.newDate = ds[0]; d.newStartMin = start }
-                else { d.classDate = ds[0]; d.startMin = start }
-                if kind == .quiz { d.venue = Self.venue(in: s) }
-                let key = "\(kind.rawValue)|\(d.classDate.map { String(Int($0.timeIntervalSince1970)) } ?? "x")|\(d.newDate.map { String(Int($0.timeIntervalSince1970)) } ?? "x")"
-                if keys.insert(key).inserted { out.append(d) }
-                continue
-            }
             if ds.isEmpty, let f = fallback.first { ds = [f] }
             let start = AutoAttParse.times(s)?.0
             var d = DailyDraft(kind: kind, classDate: nil, startMin: nil, newDate: nil, newStartMin: nil,
@@ -551,9 +538,6 @@ enum DailyRules {
             if has(s, reschedWords) { return (.rescheduled, nil) }
             if has(s, onlineWords) { return (.online, nil) }
         }
-        // assignments with a deadline, quizzes / tests with a day (the sentence must carry the date itself)
-        if has(s, workWords) && has(s, whenWords) { return (.quiz, nil) }
-        if has(s, assignWords) && has(s, dueWords) { return (.assignment, nil) }
         return nil
     }
 
