@@ -167,6 +167,7 @@ struct DailyInfoView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 header
+                    .padding(.bottom, 4)      // a little room under the title
                 DailyToolsRow()
                 filters
                 if let n = store.scanNote {

@@ -1,0 +1,11 @@
+diff --git a/Sources/DailyInfoView.swift b/Sources/DailyInfoView.swift
+--- a/Sources/DailyInfoView.swift
++++ b/Sources/DailyInfoView.swift
+@@ -167,6 +167,7 @@
+         ScrollView {
+             VStack(alignment: .leading, spacing: 16) {
+                 header
++                    .padding(.bottom, 4)      // a little room under the title
+                 DailyToolsRow()
+                 filters
+                 if let n = store.scanNote {
