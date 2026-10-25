@@ -239,11 +239,7 @@ struct DailyInfoView: View {
 
     private var header: some View {
         HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Daily summary").font(Theme.font(.largeTitle).weight(.bold)).foregroundColor(Theme.txt)
-                Text("Class changes and notices")
-                    .font(Theme.font(.footnote)).foregroundColor(Theme.muted)
-            }
+            Text("Daily summary").font(Theme.font(.largeTitle).weight(.bold)).foregroundColor(Theme.txt)
             Spacer()
             if store.scanning || reading { ProgressView().tint(Theme.accent) }
             else {
