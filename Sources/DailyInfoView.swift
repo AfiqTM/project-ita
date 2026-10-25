@@ -1,4 +1,5 @@
 import SwiftUI
+import PhotosUI
 
 // MARK: - Helpers
 
@@ -367,6 +368,11 @@ struct DailyInfoView: View {
     @State private var editing: DailyEntry?
     @State private var showAdd = false
     @State private var highlight: Set<String> = []
+    @State private var showGuide = false
+    @State private var photo: PhotosPickerItem?
+    @State private var showPhotos = false
+    @State private var reading = false
+    @State private var readResult: String?
 
     private var visible: [DailyEntry] {
         store.entries.filter { e in
@@ -396,6 +402,7 @@ struct DailyInfoView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 header
+                DailyToolsRow()
                 filters
                 if let n = store.scanNote {
                     Text(n).font(Theme.font(.footnote)).foregroundColor(Theme.muted)
@@ -421,6 +428,22 @@ struct DailyInfoView: View {
         .background(Theme.bg.ignoresSafeArea())
         .refreshable { await store.scan(courses: catalog.courses, force: true) }
         .sheet(isPresented: $showAdd) { DailyEditSheet() }
+        .sheet(isPresented: $showGuide) { DailyBackTapGuide() }
+        .photosPicker(isPresented: $showPhotos, selection: $photo, matching: .images)
+        .onChange(of: photo) { item in
+            guard let item else { return }
+            reading = true
+            Task {
+                let data = try? await item.loadTransferable(type: Data.self)
+                let r = await DailyCapture.process(imageData: data, text: nil)
+                reading = false
+                photo = nil
+                readResult = r.message
+            }
+        }
+        .alert("Daily summary", isPresented: Binding(get: { readResult != nil }, set: { if !$0 { readResult = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: { Text(readResult ?? "") }
         .sheet(item: $editing) { DailyEditSheet(existing: $0) }
         .task {
             await catalog.loadIfNeeded()
@@ -434,17 +457,21 @@ struct DailyInfoView: View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Daily summary").font(Theme.font(.largeTitle).weight(.bold)).foregroundColor(Theme.txt)
-                Text("Class changes from your announcements")
+                Text("Class changes, assignments and quizzes")
                     .font(Theme.font(.footnote)).foregroundColor(Theme.muted)
             }
             Spacer()
-            if store.scanning { ProgressView().tint(Theme.accent) }
+            if store.scanning || reading { ProgressView().tint(Theme.accent) }
             else {
                 Button { Task { await store.scan(courses: catalog.courses, force: true) } } label: {
                     Image(systemName: "arrow.clockwise").foregroundColor(Theme.accent)
                 }
             }
-            Button { showAdd = true } label: {
+            Menu {
+                Button { showAdd = true } label: { Label("Add by hand", systemImage: "square.and.pencil") }
+                Button { showPhotos = true } label: { Label("Read a screenshot", systemImage: "photo") }
+                Button { showGuide = true } label: { Label("Send with Back Tap", systemImage: "hand.tap") }
+            } label: {
                 Image(systemName: "plus").font(Theme.font(.body).weight(.bold))
                     .foregroundColor(Theme.onAccent)
                     .frame(width: 34, height: 34).background(Theme.accent).clipShape(Circle())
@@ -536,9 +563,9 @@ struct DailyInfoView: View {
     private var emptyState: some View {
         VStack(spacing: 8) {
             Image(systemName: "calendar.badge.checkmark").font(Theme.font(.largeTitle)).foregroundColor(Theme.accent)
-            Text(showRemoved ? "Nothing removed" : (showPast ? "Nothing in the past" : "No class changes"))
+            Text(showRemoved ? "Nothing removed" : (showPast ? "Nothing in the past" : "Nothing coming up"))
                 .fontWeight(.semibold).foregroundColor(Theme.txt)
-            Text("Cancelled, online, moved or rescheduled classes found in your announcements show up here. Tap + to add your own.")
+            Text("Cancelled, online or moved classes, assignments and quizzes found in your announcements show up here. Send a screenshot with Back Tap, or tap + to add your own.")
                 .font(Theme.font(.footnote)).foregroundColor(Theme.muted).multilineTextAlignment(.center)
         }
         .padding(.vertical, 40).frame(maxWidth: .infinity)
@@ -553,13 +580,13 @@ struct DailyRow: View {
 
     private var when: String? {
         var parts: [String] = []
-        if entry.kind == .rescheduled, let nd = entry.newDate {
+        if let nd = entry.newDate, entry.kind == .rescheduled || entry.kind.isWork {
             if let cd = entry.classDate {
                 parts.append("From \(dayText(cd))" + (clockText(entry.startMin).map { " \($0)" } ?? ""))
             }
             parts.append("To \(dayText(nd))" + (clockText(entry.newStartMin).map { " \($0)" } ?? ""))
         } else if let cd = entry.classDate {
-            parts.append(dayText(cd) + (clockText(entry.startMin).map { " · \($0)" } ?? ""))
+            parts.append((entry.kind == .assignment ? "Due " : "") + dayText(cd) + (clockText(entry.startMin).map { " · \($0)" } ?? ""))
         } else if let t = clockText(entry.startMin) {
             parts.append(t)
         }
@@ -583,7 +610,7 @@ struct DailyRow: View {
                             .padding(.horizontal, 5).padding(.vertical, 1).background(Theme.accent).clipShape(Capsule())
                     }
                     Spacer(minLength: 0)
-                    Text(entry.source == .manual ? "Added by you" : (entry.byAI == true ? "AI" : "Auto"))
+                    Text(entry.source == .manual ? "Added by you" : (entry.source == .screenshot ? "Screenshot" : (entry.byAI == true ? "AI" : "Auto")))
                         .font(Theme.font(.caption2)).foregroundColor(Theme.muted)
                 }
                 if let n = entry.courseName {
@@ -670,17 +697,17 @@ struct DailyEditSheet: View {
                     label("Subject")
                     subjectMenu
 
-                    label(kind == .rescheduled ? "Original class" : "Class on")
+                    label(kind == .rescheduled ? "Original class" : (kind == .assignment ? "Due on" : (kind == .quiz ? "Held on" : "Class on")))
                     dateRow(on: $hasDate, date: $classDate, optionalLabel: "Set date")
                     timeRow(on: $hasTime, time: $time, optionalLabel: "Set time")
 
-                    if kind == .rescheduled {
-                        label("Moved to")
+                    if kind == .rescheduled || kind.isWork {
+                        label(kind.isWork ? "New date (only if it changed)" : "Moved to")
                         dateRow(on: $hasNewDate, date: $newDate, optionalLabel: "Set new date")
                         timeRow(on: $hasNewTime, time: $newTime, optionalLabel: "Set new time")
                     }
 
-                    if kind == .venue || kind == .online || kind == .rescheduled {
+                    if kind == .venue || kind == .online || kind == .rescheduled || kind == .quiz {
                         label(kind == .online ? "Platform / link (optional)" : "Room / venue (optional)")
                         TextField("", text: $venue,
                                   prompt: Text(kind == .online ? "e.g. Zoom, Google Meet" : "e.g. Room 3.12, KICT")
@@ -688,9 +715,9 @@ struct DailyEditSheet: View {
                             .foregroundColor(Theme.txt).focused($focus).dailyBox(focused: focus)
                     }
 
-                    label("What changed")
+                    label(kind.isWork ? "Details" : "What changed")
                     TextField("", text: $summary,
-                              prompt: Text("e.g. Lecture cancelled, lecturer is away").foregroundColor(Theme.muted.opacity(0.6)),
+                              prompt: Text("e.g. Lecture cancelled, or Assignment 2 due Friday").foregroundColor(Theme.muted.opacity(0.6)),
                               axis: .vertical)
                         .lineLimit(2...5).foregroundColor(Theme.txt).dailyBox()
 
@@ -708,7 +735,7 @@ struct DailyEditSheet: View {
             }
             .scrollDismissesKeyboard(.interactively)
             .background(Theme.bg.ignoresSafeArea())
-            .navigationTitle(existing == nil ? "Add class change" : "Edit class change")
+            .navigationTitle(existing == nil ? "Add to Daily summary" : "Edit entry")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -788,7 +815,7 @@ struct DailyEditSheet: View {
         let n = notes.trimmingCharacters(in: .whitespacesAndNewlines)
         let v = venue.trimmingCharacters(in: .whitespacesAndNewlines)
         let cd = hasDate ? cal.startOfDay(for: classDate) : nil
-        let nd = (kind == .rescheduled && hasNewDate) ? cal.startOfDay(for: newDate) : nil
+        let nd = ((kind == .rescheduled || kind.isWork) && hasNewDate) ? cal.startOfDay(for: newDate) : nil
         var e = existing ?? DailyEntry(
             id: "m" + UUID().uuidString, kind: kind, courseId: nil, courseName: nil, summary: "",
             classDate: nil, startMin: nil, newDate: nil, newStartMin: nil, venue: nil, notes: nil,
@@ -801,8 +828,8 @@ struct DailyEditSheet: View {
         e.classDate = cd
         e.startMin = hasTime ? dateToMinutes(time) : nil
         e.newDate = nd
-        e.newStartMin = (kind == .rescheduled && hasNewTime) ? dateToMinutes(newTime) : nil
-        e.venue = (kind == .venue || kind == .online || kind == .rescheduled) && !v.isEmpty ? v : nil
+        e.newStartMin = ((kind == .rescheduled || kind.isWork) && hasNewTime) ? dateToMinutes(newTime) : nil
+        e.venue = (kind == .venue || kind == .online || kind == .rescheduled || kind == .quiz) && !v.isEmpty ? v : nil
         e.notes = n.isEmpty ? nil : n
         if existing == nil { DailyInfoStore.shared.add(e) } else { DailyInfoStore.shared.update(e) }
         dismiss()

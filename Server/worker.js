@@ -218,7 +218,7 @@ async function submit(u, j) {
 }
 
 // ---------- Daily Summary: read one announcement with Workers AI ----------
-const KINDS = ["cancelled", "online", "venue", "rescheduled", "note"];
+const KINDS = ["cancelled", "online", "venue", "rescheduled", "assignment", "quiz", "note"];
 const SCHEMA = {
   type: "object",
   properties: {
@@ -242,12 +242,12 @@ const SCHEMA = {
   required: ["changes"],
 };
 
-const SYSTEM = `You read a university lecturer's announcement and list ONLY changes to a scheduled class, lab, tutorial, test or exam.
-Kinds: "cancelled" (class will not be held), "online" (class moved online; venue = platform such as Zoom), "venue" (same time, different room; venue = the new room), "rescheduled" (moved to another day or time), "note" (short schedule-related notice that fits none of the others, e.g. bring a laptop to the next class).
+const SYSTEM = `You read a university lecturer's announcement (or the text of a screenshot of one) and list ONLY changes to a scheduled class, lab or tutorial, plus assignment deadlines and quiz / test / exam dates.
+Kinds: "cancelled" (class will not be held), "online" (class moved online; venue = platform such as Zoom), "venue" (same time, different room; venue = the new room), "rescheduled" (moved to another day or time), "assignment" (an assignment, project or report with a due date or a changed deadline; classDate = the due day, startTime = the due time; for an extended deadline classDate = the old day and newDate = the new day), "quiz" (a quiz, test, midterm, exam or presentation on a given day; classDate/startTime = when; venue = the room if given), "note" (short schedule-related notice that fits none of the others, e.g. bring a laptop to the next class).
 Rules:
-- Ignore assignments, grades, deadlines, reading material and anything that is not about when/where/how a class meets. If there is nothing, return {"changes": []}.
+- Ignore grades, reading material and anything that is not about when/where/how a class meets, an assignment deadline, or a quiz / test date. If there is nothing, return {"changes": []}.
 - Dates are YYYY-MM-DD. Times are 24-hour HH:MM. Work out relative dates ("tomorrow", "next Monday") from the posted date given. Malaysian dates are day first (05/10 = 5 October).
-- classDate/startTime = the original class. For "rescheduled", newDate/newStartTime = where it moved to. For other kinds leave newDate and newStartTime empty.
+- classDate/startTime = the original class. For "rescheduled" (and an extended "assignment"), newDate/newStartTime = where it moved to. For other kinds leave newDate and newStartTime empty.
 - Leave a field as "" when the announcement does not say it. Never guess.
 - summary: one short sentence in English.`;
 

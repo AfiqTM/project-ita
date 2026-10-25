@@ -28,8 +28,10 @@ Native client for iTa'leem (IIUM Moodle) using Moodle's mobile web-service API, 
 - Tick a subject: its class time is read from the attendance page and can be corrected; pick the 15-minute window (or shuffle one) and the server submits at a random moment inside it, as Present
 - iOS can't run an app at an exact time, so a small free server does the submitting: see `Server/README.md`
 
-### Daily summary (archived)
-- Not part of the app any more. The code is kept in `Archive/DailyInfo/` (outside `Sources`, so it is not built) with notes on how to bring it back. The server's `POST /classify` endpoint (`Server/README.md`) is unchanged
+### Daily summary (swipe right from My courses)
+- Class changes (cancelled / online / new venue / rescheduled), **assignments** (due day, extended deadlines) and **quizzes / tests** (day, time, room) read from every subject's announcements, by the AI server when it is set up (`Server/README.md`, `POST /classify`) and by a built-in keyword reader otherwise. An accent dot next to the greeting on My courses means something new
+- **Back Tap**: double-tap the back of the iPhone to send what is on screen. A Shortcut with "Take Screenshot" then "Send to Daily Summary" (`Sources/DailyCapture.swift`, an App Intent) is assigned in Settings > Accessibility > Touch > Back Tap. The screenshot is read on the phone (Vision), the subject is found from its name, course code or short form (DES, SE...), and the result is added as a "Screenshot" entry; anything that can't be placed is saved as a notice. "Send Text to Daily Summary" does the same for copied text, and the + menu can read a screenshot from Photos. Steps are shown in the app (+ > Send with Back Tap)
+- **Three shortcut tiles** at the top (`Sources/DailyTools.swift`): pick any of the Academic Tools (To-Do List, Final Exam Calculator, My Drive, Auto Attendance, Study Plan Tracker, Semester Resources); each shows a live line, touch and hold to change or remove
 
 ### Alerts and messages
 - Alerts tab (notifications) with an unread badge; the app icon badge = unread alerts + unread chats
