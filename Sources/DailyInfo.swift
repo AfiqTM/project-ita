@@ -120,6 +120,9 @@ final class DailyInfoStore: ObservableObject {
     private static let lookbackDays = 21          // announcements older than this are not read
     private static let keepDays = 60              // detected entries older than this are dropped
     private static let minGap: TimeInterval = 20 * 60
+    /// Automatic scans (opening the app / Daily Summary, coming back online) are switched off for now: only the refresh
+    /// button and pull-to-refresh read the announcements. Set to true to bring them back.
+    private static let autoScan = false
 
     @Published private(set) var entries: [DailyEntry] = []
     @Published private(set) var seen: Set<String> = []
@@ -244,6 +247,7 @@ final class DailyInfoStore: ObservableObject {
     /// Reads the newest announcement of every subject and adds what changed in class. Cheap when nothing is new.
     func scan(courses: [Course], force: Bool = false) async {
         guard !scanning, !courses.isEmpty else { return }
+        if !force && !Self.autoScan { return }
         if !force, let l = lastScan, Date().timeIntervalSince(l) < Self.minGap { return }
         scanning = true
         defer { scanning = false }

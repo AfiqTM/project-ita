@@ -112,7 +112,7 @@ struct CoursesHome: View {
             Task { await store.scan(courses: catalog.courses) }
         }
         .onReceive(NotificationCenter.default.publisher(for: .offlineBackOnline)) { _ in
-            Task { await store.scan(courses: catalog.courses, force: true) }
+            Task { await store.scan(courses: catalog.courses) }   // automatic: off while DailyInfoStore.autoScan is false
         }
     }
 }
