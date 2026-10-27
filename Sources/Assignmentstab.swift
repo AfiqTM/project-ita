@@ -210,6 +210,14 @@ struct AssignmentsTabView: View {
     private var uid: Int { app.site?.userid ?? 0 }
     private var now: Int { Int(Date().timeIntervalSince1970) }
 
+    /// Swipe left / right on the list to go to the next / previous filter (To do, Overdue, Submitted, All)
+    private func step(_ delta: Int) {
+        let all = AssignFilter.allCases
+        guard let i = all.firstIndex(of: model.filter), all.indices.contains(i + delta) else { return }
+        withAnimation(.easeInOut(duration: 0.2)) { model.filter = all[i + delta] }
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    }
+
     private var groups: [(String, [AssignItem])] {
         var out: [(String, [AssignItem])] = []
         for i in model.list(model.filter) {
@@ -233,26 +241,41 @@ struct AssignmentsTabView: View {
                 rangeBar
                 if let error = model.error { Text(error).font(Theme.font(.footnote)).foregroundColor(Theme.muted) }
 
-                ForEach(groups, id: \.0) { title, list in
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text(title).font(Theme.font(.footnote).weight(.semibold)).foregroundColor(Theme.muted)
-                        VStack(spacing: 0) {
-                            ForEach(list) { i in row(i) }
+                // the list changes with a quick cross-fade when the filter changes (tap or swipe)
+                Group {
+                    ForEach(groups, id: \.0) { title, list in
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text(title).font(Theme.font(.footnote).weight(.semibold)).foregroundColor(Theme.muted)
+                            VStack(spacing: 0) {
+                                ForEach(list) { i in row(i) }
+                            }
+                            .glowCard()
                         }
-                        .glowCard()
+                    }
+
+                    if model.loading { ProgressView().tint(Theme.accent).frame(maxWidth: .infinity) }
+                    else if groups.isEmpty && model.error == nil {
+                        Text(model.filter == .todo
+                             ? "Nothing due in the next \(model.range.title)."
+                             : "Nothing here.")
+                            .foregroundColor(Theme.muted)
                     }
                 }
-
-                if model.loading { ProgressView().tint(Theme.accent).frame(maxWidth: .infinity) }
-                else if groups.isEmpty && model.error == nil {
-                    Text(model.filter == .todo
-                         ? "Nothing due in the next \(model.range.title)."
-                         : "Nothing here.")
-                        .foregroundColor(Theme.muted)
-                }
+                .id(model.filter)
+                .transition(.opacity)
             }
             .padding(16)
+            // the empty space under a short list is part of the swipe area too
+            .frame(maxWidth: .infinity, minHeight: UIScreen.main.bounds.height * 0.8, alignment: .topLeading)
+            .contentShape(Rectangle())
         }
+        // mostly sideways and long enough, so scrolling up and down and the rows' own taps are not affected
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 24, coordinateSpace: .local).onEnded { v in
+                let dx = v.translation.width, dy = v.translation.height
+                guard abs(dx) > 60, abs(dx) > abs(dy) * 1.8 else { return }
+                step(dx < 0 ? 1 : -1)      // swipe left = next filter, swipe right = previous
+            })
         .background(Theme.bg.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .refreshable { await model.load(uid: uid) }
@@ -260,10 +283,11 @@ struct AssignmentsTabView: View {
     }
 
     private var filterBar: some View {
+        ScrollViewReader { proxy in
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 22) {
                 ForEach(AssignFilter.allCases) { f in
-                    Button { model.filter = f } label: {
+                    Button { withAnimation(.easeInOut(duration: 0.2)) { model.filter = f } } label: {
                         HStack(spacing: 6) {
                             Text(f.rawValue)
                                 .fontWeight(model.filter == f ? .semibold : .regular)
@@ -280,8 +304,14 @@ struct AssignmentsTabView: View {
                             }
                         }
                     }
+                    .id(f)
                 }
             }
+        }
+        // a swipe changes the filter without a tap: keep the chosen one in view
+        .onChange(of: model.filter) { f in
+            withAnimation(.easeInOut(duration: 0.2)) { proxy.scrollTo(f, anchor: .center) }
+        }
         }
     }
 
