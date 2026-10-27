@@ -319,6 +319,7 @@ struct CoursesView: View {
         }
         .background(Theme.bg.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
+        .noBottomEdgeEffect()   // iOS 26: no dark band along the bottom edge under the floating tab bar
         .scrollDismissesKeyboard(.interactively)
         .navigationDestination(isPresented: Binding(get: { openCourse != nil },
                                                     set: { if !$0 { openCourse = nil } })) {

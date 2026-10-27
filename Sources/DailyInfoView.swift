@@ -48,7 +48,9 @@ struct CoursesHome: View {
         UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }
             .flatMap { $0.windows }
-            .first { $0.isKeyWindow }?.bounds.height ?? 0
+            .first { $0.isKeyWindow }?.bounds.height
+            ?? UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first?.screen.bounds.height   // no key window yet at launch
+            ?? 0
     }
 
     private var windowTopInset: CGFloat {
@@ -218,6 +220,7 @@ struct DailyInfoView: View {
             .animation(.easeInOut(duration: 0.35), value: visible.map(\.id))
         }
         .background(Theme.bg.ignoresSafeArea())
+        .noBottomEdgeEffect()
         .refreshable { await store.scan(courses: catalog.coursesWithPast, force: true) }
         .sheet(isPresented: $showAdd) { DailyEditSheet() }
         .sheet(isPresented: $showGuide) { DailyBackTapGuide() }
