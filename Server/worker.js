@@ -249,14 +249,14 @@ Rules:
 - Dates are YYYY-MM-DD. Times are 24-hour HH:MM. Work out relative dates ("tomorrow", "next Monday") from the posted date given. Malaysian dates are day first (05/10 = 5 October).
 - classDate/startTime = the original class. For "rescheduled", newDate/newStartTime = where it moved to. For other kinds leave newDate and newStartTime empty.
 - Leave a field as "" when the announcement does not say it. Never guess.
-- summary: one short sentence in English.`;
+- summary: 1 to 3 short sentences in English that give the student everything needed without opening the announcement: what changed, for which class, when, where / how to join, and anything they must do. Keep every date, time, room and deadline exactly as written. Do not copy greetings or sign-offs. Do not write web addresses; they are added by the app.`;
 
 async function classifyOne(env, today, it) {
-  const user = `Today: ${today}\nSubject: ${it.course}\nPosted: ${it.posted}\nTitle: ${it.title}\n\n${String(it.text || "").slice(0, 3000)}`;
+  const user = `Today: ${today}\nSubject: ${it.course}\nPosted: ${it.posted}\nTitle: ${it.title}\n\n${String(it.text || "").slice(0, 6000)}`;
   const out = await env.AI.run(env.AI_MODEL || "@cf/meta/llama-3.1-8b-instruct", {
     messages: [{ role: "system", content: SYSTEM }, { role: "user", content: user }],
     response_format: { type: "json_schema", json_schema: SCHEMA },
-    max_tokens: 600,
+    max_tokens: 900,
     temperature: 0,
   });
   let r = out && out.response;

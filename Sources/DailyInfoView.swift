@@ -430,8 +430,9 @@ struct DailyRow: View {
                     Label(v, systemImage: entry.kind == .online ? "video" : "mappin.and.ellipse")
                         .font(Theme.font(.footnote)).foregroundColor(Theme.txt)
                 }
-                Text(entry.summary).font(Theme.read(.footnote)).foregroundColor(Theme.muted)
-                    .lineLimit(3).multilineTextAlignment(.leading)
+                // the whole summary (the links in it can be tapped); the original message is in the entry's sheet
+                Text(DailyText.linkified(entry.summary)).font(Theme.read(.footnote)).foregroundColor(Theme.muted)
+                    .multilineTextAlignment(.leading)
                 if let n = entry.notes, !n.isEmpty {
                     Text(n).font(Theme.read(.footnote)).foregroundColor(Theme.muted).italic()
                 }
@@ -527,7 +528,15 @@ struct DailyEditSheet: View {
                     TextField("", text: $summary,
                               prompt: Text("e.g. Lecture cancelled, or moved to Room 3.12").foregroundColor(Theme.muted.opacity(0.6)),
                               axis: .vertical)
-                        .lineLimit(2...5).foregroundColor(Theme.txt).dailyBox()
+                        .lineLimit(2...14).foregroundColor(Theme.txt).dailyBox()
+
+                    // the message this was read from, whole and not cropped (links can be tapped)
+                    if let full = existing?.fullText, !full.isEmpty {
+                        label("Original message")
+                        Text(DailyText.linkified(full)).font(Theme.read(.footnote)).foregroundColor(Theme.muted)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading).dailyBox()
+                    }
 
                     label("Notes (optional)")
                     TextField("", text: $notes,

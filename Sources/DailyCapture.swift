@@ -162,7 +162,7 @@ enum DailyCapture {
         if drafts.isEmpty {
             let note = clean.replacingOccurrences(of: "\n", with: " ")
             drafts = [DailyDraft(kind: .note, classDate: nil, startMin: nil, newDate: nil, newStartMin: nil, venue: nil,
-                                 summary: note.count > 160 ? String(note.prefix(157)) + "…" : note)]
+                                 summary: note.count > 600 ? String(note.prefix(597)) + "…" : note)]
         }
         let before = DailyInfoStore.shared.entries.count
         let added = DailyInfoStore.shared.addCaptured(drafts, course: course, text: clean)

@@ -78,6 +78,7 @@ struct DailyEntry: Codable, Identifiable, Hashable {
     var edited: Bool?                // the user changed it: never overwritten by a new scan
     var hidden: Bool?                // the user removed it: stays removed
     var updated: Date
+    var fullText: String?            // the whole announcement / message it was read from (shown in the entry's sheet)
 
     /// Same announcement + same kind + same day always gives the same id, so a re-read never duplicates
     static func makeID(discussion: Int, kind: DailyKind, day: Date?) -> String {
@@ -138,7 +139,8 @@ final class DailyInfoStore: ObservableObject {
         var lastScan: Date?
         var version: Int?
     }
-    private static let version = 3          // 3: assignments and quizzes are no longer part of Notice board
+    private static let version = 4          // 4: summaries are not cropped any more and carry the links: read the announcements again
+                                                    // 3: assignments and quizzes are no longer part of Notice board
 
     /// Adds what was read from a screenshot (Back Tap / the photo picker): one entry per change found
     @discardableResult
@@ -157,9 +159,11 @@ final class DailyInfoStore: ObservableObject {
             }
             let e = DailyEntry(
                 id: "s" + UUID().uuidString, kind: d.kind, courseId: course?.id, courseName: course?.subjectName,
-                summary: d.summary, classDate: d.classDate, startMin: d.startMin, newDate: d.newDate,
+                summary: DailyText.withLinks(d.summary, DailyText.links(html: nil, text: text)),
+                classDate: d.classDate, startMin: d.startMin, newDate: d.newDate,
                 newStartMin: d.newStartMin, venue: d.venue, notes: nil, source: .screenshot, byAI: nil,
-                discussionId: nil, announcementTitle: nil, postedAt: now, edited: nil, hidden: nil, updated: now)
+                discussionId: nil, announcementTitle: nil, postedAt: now, edited: nil, hidden: nil, updated: now,
+                fullText: String(text.prefix(DailyText.fullLimit)))
             entries.append(e)
             added.append(e)
         }
@@ -240,6 +244,7 @@ final class DailyInfoStore: ObservableObject {
         let course: Course
         let disc: Discussion
         let text: String
+        let html: String          // the message as Moodle sent it: the links are only in here
         let posted: Date
         let sig: String
     }
@@ -288,7 +293,7 @@ final class DailyInfoStore: ObservableObject {
                 let sig = "\(created)-\(text.count)"
                 let mark = processed["d\(d.discussion)"]
                 let upToDate = mark.map { $0.hasPrefix(sig + "|") && !($0.hasSuffix("|rules") && aiReady) } ?? false
-                if !upToDate { cands.append(Candidate(course: c, disc: d, text: text, posted: posted, sig: sig)) }
+                if !upToDate { cands.append(Candidate(course: c, disc: d, text: text, html: d.message ?? "", posted: posted, sig: sig)) }
             }
         }
 
@@ -305,7 +310,8 @@ final class DailyInfoStore: ObservableObject {
             let byAI = ai[key] != nil
             let drafts = ai[key] ?? DailyRules.classify(title: cand.disc.name ?? cand.disc.subject ?? "",
                                                         text: cand.text, posted: cand.posted)
-            apply(drafts, course: cand.course, disc: cand.disc, posted: cand.posted, byAI: byAI)
+            apply(drafts, course: cand.course, disc: cand.disc, posted: cand.posted, byAI: byAI,
+                  text: cand.text, html: cand.html)
             processed[key] = cand.sig + (byAI ? "|ai" : "|rules")
         }
 
@@ -321,7 +327,10 @@ final class DailyInfoStore: ObservableObject {
     }
 
     /// Replaces what was detected from one announcement. Entries the user edited or hid are left alone.
-    private func apply(_ drafts: [DailyDraft], course: Course, disc: Discussion, posted: Date, byAI: Bool) {
+    private func apply(_ drafts: [DailyDraft], course: Course, disc: Discussion, posted: Date, byAI: Bool,
+                       text: String, html: String) {
+        let links = DailyText.links(html: html, text: text)
+        let full = String(text.prefix(DailyText.fullLimit))
         let did = disc.discussion
         var keep: [DailyEntry] = []
         for e in entries {
@@ -332,13 +341,69 @@ final class DailyInfoStore: ObservableObject {
             let id = DailyEntry.makeID(discussion: did, kind: d.kind, day: d.classDate ?? d.newDate)
             if keep.contains(where: { $0.id == id }) { continue }
             keep.append(DailyEntry(
-                id: id, kind: d.kind, courseId: course.id, courseName: course.subjectName, summary: d.summary,
+                id: id, kind: d.kind, courseId: course.id, courseName: course.subjectName,
+                summary: DailyText.withLinks(d.summary, links),
                 classDate: d.classDate, startMin: d.startMin, newDate: d.newDate, newStartMin: d.newStartMin,
                 venue: d.venue, notes: nil, source: .announcement, byAI: byAI, discussionId: did,
                 announcementTitle: disc.name ?? disc.subject, postedAt: posted, edited: nil, hidden: nil,
-                updated: Date()))
+                updated: Date(), fullText: full))
         }
         entries = keep
+    }
+}
+
+// MARK: - Text helpers: links and the full message
+
+enum DailyText {
+    static let fullLimit = 6000       // how much of the original message is kept with an entry
+    static let aiLimit = 6000         // how much of it is sent to the AI (the server cuts at the same size)
+
+    /// Web links in a message: the href of every <a> in the HTML Moodle sent (the shown text of a link is often just a
+    /// word), plus any address written out in the text. In reading order, no repeats, at most 5.
+    static func links(html: String?, text: String) -> [String] {
+        var out: [String] = []
+        func add(_ raw: String) {
+            var u = raw.replacingOccurrences(of: "&amp;", with: "&").trimmingCharacters(in: .whitespacesAndNewlines)
+            while let last = u.last, ".,;:)]}>\"'".contains(last) { u.removeLast() }
+            guard let url = URL(string: u), let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
+                  url.host != nil, !out.contains(u) else { return }
+            out.append(u)
+        }
+        if let html, !html.isEmpty,
+           let re = try? NSRegularExpression(pattern: #"href\s*=\s*["']([^"']+)["']"#, options: [.caseInsensitive]) {
+            let ns = html as NSString
+            for m in re.matches(in: html, range: NSRange(location: 0, length: ns.length)) where m.numberOfRanges > 1 {
+                add(ns.substring(with: m.range(at: 1)))
+            }
+        }
+        if let det = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) {
+            let ns = text as NSString
+            for m in det.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+                if let u = m.url, ["http", "https"].contains(u.scheme?.lowercased() ?? "") { add(u.absoluteString == ns.substring(with: m.range) ? u.absoluteString : ns.substring(with: m.range)) }
+            }
+        }
+        return Array(out.prefix(5))
+    }
+
+    /// The summary with the links under it (a link the summary already shows is not repeated)
+    static func withLinks(_ summary: String, _ links: [String]) -> String {
+        let missing = links.filter { !summary.contains($0) }
+        guard !missing.isEmpty else { return summary }
+        return summary + "\n" + missing.joined(separator: "\n")
+    }
+
+    /// Text whose web addresses can be tapped
+    static func linkified(_ s: String) -> AttributedString {
+        var a = AttributedString(s)
+        guard let det = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else { return a }
+        for m in det.matches(in: s, range: NSRange(s.startIndex..., in: s)) {
+            guard let url = m.url, let r = Range(m.range, in: s),
+                  let lo = AttributedString.Index(r.lowerBound, within: a),
+                  let hi = AttributedString.Index(r.upperBound, within: a) else { continue }
+            a[lo..<hi].link = url
+            a[lo..<hi].underlineStyle = .single
+        }
+        return a
     }
 }
 
@@ -409,7 +474,7 @@ enum DailyInfoAI {
             "today": day.string(from: Date()),
             "items": items.map { it -> [String: Any] in
                 ["id": it.id, "course": it.course, "posted": stamp.string(from: it.posted),
-                 "title": it.title, "text": String(it.text.prefix(3000))]
+                 "title": it.title, "text": String(it.text.prefix(DailyText.aiLimit))]
             },
         ]
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
@@ -440,7 +505,7 @@ enum DailyInfoAI {
             return t.isEmpty ? nil : t
         }
         let cd = day(o.classDate), nd = day(o.newDate)
-        let summary = clean(o.summary).map { String($0.prefix(200)) } ?? kind.title
+        let summary = clean(o.summary).map { String($0.prefix(700)) } ?? kind.title
         return DailyDraft(kind: kind, classDate: cd, startMin: minutes(o.startTime), newDate: nd,
                           newStartMin: minutes(o.newStartTime), venue: clean(o.venue).map { String($0.prefix(80)) },
                           summary: summary)
@@ -527,7 +592,7 @@ enum DailyRules {
     private static func tidy(_ s: String) -> String {
         let t = s.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        return t.count > 160 ? String(t.prefix(157)) + "…" : t
+        return t.count > 600 ? String(t.prefix(597)) + "…" : t
     }
 
     private static func has(_ s: String, _ pattern: String) -> Bool {
