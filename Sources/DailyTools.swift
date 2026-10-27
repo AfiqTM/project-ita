@@ -87,6 +87,8 @@ struct DailyToolsRow: View {
                 if let tool = store.slots[i] {
                     NavigationLink { destination(tool) } label: { DailyToolTile(tool: tool) }
                         .buttonStyle(.plain)
+                        // the tab bar is hidden on the Notice board: bring it back as the tool's screen starts to slide in
+                        .simultaneousGesture(TapGesture().onEnded { NotificationCenter.default.post(name: .noticeBoardPushing, object: nil) })
                         .contextMenu {
                             Button { picking = ToolSlot(id: i) } label: { Label("Change", systemImage: "arrow.triangle.2.circlepath") }
                             Button(role: .destructive) { withAnimation(.snappy) { store.set(nil, at: i) } } label: {

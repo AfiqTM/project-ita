@@ -654,6 +654,11 @@ struct DailyEditSheet: View {
 }
 
 
+extension Notification.Name {
+    /// Posted when a screen is about to be pushed from the Notice board (a tool tile was tapped)
+    static let noticeBoardPushing = Notification.Name("noticeBoardPushing")
+}
+
 // MARK: - Fade the tab bar with the swipe, without touching the layout
 
 /// Put it as a .background of the Notice board page inside the pager. It watches where that page really is on screen and
@@ -675,6 +680,21 @@ struct TabBarFollower: UIViewRepresentable {
         private weak var scroll: UIScrollView?
         private weak var bar: UITabBar?
 
+        /// A tool was tapped and its screen is about to slide in. The page only leaves the window when that slide is over,
+        /// so waiting for that (below) showed the bar late, after the new screen had already arrived. Show it now, with a
+        /// short fade, and stop following the page until it is back.
+        private var pushObserver: NSObjectProtocol?
+        private var suspended = false
+
+        private func showBarForPush() {
+            suspended = true
+            stopLink()
+            removeVeil()
+            guard let bar else { return }
+            bar.isUserInteractionEnabled = true
+            UIView.animate(withDuration: 0.22, delay: 0, options: [.curveEaseOut, .beginFromCurrentState]) { bar.alpha = 1 }
+        }
+
         override func didMoveToWindow() {
             super.didMoveToWindow()
             if window == nil {
@@ -683,7 +703,14 @@ struct TabBarFollower: UIViewRepresentable {
                 scroll = nil
                 stopLink()
                 restoreBar()
+                if let o = pushObserver { NotificationCenter.default.removeObserver(o); pushObserver = nil }
             } else {
+                suspended = false
+                if pushObserver == nil {
+                    pushObserver = NotificationCenter.default.addObserver(forName: .noticeBoardPushing, object: nil, queue: .main) { [weak self] _ in
+                        self?.showBarForPush()
+                    }
+                }
                 attachIfNeeded()
                 // the pager may not be in place yet during the first layout pass
                 DispatchQueue.main.async { [weak self] in self?.attachIfNeeded() }
@@ -721,7 +748,7 @@ struct TabBarFollower: UIViewRepresentable {
         /// alpha 1 and a veil in the page's background colour is laid over it and faded IN in a straight line: 0 = bar fully
         /// visible, 1 = bar fully covered. It is covered completely exactly when the Daily page has fully arrived.
         private func follow() {
-            guard window != nil, let bar, let host = bar.superview else { return }
+            guard !suspended, window != nil, let bar, let host = bar.superview else { return }
             let w = window?.bounds.width ?? bounds.width
             guard w > 0 else { return }
             let x = convert(bounds, to: nil).minX            // 0 when Notice board fills the screen, -w when it is fully left
