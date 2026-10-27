@@ -54,7 +54,7 @@ struct RootView: View {
 
     var body: some View {
         TabView(selection: selection) {
-            NavigationStack { CoursesHome() }   // My courses, swipe right for Daily summary (DailyInfoView.swift)
+            NavigationStack { CoursesHome() }   // My courses, swipe right for Notice board (DailyInfoView.swift)
                 .background(TabBadgeTint(color: Theme.uiAccent, text: Theme.uiOnAccent))   // accent badges (TabBadgeTint.swift)
                 .tabItem { Label("Courses", systemImage: "books.vertical") }
                 .tag(0)
@@ -251,11 +251,11 @@ struct CoursesView: View {
             VStack(alignment: .leading, spacing: 18) {
                 // intro animation per theme (Themes.swift): gunshot, Pac-Man or decoding symbols
                 HStack(spacing: 8) {
-                    // new class changes in Daily summary that you haven't looked at yet: a plain accent dot, no number
+                    // new class changes in Notice board that you haven't looked at yet: a plain accent dot, no number
                     if daily.unseenCount > 0 {
                         Circle().fill(Theme.accent).frame(width: 9, height: 9)
                             .transition(.scale.combined(with: .opacity))
-                            .accessibilityLabel("New in Daily summary")
+                            .accessibilityLabel("New in Notice board")
                     }
                     GreetingBar(hello: "Hello,", name: firstTwoNames) {
                         MessagesButton()   // chat icon + unread badge (Messages.swift)

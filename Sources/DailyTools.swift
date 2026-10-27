@@ -1,7 +1,7 @@
 import SwiftUI
 import PhotosUI
 
-// MARK: - Three shortcut tiles at the top of Daily summary
+// MARK: - Three shortcut tiles at the top of Notice board
 //
 // The student picks up to three of the Academic Tools to keep one tap away: To-Do List, Final Exam Calculator, My Drive,
 // Auto Attendance, Study Plan Tracker, Semester Resources. Each tile shows a live line (what is due, on / off, progress).
@@ -222,7 +222,7 @@ struct DailyBackTapGuide: View {
     @Environment(\.dismiss) private var dismiss
 
     private let steps: [(String, String)] = [
-        ("Make the Shortcut", "Open the Shortcuts app, tap + and add two actions: Take Screenshot, then Send to Daily Summary (search for iTa'leem). Add the second action directly under the first so its Screenshot field fills itself in; if it is empty, tap it and pick the Screenshot output of Take Screenshot. If you made the Shortcut before, delete the old Send to Daily Summary action and add it again. Name it \"Daily summary\"."),
+        ("Make the Shortcut", "Open the Shortcuts app, tap + and add two actions: Take Screenshot, then Send to Notice Board (search for iTa'leem). Add the second action directly under the first so its Screenshot field fills itself in; if it is empty, tap it and pick the Screenshot output of Take Screenshot. If you made the Shortcut before, delete the old Send to Notice Board action and add it again. Name it \"Notice board\"."),
         ("Turn on Back Tap", "Settings > Accessibility > Touch > Back Tap > Double Tap, then choose that Shortcut."),
         ("Use it", "On any screen with a message about a cancelled, online or moved class, double-tap the back of the iPhone. The screenshot is read on the phone and the result shows up here."),
     ]
@@ -249,7 +249,7 @@ struct DailyBackTapGuide: View {
                             .background(Theme.accent).foregroundColor(Theme.onAccent)
                             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     }
-                    Text("Copied a message instead? \"Send Clipboard to Daily Summary\" (its own action, no Screenshot field) uses the picture or text on the clipboard. The subject is found from its name, course code or short form (DES, SE...). Anything it can't place is saved as a notice so you can edit it.")
+                    Text("Copied a message instead? \"Send Clipboard to Notice Board\" (its own action, no Screenshot field) uses the picture or text on the clipboard. The subject is found from its name, course code or short form (DES, SE...). Anything it can't place is saved as a notice so you can edit it.")
                         .font(Theme.read(.footnote)).foregroundColor(Theme.muted)
                 }
                 .padding(20)

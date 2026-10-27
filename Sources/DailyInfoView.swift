@@ -34,13 +34,13 @@ private extension View {
     }
 }
 
-// MARK: - Page container: Daily summary (left)  <-  swipe left to right  ->  My courses (right)
+// MARK: - Page container: Notice board (left)  <-  swipe left to right  ->  My courses (right)
 
 struct CoursesHome: View {
     @EnvironmentObject var catalog: CourseCatalog
     @ObservedObject private var store = DailyInfoStore.shared
     @Environment(\.scenePhase) private var scenePhase
-    @State private var page = 1            // 0 = Daily summary (left), 1 = My courses (right, home)
+    @State private var page = 1            // 0 = Notice board (left), 1 = My courses (right, home)
 
     private let tabBarClearance: CGFloat = 96
 
@@ -82,7 +82,7 @@ struct CoursesHome: View {
             .frame(width: geo.size.width, height: max(geo.size.height, windowHeight), alignment: .top)
             // Apply hidden toolbars to the ROOT container to prevent SwiftUI transition ghosting
             .toolbar(.hidden, for: .navigationBar)
-            // The tab bar fades away on Daily summary and comes back on My courses, in step with the finger (TabBarFollower).
+            // The tab bar fades away on Notice board and comes back on My courses, in step with the finger (TabBarFollower).
             // Only its opacity changes: hiding it through .toolbar(.hidden, for: .tabBar) re-laid out the safe areas under the
             // pages (the page jumped), and moving it with a transform made it jump up before it faded (UIKit sets the bar's
             // frame on every layout pass, which is undefined while a transform is set). A fade touches neither.
@@ -127,7 +127,7 @@ extension View {
     }
 }
 
-// MARK: - Daily Summary screen
+// MARK: - Notice Board screen
 
 struct DailyInfoView: View {
     @EnvironmentObject var catalog: CourseCatalog
@@ -233,7 +233,7 @@ struct DailyInfoView: View {
                 readResult = r.message
             }
         }
-        .alert("Daily summary", isPresented: Binding(get: { readResult != nil }, set: { if !$0 { readResult = nil } })) {
+        .alert("Notice board", isPresented: Binding(get: { readResult != nil }, set: { if !$0 { readResult = nil } })) {
             Button("OK", role: .cancel) {}
         } message: { Text(readResult ?? "") }
         .sheet(item: $editing) { DailyEditSheet(existing: $0) }
@@ -248,7 +248,7 @@ struct DailyInfoView: View {
     private var header: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Daily summary").font(Theme.font(.largeTitle).weight(.bold)).foregroundColor(Theme.txt)
+                Text("Notice board").font(Theme.font(.largeTitle).weight(.bold)).foregroundColor(Theme.txt)
                 Text("Class changes and notices")
                     .font(Theme.font(.footnote)).foregroundColor(Theme.muted)
             }
@@ -543,7 +543,7 @@ struct DailyEditSheet: View {
             }
             .scrollDismissesKeyboard(.interactively)
             .background(Theme.bg.ignoresSafeArea())
-            .navigationTitle(existing == nil ? "Add to Daily summary" : "Edit entry")
+            .navigationTitle(existing == nil ? "Add to Notice board" : "Edit entry")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -647,8 +647,8 @@ struct DailyEditSheet: View {
 
 // MARK: - Fade the tab bar with the swipe, without touching the layout
 
-/// Put it as a .background of the Daily summary page inside the pager. It watches where that page really is on screen and
-/// fades the tab bar from it on every frame of the swipe: fully there on My courses, gone on Daily summary, and anything in
+/// Put it as a .background of the Notice board page inside the pager. It watches where that page really is on screen and
+/// fades the tab bar from it on every frame of the swipe: fully there on My courses, gone on Notice board, and anything in
 /// between while the finger (or the settling animation) moves the pages. Before, the bar faded on a timer once the pages had
 /// stopped, which looked like a pop after the slide. No frame, transform or safe area of the bar is changed.
 struct TabBarFollower: UIViewRepresentable {
@@ -703,7 +703,7 @@ struct TabBarFollower: UIViewRepresentable {
             return nil
         }
 
-        /// 0 = Daily summary is on screen, 1 = My courses is. Measured on the page itself (like CoursePagerProbe), because the
+        /// 0 = Notice board is on screen, 1 = My courses is. Measured on the page itself (like CoursePagerProbe), because the
         /// pager's contentOffset is re-centred now and then and can't be trusted as a position.
         ///
         /// The bar's own alpha is NOT used: the system tab bar is a glass material, and when its alpha drops the glass is
@@ -714,7 +714,7 @@ struct TabBarFollower: UIViewRepresentable {
             guard window != nil, let bar, let host = bar.superview else { return }
             let w = window?.bounds.width ?? bounds.width
             guard w > 0 else { return }
-            let x = convert(bounds, to: nil).minX            // 0 when Daily summary fills the screen, -w when it is fully left
+            let x = convert(bounds, to: nil).minX            // 0 when Notice board fills the screen, -w when it is fully left
             let p = min(max(-x / w, 0), 1)                   // 0 = Daily, 1 = My courses
 
             if p >= 0.995 {
@@ -723,7 +723,7 @@ struct TabBarFollower: UIViewRepresentable {
                 bar.alpha = 1
                 bar.isUserInteractionEnabled = true
             } else if p <= 0.005 {
-                // Daily summary at rest: the bar is simply not drawn (the veil was fully opaque a moment ago, so no change shows)
+                // Notice board at rest: the bar is simply not drawn (the veil was fully opaque a moment ago, so no change shows)
                 removeVeil()
                 bar.alpha = 0
                 bar.isUserInteractionEnabled = false

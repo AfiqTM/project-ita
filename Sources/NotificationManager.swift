@@ -5,7 +5,7 @@ import BackgroundTasks
 // Local notifications for:
 //  1. To-dos due in 24 h            (scheduled ahead of time, fire even if the app is closed)
 //  2. Assignments due in < 24 h     (same)
-//  3. Classes in Daily summary, 1 h before they start   (scheduled ahead of time, fire even if the app is closed)
+//  3. Classes in Notice board, 1 h before they start   (scheduled ahead of time, fire even if the app is closed)
 //  4. New messages / alerts / announcements  (found by polling: every 60 s while the app is open,
 //     plus a BGAppRefreshTask in the background, whose timing iOS decides)
 
@@ -103,13 +103,13 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
         defaults.set(Array(done.suffix(500)), forKey: "due.done")
     }
 
-    // MARK: 3. Daily summary: 1 hour before the class
+    // MARK: 3. Notice board: 1 hour before the class
 
     private static let dailyPrefix = "daily.class."
     private var dailyTask: Task<Void, Never>?
 
-    /// One local reminder per Daily summary entry that has a day and a time, 1 hour before the class starts (the new day and
-    /// time for a rescheduled class). Called every time the Daily summary changes, so edits, removals and new announcements
+    /// One local reminder per Notice board entry that has a day and a time, 1 hour before the class starts (the new day and
+    /// time for a rescheduled class). Called every time the Notice board changes, so edits, removals and new announcements
     /// always leave exactly the right reminders. Entries that are removed, past, or start in less than an hour get none.
     func scheduleDailyReminders(_ entries: [DailyEntry]) {
         let now = Date()
