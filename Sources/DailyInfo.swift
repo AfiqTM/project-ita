@@ -379,7 +379,7 @@ enum DailyText {
         if let det = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) {
             let ns = text as NSString
             for m in det.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
-                if let u = m.url, ["http", "https"].contains(u.scheme?.lowercased() ?? "") { add(u.absoluteString == ns.substring(with: m.range) ? u.absoluteString : ns.substring(with: m.range)) }
+                if let u = m.url, ["http", "https"].contains(u.scheme?.lowercased() ?? "") { add(u.absoluteString) }
             }
         }
         return Array(out.prefix(5))
