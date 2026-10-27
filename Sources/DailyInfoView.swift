@@ -43,6 +43,9 @@ struct CoursesHome: View {
     @State private var page = 1            // 0 = Noticeboard (left), 1 = My courses (right, home)
 
     private let tabBarClearance: CGFloat = 96
+    /// My courses is laid out this far below the bottom of the screen, so its list is never cut off a few points above the
+    /// edge (a thin black strip showed under the tab bar there). The room for the tab bar grows by the same amount.
+    private let bottomOverscan: CGFloat = 40
 
     private var windowHeight: CGFloat {
         UIApplication.shared.connectedScenes
@@ -71,10 +74,11 @@ struct CoursesHome: View {
                     .background(TabBarFollower())
                     .tag(0)
                 CoursesView()
-                    .overlay(alignment: .bottom) { Rectangle().fill(Color.blue).frame(height: 4) }   // DIAGNOSTIC (temporary): bottom of the My courses page
                     .safeAreaInset(edge: .top, spacing: 0) { Color.clear.frame(height: top) }
-                    .safeAreaInset(edge: .bottom, spacing: 0) { Color.clear.frame(height: tabBarClearance) }
+                    .safeAreaInset(edge: .bottom, spacing: 0) { Color.clear.frame(height: tabBarClearance + bottomOverscan) }
                     .ignoresSafeArea(.container, edges: [.top, .bottom])
+                    .padding(.bottom, -bottomOverscan)                       // reaches past the bottom edge of the screen
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)   // ... but the page keeps its size and stays at the top
                     .tag(1)
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
@@ -90,7 +94,6 @@ struct CoursesHome: View {
             // pages (the page jumped), and moving it with a transform made it jump up before it faded (UIKit sets the bar's
             // frame on every layout pass, which is undefined while a transform is set). A fade touches neither.
             .background(Theme.bg.ignoresSafeArea())
-            .overlay(alignment: .bottom) { Rectangle().fill(Color.red).frame(height: 4) }   // DIAGNOSTIC (temporary): bottom of the pager
             .overlay(alignment: .top) {
                 LinearGradient(colors: [Theme.bg.opacity(0.92), Theme.bg.opacity(0)], startPoint: .top, endPoint: .bottom)
                     .frame(height: top + 8)
