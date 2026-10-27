@@ -5,15 +5,15 @@ import ImageIO
 import UniformTypeIdentifiers
 import AppIntents
 
-// MARK: - Send a screenshot to Notice board
+// MARK: - Send a screenshot to Noticeboard
 //
 // The screenshot is read on the phone (Vision text recognition), then the same readers as for announcements look at it:
 // the AI server when it is set up, the built-in keyword reader otherwise. Class changes become
-// entries in Notice board; the subject is found from the text (name, course code or short form such as DES / SE).
+// entries in Noticeboard; the subject is found from the text (name, course code or short form such as DES / SE).
 // Anything the readers can't place is still saved as a Notice with the text, so a screenshot is never lost.
 //
 // Double-tap on the back of the iPhone: Settings > Accessibility > Touch > Back Tap > Double Tap > a Shortcut that does
-// "Take Screenshot" and then "Send to Notice Board" (this file's App Intent). The steps are shown in Notice board too.
+// "Take Screenshot" and then "Send to Noticeboard" (this file's App Intent). The steps are shown in Noticeboard too.
 
 enum DailyCapture {
     struct Outcome {
@@ -140,7 +140,7 @@ enum DailyCapture {
         guard clean.count > 5 else {
             let why: String
             if imageData == nil && (text ?? "").isEmpty {
-                why = "The screenshot was empty. In the Shortcut, delete Send to Notice Board, add it again right after Take Screenshot and check its field says \"Screenshot\"."
+                why = "The screenshot was empty. In the Shortcut, delete Send to Noticeboard, add it again right after Take Screenshot and check its field says \"Screenshot\"."
             } else if imageData != nil {
                 why = "I couldn't read any text in that picture."
             } else { why = "There was no text to read." }
@@ -174,7 +174,7 @@ enum DailyCapture {
         if let d = first.newDate ?? first.classDate { bits.append(shortDay(d)) }
         let extra = added.count > 1 ? " (+\(added.count - 1) more)" : ""
         let unsure = (first.kind == .note && drafts.count == 1) ? " I wasn't sure what it was, so it is saved as a notice." : ""
-        return Outcome(message: (isNew ? "Added to Notice board: " : "Already in Notice board: ") + bits.joined(separator: " · ") + extra + "." + unsure, entries: added)
+        return Outcome(message: (isNew ? "Added to Noticeboard: " : "Already in Noticeboard: ") + bits.joined(separator: " · ") + extra + "." + unsure, entries: added)
     }
 
     private static func shortDay(_ d: Date) -> String {
@@ -206,10 +206,10 @@ private extension CGImagePropertyOrientation {
 // MARK: - App Intents (Shortcuts, Back Tap, Siri)
 
 struct SendToDailySummaryIntent: AppIntent {
-    static var title: LocalizedStringResource = "Send to Notice Board"
+    static var title: LocalizedStringResource = "Send to Noticeboard"
     static var description = IntentDescription(
-        "Reads a screenshot and adds the class change in it to Notice board.",
-        categoryName: "Notice board")
+        "Reads a screenshot and adds the class change in it to Noticeboard.",
+        categoryName: "Noticeboard")
     static var openAppWhenRun = false
 
     // Not optional on purpose: Shortcuts only fills a required field with the previous action's output (Take Screenshot)
@@ -218,7 +218,7 @@ struct SendToDailySummaryIntent: AppIntent {
                inputConnectionBehavior: .connectToPreviousIntentResult)
     var screenshot: IntentFile
 
-    static var parameterSummary: some ParameterSummary { Summary("Send \(\.$screenshot) to Notice Board") }
+    static var parameterSummary: some ParameterSummary { Summary("Send \(\.$screenshot) to Noticeboard") }
 
     @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog {
@@ -233,10 +233,10 @@ struct SendToDailySummaryIntent: AppIntent {
 
 /// For a copied picture or message: no Shortcut wiring needed, it reads the clipboard
 struct SendClipboardToDailySummaryIntent: AppIntent {
-    static var title: LocalizedStringResource = "Send Clipboard to Notice Board"
+    static var title: LocalizedStringResource = "Send Clipboard to Noticeboard"
     static var description = IntentDescription(
-        "Reads the picture or text on the clipboard and adds the class change in it to Notice board.",
-        categoryName: "Notice board")
+        "Reads the picture or text on the clipboard and adds the class change in it to Noticeboard.",
+        categoryName: "Noticeboard")
     static var openAppWhenRun = false
 
     @MainActor
@@ -251,15 +251,15 @@ struct SendClipboardToDailySummaryIntent: AppIntent {
 }
 
 struct SendTextToDailySummaryIntent: AppIntent {
-    static var title: LocalizedStringResource = "Send Text to Notice Board"
-    static var description = IntentDescription("Reads a message (for example a copied WhatsApp text) and adds the class change in it to Notice board.",
-                                               categoryName: "Notice board")
+    static var title: LocalizedStringResource = "Send Text to Noticeboard"
+    static var description = IntentDescription("Reads a message (for example a copied WhatsApp text) and adds the class change in it to Noticeboard.",
+                                               categoryName: "Noticeboard")
     static var openAppWhenRun = false
 
     @Parameter(title: "Text")
     var text: String
 
-    static var parameterSummary: some ParameterSummary { Summary("Send \(\.$text) to Notice Board") }
+    static var parameterSummary: some ParameterSummary { Summary("Send \(\.$text) to Noticeboard") }
 
     @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog {
@@ -271,10 +271,10 @@ struct SendTextToDailySummaryIntent: AppIntent {
 struct iTaleemShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(intent: SendToDailySummaryIntent(),
-                    phrases: ["Send to \(.applicationName) Notice Board", "Add to \(.applicationName) Notice Board"],
-                    shortTitle: "Send to Notice Board", systemImageName: "tray.and.arrow.down")
+                    phrases: ["Send to \(.applicationName) Noticeboard", "Add to \(.applicationName) Noticeboard"],
+                    shortTitle: "Send to Noticeboard", systemImageName: "tray.and.arrow.down")
         AppShortcut(intent: SendClipboardToDailySummaryIntent(),
-                    phrases: ["Send clipboard to \(.applicationName) Notice Board"],
+                    phrases: ["Send clipboard to \(.applicationName) Noticeboard"],
                     shortTitle: "Send Clipboard", systemImageName: "doc.on.clipboard")
     }
 }

@@ -1,7 +1,7 @@
 import SwiftUI
 import PhotosUI
 
-// MARK: - Three shortcut tiles at the top of Notice board
+// MARK: - Three shortcut tiles at the top of Noticeboard
 //
 // The student picks up to three of the Academic Tools to keep one tap away: To-Do List, Final Exam Calculator, My Drive,
 // Auto Attendance, Study Plan Tracker, Semester Resources. Each tile shows a live line (what is due, on / off, progress).
@@ -87,7 +87,7 @@ struct DailyToolsRow: View {
                 if let tool = store.slots[i] {
                     NavigationLink { destination(tool) } label: { DailyToolTile(tool: tool) }
                         .buttonStyle(.plain)
-                        // the tab bar is hidden on the Notice board: bring it back as the tool's screen starts to slide in
+                        // the tab bar is hidden on the Noticeboard: bring it back as the tool's screen starts to slide in
                         .simultaneousGesture(TapGesture().onEnded { NotificationCenter.default.post(name: .noticeBoardPushing, object: nil) })
                         .contextMenu {
                             Button { picking = ToolSlot(id: i) } label: { Label("Change", systemImage: "arrow.triangle.2.circlepath") }
@@ -224,7 +224,7 @@ struct DailyBackTapGuide: View {
     @Environment(\.dismiss) private var dismiss
 
     private let steps: [(String, String)] = [
-        ("Make the Shortcut", "Open the Shortcuts app, tap + and add two actions: Take Screenshot, then Send to Notice Board (search for iTa'leem). Add the second action directly under the first so its Screenshot field fills itself in; if it is empty, tap it and pick the Screenshot output of Take Screenshot. If you made the Shortcut before, delete the old Send to Notice Board action and add it again. Name it \"Notice board\"."),
+        ("Make the Shortcut", "Open the Shortcuts app, tap + and add two actions: Take Screenshot, then Send to Noticeboard (search for iTa'leem). Add the second action directly under the first so its Screenshot field fills itself in; if it is empty, tap it and pick the Screenshot output of Take Screenshot. If you made the Shortcut before, delete the old Send to Noticeboard action and add it again. Name it \"Noticeboard\"."),
         ("Turn on Back Tap", "Settings > Accessibility > Touch > Back Tap > Double Tap, then choose that Shortcut."),
         ("Use it", "On any screen with a message about a cancelled, online or moved class, double-tap the back of the iPhone. The screenshot is read on the phone and the result shows up here."),
     ]
@@ -251,7 +251,7 @@ struct DailyBackTapGuide: View {
                             .background(Theme.accent).foregroundColor(Theme.onAccent)
                             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     }
-                    Text("Copied a message instead? \"Send Clipboard to Notice Board\" (its own action, no Screenshot field) uses the picture or text on the clipboard. The subject is found from its name, course code or short form (DES, SE...). Anything it can't place is saved as a notice so you can edit it.")
+                    Text("Copied a message instead? \"Send Clipboard to Noticeboard\" (its own action, no Screenshot field) uses the picture or text on the clipboard. The subject is found from its name, course code or short form (DES, SE...). Anything it can't place is saved as a notice so you can edit it.")
                         .font(Theme.read(.footnote)).foregroundColor(Theme.muted)
                 }
                 .padding(20)

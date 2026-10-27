@@ -1,6 +1,6 @@
 import SwiftUI
 
-// MARK: - Notice Board
+// MARK: - Noticeboard
 //
 // A page next to "My courses" (swipe right) listing changes to classes: cancelled, online, another venue,
 // rescheduled (and other short notices). Entries come from two places:
@@ -27,10 +27,10 @@ enum DailyKind: String, Codable, CaseIterable, Identifiable {
         case .note: return "Notice"
         }
     }
-    /// Assignments and quizzes no longer belong in Notice board (they have their own places: Tasks, the course page).
+    /// Assignments and quizzes no longer belong in Noticeboard (they have their own places: Tasks, the course page).
     /// The cases stay only so that old saved data still decodes; nothing creates or shows them any more.
     var isWork: Bool { self == .assignment || self == .quiz }
-    /// The kinds Notice board offers (filter row, Add / Edit)
+    /// The kinds Noticeboard offers (filter row, Add / Edit)
     static var shown: [DailyKind] { allCases.filter { !$0.isWork } }
     var icon: String {
         switch self {
@@ -122,7 +122,7 @@ final class DailyInfoStore: ObservableObject {
     private static let keepDays = 60              // detected entries older than this are dropped
     private static let minGap: TimeInterval = 60 * 60            // between normal scans (a forced refresh ignores it)
     private static let fullScanGap: TimeInterval = 24 * 3600     // a scan of every subject at least this often (safety net)
-    /// Automatic scans (opening the app / Notice board, coming back online) are switched off for now: only the refresh
+    /// Automatic scans (opening the app / Noticeboard, coming back online) are switched off for now: only the refresh
     /// button and pull-to-refresh read the announcements. Set to true to bring them back (they then use the notification
     /// trigger described at scan(), so they stay cheap).
     private static let autoScan = false
@@ -144,7 +144,7 @@ final class DailyInfoStore: ObservableObject {
         var lastFullScan: Date?
     }
     private static let version = 4          // 4: summaries are not cropped any more and carry the links: read the announcements again
-                                                    // 3: assignments and quizzes are no longer part of Notice board
+                                                    // 3: assignments and quizzes are no longer part of Noticeboard
 
     /// Adds what was read from a screenshot (Back Tap / the photo picker): one entry per change found
     @discardableResult
