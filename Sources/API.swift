@@ -378,6 +378,25 @@ struct Notif: Decodable, Identifiable {
     let contexturl: String?
     let component: String?
     let eventtype: String?
+    let customdata: NotifCustomData?
+}
+
+/// Moodle's "customdata" of a notification (a JSON text). Forum posts carry the course, the activity and the discussion.
+/// Never fails to decode: anything unexpected just leaves the numbers empty.
+struct NotifCustomData: Decodable {
+    var courseid: Int?
+    var cmid: Int?
+    var discussionid: Int?
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.singleValueContainer()
+        guard let text = try? c.decode(String.self), let data = text.data(using: .utf8),
+              let o = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+        func int(_ k: String) -> Int? { (o[k] as? Int) ?? (o[k] as? String).flatMap { Int($0) } }
+        courseid = int("courseid")
+        cmid = int("cmid")
+        discussionid = int("discussionid")
+    }
 }
 
 struct DiscResp: Decodable { let discussions: [Discussion] }

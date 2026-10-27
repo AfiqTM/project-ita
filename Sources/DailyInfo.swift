@@ -120,15 +120,18 @@ final class DailyInfoStore: ObservableObject {
     private static let key = "dailyinfo.v1"
     private static let lookbackDays = 21          // announcements older than this are not read
     private static let keepDays = 60              // detected entries older than this are dropped
-    private static let minGap: TimeInterval = 20 * 60
-    /// Automatic scans (opening the app / Daily Summary, coming back online) are switched off for now: only the refresh
-    /// button and pull-to-refresh read the announcements. Set to true to bring them back.
+    private static let minGap: TimeInterval = 60 * 60            // between normal scans (a forced refresh ignores it)
+    private static let fullScanGap: TimeInterval = 24 * 3600     // a scan of every subject at least this often (safety net)
+    /// Automatic scans (opening the app / Notice board, coming back online) are switched off for now: only the refresh
+    /// button and pull-to-refresh read the announcements. Set to true to bring them back (they then use the notification
+    /// trigger described at scan(), so they stay cheap).
     private static let autoScan = false
 
     @Published private(set) var entries: [DailyEntry] = []
     @Published private(set) var seen: Set<String> = []
     @Published private(set) var scanning = false
     @Published private(set) var lastScan: Date?
+    private var lastFullScan: Date?                 // the last time every subject was read
     @Published private(set) var scanNote: String?
     private var processed: [String: String] = [:]   // "d<discussion>" -> "<created>-<length>|ai" or "|rules"
 
@@ -138,6 +141,7 @@ final class DailyInfoStore: ObservableObject {
         var processed: [String: String]
         var lastScan: Date?
         var version: Int?
+        var lastFullScan: Date?
     }
     private static let version = 4          // 4: summaries are not cropped any more and carry the links: read the announcements again
                                                     // 3: assignments and quizzes are no longer part of Notice board
@@ -178,12 +182,14 @@ final class DailyInfoStore: ObservableObject {
             seen = Set(s.seen)
             processed = (s.version ?? 1) < Self.version ? [:] : s.processed   // read the announcements again for the new kinds
             lastScan = (s.version ?? 1) < Self.version ? nil : s.lastScan
+            lastFullScan = (s.version ?? 1) < Self.version ? nil : s.lastFullScan
             NotificationManager.shared.scheduleDailyReminders(entries)
         }
     }
 
     private func save() {
-        let s = Saved(entries: entries, seen: Array(seen), processed: processed, lastScan: lastScan, version: Self.version)
+        let s = Saved(entries: entries, seen: Array(seen), processed: processed, lastScan: lastScan, version: Self.version,
+                      lastFullScan: lastFullScan)
         if let d = try? JSONEncoder().encode(s) { UserDefaults.standard.set(d, forKey: Self.key) }
         NotificationManager.shared.scheduleDailyReminders(entries)    // a reminder 1 h before each class
     }
@@ -233,7 +239,7 @@ final class DailyInfoStore: ObservableObject {
         save()
     }
     func clear() {
-        entries = []; seen = []; processed = [:]; lastScan = nil; scanNote = nil
+        entries = []; seen = []; processed = [:]; lastScan = nil; lastFullScan = nil; scanNote = nil
         UserDefaults.standard.removeObject(forKey: Self.key)
         NotificationManager.shared.scheduleDailyReminders([])
     }
@@ -249,7 +255,66 @@ final class DailyInfoStore: ObservableObject {
         let sig: String
     }
 
-    /// Reads the newest announcement of every subject and adds what changed in class. Cheap when nothing is new.
+    private struct CourseModuleResp: Decodable {
+        struct CM: Decodable { let course: Int }
+        let cm: CM
+    }
+
+    /// What the notifications feed says: announcement posts newer than `since`, and the subjects they are in.
+    /// `.unknown` = a post was found but its subject couldn't be worked out (read everything to be safe).
+    private enum Trigger {
+        case none
+        case courses([Course])
+        case unknown
+    }
+
+    /// Reads the notifications feed (shared with the alerts check, see NotificationManager.popupFeed) and picks out the
+    /// announcements / news forum posts that arrived since `since`. nil = the feed couldn't be read.
+    private func announcementTrigger(courses: [Course], since: Date) async -> Trigger? {
+        let uid = NotificationManager.shared.knownUserID
+        guard uid > 0 else { return .unknown }       // no alerts check has run yet, so no user to ask for
+        guard let feed = await NotificationManager.shared.popupFeed(uid: uid, maxAge: 120) else { return nil }
+        // a little margin for the difference between the server's clock and the phone's
+        let from = since.addingTimeInterval(-120).timeIntervalSince1970
+        let fresh = feed.notifications.filter { n in
+            guard n.component == "mod_forum", let t = n.timecreated, TimeInterval(t) > from else { return false }
+            let text = ((n.subject ?? "") + " " + (n.smallmessage ?? "")).lowercased()
+            return text.contains("announcement") || text.contains("news") || text.contains("pengumuman")
+        }
+        if fresh.isEmpty { return Trigger.none }
+        var found: [Int: Course] = [:]
+        for n in fresh {
+            guard let c = await course(of: n, in: courses) else { return .unknown }
+            found[c.id] = c
+        }
+        return .courses(Array(found.values))
+    }
+
+    /// The subject a notification belongs to: its own course data, else its course module (one cheap request), else the
+    /// course name written in it (only when exactly one subject matches)
+    private func course(of n: Notif, in courses: [Course]) async -> Course? {
+        if let id = n.customdata?.courseid, let c = courses.first(where: { $0.id == id }) { return c }
+        if let cmid = n.customdata?.cmid,
+           let r: CourseModuleResp = try? await MoodleAPI.shared.call("core_course_get_course_module", ["cmid": cmid]),
+           let c = courses.first(where: { $0.id == r.cm.course }) { return c }
+        let hay = ((n.subject ?? "") + " " + (n.smallmessage ?? "")).plainText.lowercased()
+        var best: [Course] = []
+        var bestLen = 0
+        for c in courses {
+            let longest = [c.shortname ?? "", c.fullname, c.subjectName]
+                .filter { $0.count >= 4 && hay.contains($0.lowercased()) }
+                .map { $0.count }.max() ?? 0
+            if longest > bestLen { best = [c]; bestLen = longest } else if longest == bestLen && longest > 0 { best.append(c) }
+        }
+        return best.count == 1 ? best[0] : nil
+    }
+
+    /// Reads new announcements and adds what changed in class.
+    ///
+    /// Normal scan (at most once an hour): the notifications feed is read first, and only the subjects that got a new
+    /// announcement post are read (their forum, their discussions). No new post = nothing else is asked for.
+    /// Every subject is read when the last full scan is more than 24 hours old, when this is the first scan, when a post's
+    /// subject can't be worked out, and always when `force` is true (pull to refresh, the refresh button).
     func scan(courses: [Course], force: Bool = false) async {
         guard !scanning, !courses.isEmpty else { return }
         if !force && !Self.autoScan { return }
@@ -257,15 +322,33 @@ final class DailyInfoStore: ObservableObject {
         scanning = true
         defer { scanning = false }
         let api = MoodleAPI.shared
+        let started = Date()
 
-        // 1. the announcements forum of every subject (type "news"; otherwise a forum named announcements/news)
+        var targets = courses
+        var full = true
+        if !force, let last = lastScan, let lastFull = lastFullScan, started.timeIntervalSince(lastFull) <= Self.fullScanGap {
+            guard let trigger = await announcementTrigger(courses: courses, since: last) else { return }   // offline: try again later
+            switch trigger {
+            case .none:
+                lastScan = started          // nothing new: no forum listing, no discussion fetches
+                save()
+                return
+            case .courses(let cs):
+                targets = cs
+                full = false
+            case .unknown:
+                break                        // read everything
+            }
+        }
+
+        // 1. the announcements forum of each subject to read (type "news"; otherwise a forum named announcements/news)
         var forum: [Int: Int] = [:]
         let found: [ForumInfo]? = try? await api.call("mod_forum_get_forums_by_courses",
-                                                      ["courseids": courses.map { $0.id }])
+                                                      ["courseids": targets.map { $0.id }])
         for f in found ?? [] where f.type == "news" {
             if forum[f.course] == nil { forum[f.course] = f.id }
         }
-        for c in courses where forum[c.id] == nil {
+        for c in targets where forum[c.id] == nil {
             let secs = await OfflinePrefetch.contents(c.id)
             let mods = (secs ?? []).flatMap { $0.modules }.filter { $0.modname == "forum" && $0.instance != nil }
             let pick = mods.first { m in
@@ -280,7 +363,7 @@ final class DailyInfoStore: ObservableObject {
         let aiReady = DailyInfoAI.ready
         var cands: [Candidate] = []
         var reached = 0
-        for c in courses {
+        for c in targets {
             guard let fid = forum[c.id] else { continue }
             guard let r: DiscResp = try? await api.call("mod_forum_get_forum_discussions",
                                                         ["forumid": fid, "perpage": 20]) else { continue }
@@ -320,7 +403,10 @@ final class DailyInfoStore: ObservableObject {
         entries.removeAll { e in
             e.source == .announcement && (e.relevantDate ?? e.postedAt) < cutoff
         }
-        if reached > 0 { lastScan = Date() }
+        if reached > 0 {
+            lastScan = started
+            if full { lastFullScan = started }
+        }
         if reached == 0 { scanNote = "Couldn't read the announcements. Showing what was saved." }
         else { scanNote = nil }
         save()

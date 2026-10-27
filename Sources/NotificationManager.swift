@@ -225,9 +225,23 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
         UNUserNotificationCenter.current().setBadgeCount(alerts + ChatStore.shared.unread) { _ in }
     }
 
-    private func checkAlerts(_ uid: Int) async {
+    /// The user, as last seen by a check (0 = no check has run yet)
+    var knownUserID: Int { defaults.integer(forKey: "notif.uid") }
+
+    private var lastFeed: (resp: NotifResp, at: Date)?
+
+    /// The notifications feed (message_popup_get_popup_notifications). A copy younger than `maxAge` seconds is reused, so the
+    /// alerts check and the Notice board scan don't each ask for it; 0 always asks.
+    func popupFeed(uid: Int, maxAge: TimeInterval) async -> NotifResp? {
+        if maxAge > 0, let f = lastFeed, Date().timeIntervalSince(f.at) < maxAge { return f.resp }
         guard let r: NotifResp = try? await MoodleAPI.shared.call(
-            "message_popup_get_popup_notifications", ["useridto": uid]) else { return }
+            "message_popup_get_popup_notifications", ["useridto": uid]) else { return nil }
+        lastFeed = (r, Date())
+        return r
+    }
+
+    private func checkAlerts(_ uid: Int) async {
+        guard let r = await popupFeed(uid: uid, maxAge: 0) else { return }
         let last = defaults.object(forKey: "notif.lastId") as? Int
         defer { defaults.set(max(r.notifications.map(\.id).max() ?? 0, last ?? 0), forKey: "notif.lastId") }
         guard let last else { return }   // very first run: remember what exists, don't notify for old items
