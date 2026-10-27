@@ -355,6 +355,12 @@ enum OfflinePrefetch {
 
     /// Course contents, downloaded only when needed (see the table above)
     static func contents(_ id: Int) async -> [CourseSection]? {
+        await contentsChecked(id).sections
+    }
+
+    /// Same, and says whether the site confirmed that nothing in the course changed since the saved copy
+    /// (only then is `unchanged` true: a fresh copy or a failed check never counts as "unchanged")
+    static func contentsChecked(_ id: Int) async -> (sections: [CourseSection]?, unchanged: Bool) {
         let fn = "core_course_get_contents"
         let p: [String: Any] = ["courseid": id]
         let api = MoodleAPI.shared
@@ -369,17 +375,27 @@ enum OfflinePrefetch {
             if let r { return r }
             return await download()
         }
-        guard let copy = OfflineCache.savedDate(api.offlineName(fn, p)) else { return await download() }
+        guard let copy = OfflineCache.savedDate(api.offlineName(fn, p)) else { return (await download(), false) }
         let age = Date().timeIntervalSince(copy)
-        if age < freshAge { return await keep() }
-        if age >= safetyAge { return await download() }
+        if age < freshAge { return (await keep(), false) }
+        if age >= safetyAge { return (await download(), false) }
         switch await changed(id, since: copy) {
-        case .some(true): return await download()
-        case .some(false): return await keep()
+        case .some(true): return (await download(), false)
+        case .some(false): return (await keep(), true)
         case .none:
-            if age >= noCheckAge { return await download() }
-            return await keep()
+            if age >= noCheckAge { return (await download(), false) }
+            return (await keep(), false)
         }
+    }
+
+    // When a course was last downloaded in full (its contents, files, grades, assignments, announcements)
+    private static func courseDoneKey(_ id: Int) -> String { "offline.courseDone.\(id)" }
+    private static func markCourseDone(_ id: Int) {
+        UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: courseDoneKey(id))
+    }
+    private static func courseDoneRecently(_ id: Int) -> Bool {
+        let t = UserDefaults.standard.double(forKey: courseDoneKey(id))
+        return t > 0 && Date().timeIntervalSince1970 - t < safetyAge
     }
 
     /// Quietly downloads what the app needs so it is there next time with no internet.
@@ -445,9 +461,14 @@ enum OfflinePrefetch {
     /// The requests are identical to the ones the screens make, so the screens find them saved.
     private static func course(_ id: Int, uid: Int, extras: Bool) async {
         let api = MoodleAPI.shared
-        let secs = await contents(id)
+        let (secs, unchanged) = await contentsChecked(id)
+        // The site says nothing changed in this course since the saved copy, and the course was downloaded in full less than
+        // a week ago: nothing to fetch (files, grades, assignments and announcement posts are skipped). A course is always
+        // downloaded in full again once its copy is a week old (see contents), or as soon as anything in it changes.
+        if unchanged && courseDoneRecently(id) { return }
         await OfflineFileStore.syncCourse(secs ?? [])   // "Download course files" (off by default; own Wi-Fi/mobile rule)
         guard extras else { return }
+        defer { if secs != nil { markCourseDone(id) } }
 
         _ = try? await api.raw("gradereport_user_get_grade_items", ["courseid": id, "userid": uid])
 
