@@ -681,8 +681,8 @@ struct TabBarFollower: UIViewRepresentable {
         private weak var bar: UITabBar?
 
         /// A tool was tapped and its screen is about to slide in. The page only leaves the window when that slide is over,
-        /// so waiting for that (below) showed the bar late, after the new screen had already arrived. Show it now, with a
-        /// short fade, and stop following the page until it is back.
+        /// so waiting for that (below) showed the bar late, after the new screen had already arrived. Show it now and stop
+        /// following the page until it is back.
         private var pushObserver: NSObjectProtocol?
         private var suspended = false
 
@@ -692,7 +692,11 @@ struct TabBarFollower: UIViewRepresentable {
             removeVeil()
             guard let bar else { return }
             bar.isUserInteractionEnabled = true
-            UIView.animate(withDuration: 0.22, delay: 0, options: [.curveEaseOut, .beginFromCurrentState]) { bar.alpha = 1 }
+            // at once, and sent to the screen now: the tool's screen is built right after this on the same thread, and a
+            // change that waits for the end of that work (or an animation that needs frames during it) shows up late
+            bar.layer.removeAllAnimations()
+            bar.alpha = 1
+            CATransaction.flush()
         }
 
         override func didMoveToWindow() {

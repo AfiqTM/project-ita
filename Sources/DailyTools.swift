@@ -80,15 +80,19 @@ private struct ToolSlot: Identifiable { let id: Int }
 struct DailyToolsRow: View {
     @ObservedObject private var store = DailyToolStore.shared
     @State private var picking: ToolSlot?
+    @State private var pushed: DailyTool?        // the tool whose screen is open
 
     var body: some View {
         HStack(spacing: 10) {
             ForEach(0..<DailyToolStore.slotCount, id: \.self) { i in
                 if let tool = store.slots[i] {
-                    NavigationLink { destination(tool) } label: { DailyToolTile(tool: tool) }
+                    // A button, not a NavigationLink, so there is a moment of our own at the tap: the tab bar is hidden on the
+                    // Noticeboard and has to be back on screen before the tool's screen starts to be built and slid in
+                    Button {
+                        NotificationCenter.default.post(name: .noticeBoardPushing, object: nil)
+                        DispatchQueue.main.async { pushed = tool }
+                    } label: { DailyToolTile(tool: tool) }
                         .buttonStyle(.plain)
-                        // the tab bar is hidden on the Noticeboard: bring it back as the tool's screen starts to slide in
-                        .simultaneousGesture(TapGesture().onEnded { NotificationCenter.default.post(name: .noticeBoardPushing, object: nil) })
                         .contextMenu {
                             Button { picking = ToolSlot(id: i) } label: { Label("Change", systemImage: "arrow.triangle.2.circlepath") }
                             Button(role: .destructive) { withAnimation(.snappy) { store.set(nil, at: i) } } label: {
@@ -102,6 +106,9 @@ struct DailyToolsRow: View {
             }
         }
         .sheet(item: $picking) { slot in DailyToolPicker(slot: slot.id) }
+        .navigationDestination(isPresented: Binding(get: { pushed != nil }, set: { if !$0 { pushed = nil } })) {
+            if let t = pushed { destination(t) }
+        }
     }
 
     @ViewBuilder private func destination(_ t: DailyTool) -> some View {
