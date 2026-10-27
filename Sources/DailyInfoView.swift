@@ -71,6 +71,7 @@ struct CoursesHome: View {
                     .background(TabBarFollower())
                     .tag(0)
                 CoursesView()
+                    .overlay(alignment: .bottom) { Rectangle().fill(Color.blue).frame(height: 4) }   // DIAGNOSTIC (temporary): bottom of the My courses page
                     .safeAreaInset(edge: .top, spacing: 0) { Color.clear.frame(height: top) }
                     .safeAreaInset(edge: .bottom, spacing: 0) { Color.clear.frame(height: tabBarClearance) }
                     .ignoresSafeArea(.container, edges: [.top, .bottom])
@@ -89,6 +90,7 @@ struct CoursesHome: View {
             // pages (the page jumped), and moving it with a transform made it jump up before it faded (UIKit sets the bar's
             // frame on every layout pass, which is undefined while a transform is set). A fade touches neither.
             .background(Theme.bg.ignoresSafeArea())
+            .overlay(alignment: .bottom) { Rectangle().fill(Color.red).frame(height: 4) }   // DIAGNOSTIC (temporary): bottom of the pager
             .overlay(alignment: .top) {
                 LinearGradient(colors: [Theme.bg.opacity(0.92), Theme.bg.opacity(0)], startPoint: .top, endPoint: .bottom)
                     .frame(height: top + 8)
