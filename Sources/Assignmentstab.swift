@@ -102,12 +102,39 @@ struct AssignItem: Identifiable {
 // Owned by RootView so the tab badge is correct from launch, before the tab is ever opened.
 @MainActor
 final class AssignmentsModel: ObservableObject {
-    @Published var items: [AssignItem] = []
+    @Published var items: [AssignItem] = [] { didSet { rebuild() } }
     @Published var loading = true
     @Published var error: String?
     @Published var filter: AssignFilter = .todo
     @Published var range: AssignRange {
-        didSet { UserDefaults.standard.set(range.rawValue, forKey: "assignRange") }
+        didSet { UserDefaults.standard.set(range.rawValue, forKey: "assignRange"); rebuild() }
+    }
+
+    // The four lists (grouped by day) and their counts are worked out once when the data or the range changes, not on every
+    // redraw: a swipe between the lists redraws the screen, and doing the filtering, sorting and date text for all four
+    // lists at that moment made the swipe stutter.
+    private(set) var grouped: [AssignFilter: [(String, [AssignItem])]] = [:]
+    private(set) var counts: [AssignFilter: Int] = [:]
+    private(set) var version = 0
+    private static let dayTitle: DateFormatter = { let f = DateFormatter(); f.dateStyle = .full; f.timeStyle = .none; return f }()
+
+    /// Works the lists out again (the data or the range changed, or time has passed: an assignment may now be overdue)
+    func rebuild() {
+        var g: [AssignFilter: [(String, [AssignItem])]] = [:]
+        var c: [AssignFilter: Int] = [:]
+        for f in AssignFilter.allCases {
+            let l = list(f)
+            c[f] = l.count
+            var out: [(String, [AssignItem])] = []
+            for i in l {
+                let title = i.due == 0
+                    ? "No due date"
+                    : Self.dayTitle.string(from: Date(timeIntervalSince1970: TimeInterval(i.due)))
+                if let last = out.last, last.0 == title { out[out.count - 1].1.append(i) } else { out.append((title, [i])) }
+            }
+            g[f] = out
+        }
+        grouped = g; counts = c; version &+= 1
     }
     private var running = false
 
@@ -210,20 +237,7 @@ struct AssignmentsTabView: View {
     private var uid: Int { app.site?.userid ?? 0 }
     private var now: Int { Int(Date().timeIntervalSince1970) }
 
-    private func groups(_ f: AssignFilter) -> [(String, [AssignItem])] {
-        var out: [(String, [AssignItem])] = []
-        for i in model.list(f) {
-            let title = i.due == 0
-                ? "No due date"
-                : Date(timeIntervalSince1970: TimeInterval(i.due)).formatted(date: .complete, time: .omitted)
-            if let last = out.last, last.0 == title {
-                out[out.count - 1].1.append(i)
-            } else {
-                out.append((title, [i]))
-            }
-        }
-        return out
-    }
+    private func groups(_ f: AssignFilter) -> [(String, [AssignItem])] { model.grouped[f] ?? [] }
 
     // The title and the filter chips stay put; the lists under them are the pages of a normal paging swipe
     // (To do, Overdue, Submitted, All), so swiping moves the lists with the finger like any other pager, and tapping a chip
@@ -240,7 +254,8 @@ struct AssignmentsTabView: View {
 
             TabView(selection: $model.filter) {
                 ForEach(AssignFilter.allCases) { f in
-                    page(f).tag(f)
+                    // redrawn only when the lists themselves change, not when the swipe changes the chosen filter
+                    StablePage(key: pageKey) { page(f) }.equatable().tag(f)
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
@@ -250,7 +265,17 @@ struct AssignmentsTabView: View {
         .padding(.top, 16)
         .background(Theme.bg.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
-        .onAppear { Task { await model.load(uid: uid) } }   // also refreshes after coming back from an assignment
+        .onAppear {
+            model.objectWillChange.send()
+            model.rebuild()   // time has passed since the lists were worked out (an assignment may now be overdue)
+            Task { await model.load(uid: uid) }   // also refreshes after coming back from an assignment
+        }
+    }
+
+    private var pageKey: Int {
+        var h = Hasher()
+        h.combine(model.version); h.combine(model.loading); h.combine(model.error); h.combine(model.range)
+        return h.finalize()
     }
 
     /// One filter's list
@@ -296,7 +321,7 @@ struct AssignmentsTabView: View {
                                 .fontWeight(model.filter == f ? .semibold : .regular)
                                 .foregroundColor(model.filter == f ? Theme.accent : Theme.txt)
                                 .rocks(17)
-                            let n = model.count(f)
+                            let n = model.counts[f] ?? 0
                             if (f == .todo || f == .overdue) && n > 0 {
                                 Text("\(n)")
                                     .font(Theme.font(.caption2).bold())
@@ -377,4 +402,13 @@ struct AssignmentsTabView: View {
         }
         .buttonStyle(.plain)
     }
+}
+
+
+/// A page that is redrawn only when `key` changes
+private struct StablePage<Content: View>: View, Equatable {
+    let key: Int
+    let content: () -> Content
+    static func == (a: StablePage, b: StablePage) -> Bool { a.key == b.key }
+    var body: some View { content() }
 }

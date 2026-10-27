@@ -320,12 +320,13 @@ extension String {
     }
 }
 
+// Making a DateFormatter is slow, and lists call fmt for every row on every redraw: the two kinds are made once
+private let fmtWithTime: DateFormatter = { let f = DateFormatter(); f.dateStyle = .medium; f.timeStyle = .short; return f }()
+private let fmtDateOnly: DateFormatter = { let f = DateFormatter(); f.dateStyle = .medium; f.timeStyle = .none; return f }()
+
 func fmt(_ ts: Int?, time: Bool = true) -> String {
     guard let ts, ts > 0 else { return "-" }
-    let f = DateFormatter()
-    f.dateStyle = .medium
-    f.timeStyle = time ? .short : .none
-    return f.string(from: Date(timeIntervalSince1970: TimeInterval(ts)))
+    return (time ? fmtWithTime : fmtDateOnly).string(from: Date(timeIntervalSince1970: TimeInterval(ts)))
 }
 
 // Dark CSS injected into every page shown in the in-app web view

@@ -86,12 +86,7 @@ struct DailyToolsRow: View {
         HStack(spacing: 10) {
             ForEach(0..<DailyToolStore.slotCount, id: \.self) { i in
                 if let tool = store.slots[i] {
-                    // A button, not a NavigationLink, so there is a moment of our own at the tap: the tab bar is hidden on the
-                    // Noticeboard and has to be back on screen before the tool's screen starts to be built and slid in
-                    Button {
-                        NotificationCenter.default.post(name: .noticeBoardPushing, object: nil)
-                        DispatchQueue.main.async { pushed = tool }
-                    } label: { DailyToolTile(tool: tool) }
+                    Button { pushed = tool } label: { DailyToolTile(tool: tool) }
                         .buttonStyle(.plain)
                         .contextMenu {
                             Button { picking = ToolSlot(id: i) } label: { Label("Change", systemImage: "arrow.triangle.2.circlepath") }
@@ -107,7 +102,8 @@ struct DailyToolsRow: View {
         }
         .sheet(item: $picking) { slot in DailyToolPicker(slot: slot.id) }
         .navigationDestination(isPresented: Binding(get: { pushed != nil }, set: { if !$0 { pushed = nil } })) {
-            if let t = pushed { destination(t) }
+            // the tab bar stays away on the tool's screen (the Noticeboard has none either); it is back when you return
+            if let t = pushed { destination(t).toolbar(.hidden, for: .tabBar) }
         }
     }
 
