@@ -672,6 +672,7 @@ struct TabBarFollower: UIViewRepresentable {
                 // another tab or a pushed screen: the bar must be normal there
                 observation = nil
                 scroll = nil
+                stopLink()
                 restoreBar()
             } else {
                 attachIfNeeded()
@@ -718,17 +719,24 @@ struct TabBarFollower: UIViewRepresentable {
             let p = min(max(-x / w, 0), 1)                   // 0 = Daily, 1 = My courses
 
             if p >= 0.995 {
+                stopLink()
                 // My courses at rest: the plain bar, and no veil anywhere (nothing of it may stay on screen)
                 removeVeil()
                 bar.alpha = 1
                 bar.isUserInteractionEnabled = true
             } else if p <= 0.005 {
+                stopLink()
                 // Notice board at rest: the bar is simply not drawn (the veil was fully opaque a moment ago, so no change shows)
                 removeVeil()
                 bar.alpha = 0
                 bar.isUserInteractionEnabled = false
             } else {
-                // in between: the bar stays at alpha 1 and the veil covers it by 1 - p
+                // in between: the bar stays at alpha 1 and the veil covers it by 1 - p.
+                // The page can also be "in between" because a screen is sliding it (coming back from a tool such as the
+                // To-Do List with the back swipe): the pager's contentOffset does not change then, so nothing else would
+                // call follow() again when the slide ends and the half-covered bar stayed. Keep following frame by frame
+                // until the page is at rest.
+                startLink()
                 bar.alpha = 1
                 bar.isUserInteractionEnabled = p > 0.6
                 let v = veil ?? makeVeil()
@@ -744,6 +752,25 @@ struct TabBarFollower: UIViewRepresentable {
                 v.alpha = 1 - p
             }
         }
+
+        private var link: CADisplayLink?
+        private final class LinkTarget: NSObject {
+            weak var owner: ProbeView?
+            @objc func tick() { owner?.follow() }
+        }
+        private func startLink() {
+            guard link == nil else { return }
+            let t = LinkTarget()
+            t.owner = self
+            let l = CADisplayLink(target: t, selector: #selector(LinkTarget.tick))
+            l.add(to: .main, forMode: .common)
+            link = l
+        }
+        private func stopLink() {
+            link?.invalidate()
+            link = nil
+        }
+        deinit { link?.invalidate() }
 
         private func removeVeil() {
             veil?.removeFromSuperview()
