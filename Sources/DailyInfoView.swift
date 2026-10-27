@@ -686,16 +686,21 @@ struct TabBarFollower: UIViewRepresentable {
         private var pushObserver: NSObjectProtocol?
         private var suspended = false
 
-        private func showBarForPush() {
-            suspended = true
+        /// A tool was tapped: its screen opens WITHOUT the tab bar. The bar is only made invisible (as on the Noticeboard), never
+        /// removed, so nothing is laid out again and the page doesn't jump when you come back. It stays invisible while the
+        /// Noticeboard is away (it is not put back when the page leaves the window) and until the Noticeboard is at rest again.
+        private var holdHidden = false
+        private var holdSeenAway = false
+
+        private func holdBarForPush() {
+            holdHidden = true
+            holdSeenAway = false
             stopLink()
             removeVeil()
             guard let bar else { return }
-            bar.isUserInteractionEnabled = true
-            // at once, and sent to the screen now: the tool's screen is built right after this on the same thread, and a
-            // change that waits for the end of that work (or an animation that needs frames during it) shows up late
             bar.layer.removeAllAnimations()
-            bar.alpha = 1
+            bar.alpha = 0
+            bar.isUserInteractionEnabled = false
             CATransaction.flush()
         }
 
@@ -706,13 +711,13 @@ struct TabBarFollower: UIViewRepresentable {
                 observation = nil
                 scroll = nil
                 stopLink()
-                restoreBar()
+                if holdHidden { holdSeenAway = true } else { restoreBar() }   // a tool's screen keeps the bar away
                 if let o = pushObserver { NotificationCenter.default.removeObserver(o); pushObserver = nil }
             } else {
                 suspended = false
                 if pushObserver == nil {
                     pushObserver = NotificationCenter.default.addObserver(forName: .noticeBoardPushing, object: nil, queue: .main) { [weak self] _ in
-                        self?.showBarForPush()
+                        self?.holdBarForPush()
                     }
                 }
                 attachIfNeeded()
@@ -757,6 +762,21 @@ struct TabBarFollower: UIViewRepresentable {
             guard w > 0 else { return }
             let x = convert(bounds, to: nil).minX            // 0 when Noticeboard fills the screen, -w when it is fully left
             let p = min(max(-x / w, 0), 1)                   // 0 = Daily, 1 = My courses
+
+            if holdHidden {
+                // a tool is open (or closing): the bar stays invisible until the Noticeboard has come back to rest. Reaching My courses
+                // ends it too, so a push that never happened can't leave the bar hidden there.
+                if p > 0.05 { holdSeenAway = true }
+                if p >= 0.995 || (holdSeenAway && p <= 0.005) {
+                    holdHidden = false
+                } else {
+                    removeVeil()
+                    bar.alpha = 0
+                    bar.isUserInteractionEnabled = false
+                    if holdSeenAway { startLink() } else { stopLink() }
+                    return
+                }
+            }
 
             if p >= 0.995 {
                 stopLink()

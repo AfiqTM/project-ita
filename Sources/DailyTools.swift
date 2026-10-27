@@ -86,7 +86,13 @@ struct DailyToolsRow: View {
         HStack(spacing: 10) {
             ForEach(0..<DailyToolStore.slotCount, id: \.self) { i in
                 if let tool = store.slots[i] {
-                    Button { pushed = tool } label: { DailyToolTile(tool: tool) }
+                    // The Noticeboard's tab bar stays hidden for the tool's screen too (TabBarFollower keeps it away until the
+                    // Noticeboard is back at rest). It is not hidden through .toolbar(.hidden, for: .tabBar): that changes the
+                    // layout under the Noticeboard, which then jumped down and back up when you came back.
+                    Button {
+                        NotificationCenter.default.post(name: .noticeBoardPushing, object: nil)
+                        pushed = tool
+                    } label: { DailyToolTile(tool: tool) }
                         .buttonStyle(.plain)
                         .contextMenu {
                             Button { picking = ToolSlot(id: i) } label: { Label("Change", systemImage: "arrow.triangle.2.circlepath") }
@@ -102,8 +108,7 @@ struct DailyToolsRow: View {
         }
         .sheet(item: $picking) { slot in DailyToolPicker(slot: slot.id) }
         .navigationDestination(isPresented: Binding(get: { pushed != nil }, set: { if !$0 { pushed = nil } })) {
-            // the tab bar stays away on the tool's screen (the Noticeboard has none either); it is back when you return
-            if let t = pushed { destination(t).toolbar(.hidden, for: .tabBar) }
+            if let t = pushed { destination(t) }
         }
     }
 
