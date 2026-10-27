@@ -210,17 +210,9 @@ struct AssignmentsTabView: View {
     private var uid: Int { app.site?.userid ?? 0 }
     private var now: Int { Int(Date().timeIntervalSince1970) }
 
-    /// Swipe left / right on the list to go to the next / previous filter (To do, Overdue, Submitted, All)
-    private func step(_ delta: Int) {
-        let all = AssignFilter.allCases
-        guard let i = all.firstIndex(of: model.filter), all.indices.contains(i + delta) else { return }
-        withAnimation(.easeInOut(duration: 0.2)) { model.filter = all[i + delta] }
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-    }
-
-    private var groups: [(String, [AssignItem])] {
+    private func groups(_ f: AssignFilter) -> [(String, [AssignItem])] {
         var out: [(String, [AssignItem])] = []
-        for i in model.list(model.filter) {
+        for i in model.list(f) {
             let title = i.due == 0
                 ? "No due date"
                 : Date(timeIntervalSince1970: TimeInterval(i.due)).formatted(date: .complete, time: .omitted)
@@ -233,53 +225,64 @@ struct AssignmentsTabView: View {
         return out
     }
 
+    // The title and the filter chips stay put; the lists under them are the pages of a normal paging swipe
+    // (To do, Overdue, Submitted, All), so swiping moves the lists with the finger like any other pager, and tapping a chip
+    // slides to its page the same way.
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 18) {
+            Group {
                 Text("Tasks").foregroundColor(Theme.txt).textGlow(radius: 4).rocksHeading(16, normal: .title3.weight(.semibold), pt: 20)
                 filterBar
                 rangeBar
                 if let error = model.error { Text(error).font(Theme.font(.footnote)).foregroundColor(Theme.muted) }
-
-                // the list changes with a quick cross-fade when the filter changes (tap or swipe)
-                Group {
-                    ForEach(groups, id: \.0) { title, list in
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text(title).font(Theme.font(.footnote).weight(.semibold)).foregroundColor(Theme.muted)
-                            VStack(spacing: 0) {
-                                ForEach(list) { i in row(i) }
-                            }
-                            .glowCard()
-                        }
-                    }
-
-                    if model.loading { ProgressView().tint(Theme.accent).frame(maxWidth: .infinity) }
-                    else if groups.isEmpty && model.error == nil {
-                        Text(model.filter == .todo
-                             ? "Nothing due in the next \(model.range.title)."
-                             : "Nothing here.")
-                            .foregroundColor(Theme.muted)
-                    }
-                }
-                .id(model.filter)
-                .transition(.opacity)
             }
-            .padding(16)
-            // the empty space under a short list is part of the swipe area too
-            .frame(maxWidth: .infinity, minHeight: UIScreen.main.bounds.height * 0.8, alignment: .topLeading)
-            .contentShape(Rectangle())
+            .padding(.horizontal, 16)
+
+            TabView(selection: $model.filter) {
+                ForEach(AssignFilter.allCases) { f in
+                    page(f).tag(f)
+                }
+            }
+            .tabViewStyle(.page(indexDisplayMode: .never))
+            .noBottomEdgeEffect()
+            .ignoresSafeArea(.container, edges: .bottom)
         }
-        // mostly sideways and long enough, so scrolling up and down and the rows' own taps are not affected
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 24, coordinateSpace: .local).onEnded { v in
-                let dx = v.translation.width, dy = v.translation.height
-                guard abs(dx) > 60, abs(dx) > abs(dy) * 1.8 else { return }
-                step(dx < 0 ? 1 : -1)      // swipe left = next filter, swipe right = previous
-            })
+        .padding(.top, 16)
         .background(Theme.bg.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
-        .refreshable { await model.load(uid: uid) }
         .onAppear { Task { await model.load(uid: uid) } }   // also refreshes after coming back from an assignment
+    }
+
+    /// One filter's list
+    private func page(_ f: AssignFilter) -> some View {
+        let gs = groups(f)
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                ForEach(gs, id: \.0) { title, list in
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(title).font(Theme.font(.footnote).weight(.semibold)).foregroundColor(Theme.muted)
+                        VStack(spacing: 0) {
+                            ForEach(list) { i in row(i) }
+                        }
+                        .glowCard()
+                    }
+                }
+
+                if model.loading { ProgressView().tint(Theme.accent).frame(maxWidth: .infinity) }
+                else if gs.isEmpty && model.error == nil {
+                    Text(f == .todo
+                         ? "Nothing due in the next \(model.range.title)."
+                         : "Nothing here.")
+                        .foregroundColor(Theme.muted)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 16)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+        .refreshable { await model.load(uid: uid) }
+        // room for the tab bar, which floats over the bottom of the screen
+        .safeAreaInset(edge: .bottom, spacing: 0) { Color.clear.frame(height: 96) }
     }
 
     private var filterBar: some View {
