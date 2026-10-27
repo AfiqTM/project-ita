@@ -105,14 +105,14 @@ struct CoursesHome: View {
         }
         .task {
             await catalog.loadIfNeeded()
-            await store.scan(courses: catalog.courses)
+            await store.scan(courses: catalog.coursesWithPast)
         }
         .onChange(of: scenePhase) { phase in
             guard phase == .active else { return }
-            Task { await store.scan(courses: catalog.courses) }
+            Task { await store.scan(courses: catalog.coursesWithPast) }
         }
         .onReceive(NotificationCenter.default.publisher(for: .offlineBackOnline)) { _ in
-            Task { await store.scan(courses: catalog.courses) }   // automatic: off while DailyInfoStore.autoScan is false
+            Task { await store.scan(courses: catalog.coursesWithPast) }   // automatic: off while DailyInfoStore.autoScan is false
         }
     }
 }
@@ -218,7 +218,7 @@ struct DailyInfoView: View {
             .animation(.easeInOut(duration: 0.35), value: visible.map(\.id))
         }
         .background(Theme.bg.ignoresSafeArea())
-        .refreshable { await store.scan(courses: catalog.courses, force: true) }
+        .refreshable { await store.scan(courses: catalog.coursesWithPast, force: true) }
         .sheet(isPresented: $showAdd) { DailyEditSheet() }
         .sheet(isPresented: $showGuide) { DailyBackTapGuide() }
         .photosPicker(isPresented: $showPhotos, selection: $photo, matching: .images)
@@ -255,7 +255,7 @@ struct DailyInfoView: View {
             Spacer()
             if store.scanning || reading { ProgressView().tint(Theme.accent) }
             else {
-                Button { Task { await store.scan(courses: catalog.courses, force: true) } } label: {
+                Button { Task { await store.scan(courses: catalog.coursesWithPast, force: true) } } label: {
                     Image(systemName: "arrow.clockwise").foregroundColor(Theme.accent)
                 }
             }
@@ -290,7 +290,7 @@ struct DailyInfoView: View {
                 Spacer()
                 Menu {
                     Button("All subjects") { courseFilter = nil }
-                    ForEach(catalog.courses) { c in
+                    ForEach(catalog.coursesWithPast) { c in
                         Button { courseFilter = c.id } label: {
                             if courseFilter == c.id { Label(c.subjectName, systemImage: "checkmark") }
                             else { Text(c.subjectName) }
@@ -489,7 +489,7 @@ struct DailyEditSheet: View {
 
     private var subjectName: String? {
         guard let id = courseId else { return nil }
-        if let c = catalog.courses.first(where: { $0.id == id }) { return c.subjectName }
+        if let c = catalog.coursesWithPast.first(where: { $0.id == id }) { return c.subjectName }
         return existing?.courseId == id ? existing?.courseName : nil
     }
     private var canSave: Bool { courseId != nil || !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -589,7 +589,7 @@ struct DailyEditSheet: View {
     private var subjectMenu: some View {
         Menu {
             Button("No subject") { courseId = nil }
-            ForEach(catalog.courses) { c in
+            ForEach(catalog.coursesWithPast) { c in
                 Button { courseId = c.id } label: {
                     if courseId == c.id { Label(c.subjectName, systemImage: "checkmark") }
                     else { Text(c.subjectName) }

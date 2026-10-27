@@ -38,6 +38,8 @@ extension Course {
 @MainActor
 final class CourseCatalog: ObservableObject {
     @Published private(set) var courses: [Course] = []
+    /// The same plus the past semesters' subjects (the Noticeboard reads and lists these too; the To-Do list keeps `courses`)
+    @Published private(set) var coursesWithPast: [Course] = []
     @Published private(set) var loaded = false
     private var loading = false
 
@@ -66,6 +68,13 @@ final class CourseCatalog: ObservableObject {
         var seen = Set<Int>()
         courses = list.filter { $0.isSectionCourse && seen.insert($0.id).inserted }
             .sorted { $0.subjectName.localizedCaseInsensitiveCompare($1.subjectName) == .orderedAscending }
+        // past subjects for the Noticeboard: kept apart, so the To-Do course picker stays as it was
+        var all = courses
+        if let past = await fetch("past") {
+            var ids = Set(all.map { $0.id })
+            all += past.filter { $0.isSectionCourse && ids.insert($0.id).inserted }
+        }
+        coursesWithPast = all.sorted { $0.subjectName.localizedCaseInsensitiveCompare($1.subjectName) == .orderedAscending }
         loaded = true
     }
 }
