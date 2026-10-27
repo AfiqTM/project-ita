@@ -86,13 +86,7 @@ struct DailyToolsRow: View {
         HStack(spacing: 10) {
             ForEach(0..<DailyToolStore.slotCount, id: \.self) { i in
                 if let tool = store.slots[i] {
-                    // The Noticeboard's tab bar stays hidden for the tool's screen too (TabBarFollower keeps it away until the
-                    // Noticeboard is back at rest). It is not hidden through .toolbar(.hidden, for: .tabBar): that changes the
-                    // layout under the Noticeboard, which then jumped down and back up when you came back.
-                    Button {
-                        NotificationCenter.default.post(name: .noticeBoardPushing, object: nil)
-                        pushed = tool
-                    } label: { DailyToolTile(tool: tool) }
+                    Button { pushed = tool } label: { DailyToolTile(tool: tool) }
                         .buttonStyle(.plain)
                         .contextMenu {
                             Button { picking = ToolSlot(id: i) } label: { Label("Change", systemImage: "arrow.triangle.2.circlepath") }
@@ -107,8 +101,11 @@ struct DailyToolsRow: View {
             }
         }
         .sheet(item: $picking) { slot in DailyToolPicker(slot: slot.id) }
-        .navigationDestination(isPresented: Binding(get: { pushed != nil }, set: { if !$0 { pushed = nil } })) {
-            if let t = pushed { destination(t) }
+        // The tool opens over the whole screen, so there is no tab bar on it, and nothing under the Noticeboard changes (hiding
+        // the bar for a pushed screen made the Noticeboard jump down and back up when you came back, and keeping it invisible
+        // did not hold). The chevron at the top left closes it.
+        .fullScreenCover(item: $pushed) { t in
+            ToolCover { destination(t) }
         }
     }
 
@@ -179,6 +176,27 @@ private struct DailyToolTile: View {
         .frame(maxWidth: .infinity, alignment: .leading).frame(height: 92)
         .glowCard(radius: 14)
         .contentShape(Rectangle())
+    }
+}
+
+/// A tool's screen shown over everything: its own navigation, a back chevron that closes it
+private struct ToolCover<Content: View>: View {
+    @Environment(\.dismiss) private var dismiss
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        NavigationStack {
+            content()
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        Button { dismiss() } label: {
+                            Image(systemName: "chevron.left").font(Theme.font(.body).weight(.semibold)).foregroundColor(Theme.accent)
+                        }
+                        .accessibilityLabel("Back")
+                    }
+                }
+        }
+        .preferredColorScheme(ThemeStore.shared.theme.scheme)
     }
 }
 
