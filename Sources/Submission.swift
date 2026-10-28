@@ -479,6 +479,8 @@ struct AttendanceView: View {
     @State private var appeared = false
     @State private var retryAfter: Double = 0     // seconds until the screen tries again by itself (sign-in limit)
     @State private var retries = 0
+    @State private var submitLinks: [AttSubmitLink] = []     // sessions open for the student's own submission
+    @State private var submitting: AttSubmitLink?
     @ObservedObject private var net = OfflineMonitor.shared
 
     private var uid: Int { app.site?.userid ?? 0 }
@@ -492,6 +494,7 @@ struct AttendanceView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 offlineNote
+                submitCard
                 maxCard
                 summaryCard
                 if let s = summary, !s.records.isEmpty {
@@ -522,6 +525,13 @@ struct AttendanceView: View {
         .navigationTitle(module.name)
         .navigationBarTitleDisplayMode(.inline)
         .refreshable { await loadSummary() }
+        .navigationDestination(isPresented: Binding(get: { submitting != nil }, set: { if !$0 { submitting = nil } })) {
+            if let l = submitting { AttendanceSubmitView(link: l, courseName: module.name) }
+        }
+        .onChange(of: submitting) { v in
+            // back from the submit page: read the attendance again
+            if v == nil { Task { await loadSummary() } }
+        }
         .task {
             // last download first, then the online page replaces it
             if summary == nil, OfflineSettings.enabled,
@@ -565,6 +575,35 @@ struct AttendanceView: View {
             .background(Theme.surface2)
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Theme.line))
+        }
+    }
+
+    // Sessions the student records themselves (the site shows a "Submit attendance" link on the row)
+    @ViewBuilder private var submitCard: some View {
+        if savedAt == nil && !submitLinks.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("SELF-SUBMISSION").font(Theme.font(.caption)).foregroundColor(Theme.muted)
+                ForEach(submitLinks) { l in
+                    Button { submitting = l } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "checkmark.circle.fill").font(Theme.font(.title3))
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Submit attendance").fontWeight(.semibold)
+                                if !l.title.isEmpty { Text(l.title).font(Theme.font(.caption)).opacity(0.8) }
+                            }
+                            Spacer(minLength: 0)
+                            Image(systemName: "chevron.right").font(Theme.font(.caption))
+                        }
+                        .foregroundColor(Theme.onAccent)
+                        .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Theme.accent)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+            .glowCard()
         }
     }
 
@@ -732,6 +771,7 @@ struct AttendanceView: View {
             // No internet, or the web login expired: keep working from the last download
             if OfflineSettings.enabled, let c: AttSaved = OfflineCache.loadObject(AttSaved.key(module.id)) {
                 summary = c.summary; savedAt = c.saved; note = nil; debugText = ""
+                submitLinks = []
                 return
             }
             let wait = MoodleAPI.shared.autologinWait
@@ -747,6 +787,7 @@ struct AttendanceView: View {
         if s.rows.isEmpty && s.records.isEmpty {
             note = "No attendance data found on the page."
             debugText = await DebugLog.shared.text()
+            submitLinks = AttendanceSubmitParse.links(in: html, base: u)
         } else {
             // The "all sessions" view may not carry the totals; the course's normal attendance page does.
             if s.maxPercent == nil || s.total == nil {
@@ -774,7 +815,20 @@ struct AttendanceView: View {
             debugText = s.maxPercent == nil
                 ? "Max possible not found. total=\(s.total.map(String.init) ?? "nil") taken=\(s.taken.map(String.init) ?? "nil") earned=\(s.earned.map { String($0) } ?? "nil") possible=\(s.possible.map { String($0) } ?? "nil")\n" + (await DebugLog.shared.text()) + "\nPage text: " + s.sample
                 : ""
+            await findSubmitLinks(html, base: u)
         }
+    }
+
+    /// "Submit attendance" links: from the all-sessions page, else from the page's normal view
+    private func findSubmitLinks(_ html: String, base: URL) async {
+        var links = AttendanceSubmitParse.links(in: html, base: base)
+        if links.isEmpty, var c = URLComponents(string: module.url ?? "") {
+            c.queryItems = (c.queryItems ?? []).filter { $0.name != "view" }
+            if let u = c.url, let h = await MoodleAPI.shared.fetchHTML(u, userid: uid, allowAutologin: false) {
+                links = AttendanceSubmitParse.links(in: h, base: u)
+            }
+        }
+        submitLinks = links
     }
 }
 

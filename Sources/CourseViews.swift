@@ -396,6 +396,9 @@ struct FileViewer: View {
     /// The site's last-modified time of this file (when known), so a saved copy is only used online if it is current
     var modified: Int? = nil
     @ObservedObject private var files = OfflineFileStore.shared
+    @State private var shareItem: ShareableFile?
+    @State private var preparing = false
+    @State private var shareFailed = false
 
     var body: some View {
         Group {
@@ -409,6 +412,33 @@ struct FileViewer: View {
             .background(Theme.bg.ignoresSafeArea())
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    if preparing {
+                        ProgressView().tint(Theme.accent)
+                    } else {
+                        Button { Task { await prepareShare() } } label: { Image(systemName: "square.and.arrow.up") }
+                            .accessibilityLabel("Share")
+                    }
+                }
+            }
+            .sheet(item: $shareItem) { item in FileShareSheet(url: item.url).ignoresSafeArea() }
+            .alert("Couldn't prepare the file", isPresented: $shareFailed) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("Check your connection and try again.")
+            }
+    }
+
+    private func prepareShare() async {
+        preparing = true
+        defer { preparing = false }
+        do {
+            let f = try await FileSharePrep.prepare(url: url, title: title, modified: modified)
+            shareItem = ShareableFile(url: f)
+        } catch {
+            if !(error is CancellationError) { shareFailed = true }
+        }
     }
 }
 

@@ -166,6 +166,9 @@ struct GroupChoiceView: View {
     @State private var query = ""
     @State private var webAction: URL?        // the site's own page, shown only when the quiet join / leave needs you
     @State private var bgAction: BackgroundGroupAction?   // join / leave of a group-select group, running out of sight
+    @State private var createURL: URL?        // the site's "Create group" page: only set while the site offers it to you
+    @State private var showCreate = false
+    @State private var showWebsite = false
 
     private var myId: Int { app.site?.userid ?? 0 }
     private var instance: Int { module.instance ?? 0 }
@@ -180,6 +183,9 @@ struct GroupChoiceView: View {
         c.queryItems = items
         return c.url ?? webURL
     }
+    /// Create-group button: only for the group self-selection plugin, only while the site itself offers it
+    /// (it drops the button once your group quota is used up), and never once you are in a group.
+    private var canCreate: Bool { isGroupSelect && createURL != nil && mine.isEmpty && !loading }
     private var isGroupSelect: Bool { module.modname == "groupselect" || (module.url ?? "").contains("groupselect") }
 
     private var entries: [GroupEntry] {
@@ -231,16 +237,31 @@ struct GroupChoiceView: View {
                 }
                 if let error = model.error { Text(error).font(Theme.font(.footnote)).foregroundColor(Theme.muted) }
                 if unsupported {
-                    VStack(spacing: 10) {
-                        Text("This site may not allow joining groups from the app. If joining or leaving fails, use the website.")
-                            .font(Theme.font(.footnote)).foregroundColor(Theme.muted).multilineTextAlignment(.center)
-                        NavigationLink { WebActivityView(url: webURL, title: module.name) } label: {
-                            Text("Open on the website").fontWeight(.semibold).foregroundColor(Theme.onAccent)
-                                .padding(.horizontal, 16).padding(.vertical, 10)
-                                .background(Theme.accent).clipShape(Capsule())
-                        }
+                    Text("This site may not allow joining groups from the app. If joining or leaving fails, use the website.")
+                        .font(Theme.font(.footnote)).foregroundColor(Theme.muted).multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
+                }
+
+                // always available: the activity's own page on the website
+                HStack(spacing: 10) {
+                    Button { showWebsite = true } label: {
+                        Label("Open in website", systemImage: "safari").fontWeight(.semibold)
+                            .foregroundColor(canCreate ? Theme.txt : Theme.onAccent)
+                            .frame(maxWidth: .infinity).padding(.vertical, 11)
+                            .background(canCreate ? Theme.surface2 : Theme.accent)
+                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                     }
-                    .frame(maxWidth: .infinity).padding(16).glowCard()
+                    .buttonStyle(.plain)
+                    if canCreate {
+                        Button { showCreate = true } label: {
+                            Label("Create group", systemImage: "plus").fontWeight(.semibold)
+                                .foregroundColor(Theme.onAccent)
+                                .frame(maxWidth: .infinity).padding(.vertical, 11)
+                                .background(Theme.accent)
+                                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
 
                 // my group with all its members
@@ -292,6 +313,14 @@ struct GroupChoiceView: View {
                     .frame(width: 2, height: 2).opacity(0.01).allowsHitTesting(false).accessibilityHidden(true)
             }
         }
+        .navigationDestination(isPresented: $showWebsite) {
+            WebActivityView(url: webURL, title: module.name)
+        }
+        .navigationDestination(isPresented: $showCreate) {
+            WebActivityView(url: createURL ?? webURL, title: "Create group")
+        }
+        .onChange(of: showWebsite) { v in if !v { Task { overridden = false; await load() } } }
+        .onChange(of: showCreate) { v in if !v { Task { overridden = false; await load() } } }
         .navigationDestination(isPresented: Binding(get: { webAction != nil }, set: { if !$0 { webAction = nil } })) {
             if let u = webAction { GroupWebActionView(url: u, title: module.name) }
         }
@@ -390,6 +419,7 @@ struct GroupChoiceView: View {
             chosen = model.groups.first { $0.members.contains { $0.id == myId } }?.id
             unsupported = false
             loading = false
+            await checkCreate()
             return
         }
         do {
@@ -410,6 +440,15 @@ struct GroupChoiceView: View {
             }
         }
         loading = false
+    }
+
+    /// Reads the activity's page and keeps the "Create group" address only if the site is offering it to this student
+    private func checkCreate() async {
+        guard isGroupSelect, mine.isEmpty,
+              let html = await MoodleAPI.shared.fetchHTML(webURL, userid: myId, allowAutologin: false) else {
+            createURL = nil; return
+        }
+        createURL = GroupCreateParse.link(in: html, base: webURL, cmid: module.id)
     }
 
     private func join(_ e: GroupEntry) async {
@@ -699,5 +738,32 @@ fileprivate struct GroupWebAction: UIViewRepresentable {
                 }
             }
         }
+    }
+}
+
+
+// MARK: - "Create group" link of the group self-selection page
+
+enum GroupCreateParse {
+    /// The site shows its create-group button (a link, or a small form with action=create) only to students who may
+    /// still create a group; no button on the page = nothing to offer.
+    static func link(in html: String, base: URL, cmid: Int) -> URL? {
+        let ns = html as NSString
+        if let re = try? NSRegularExpression(pattern: "href=\"([^\"]*groupselect[^\"]*action=create[^\"]*)\"", options: [.caseInsensitive]),
+           let m = re.firstMatch(in: html, range: NSRange(location: 0, length: ns.length)) {
+            let h = ns.substring(with: m.range(at: 1)).replacingOccurrences(of: "&amp;", with: "&")
+                .replacingOccurrences(of: "&#38;", with: "&")
+            if let u = URL(string: h, relativeTo: base)?.absoluteURL { return u }
+        }
+        if let re = try? NSRegularExpression(pattern: "name=\"action\"[^>]*value=\"create\"|value=\"create\"[^>]*name=\"action\"", options: [.caseInsensitive]),
+           re.firstMatch(in: html, range: NSRange(location: 0, length: ns.length)) != nil,
+           var c = URLComponents(url: base, resolvingAgainstBaseURL: false) {
+            var items = (c.queryItems ?? []).filter { $0.name != "action" }
+            if !items.contains(where: { $0.name == "id" }) { items.append(URLQueryItem(name: "id", value: String(cmid))) }
+            items.append(URLQueryItem(name: "action", value: "create"))
+            c.queryItems = items
+            return c.url
+        }
+        return nil
     }
 }
