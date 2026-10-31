@@ -372,15 +372,15 @@ struct GroupChoiceView: View {
                 else if mineNow {
                     Button { leaving = e } label: {
                         Text("Leave").fontWeight(.semibold).foregroundColor(Theme.onAccent)
-                            .padding(.horizontal, 14).padding(.vertical, 6)
-                            .overlay(Capsule().stroke(Theme.onAccent.opacity(0.55)))
+                            .frame(width: 66).padding(.vertical, 6)
+                            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(Theme.onAccent.opacity(0.55)))
                     }
                     .buttonStyle(.plain)
                 } else if e.option != nil {
                     Button { Task { await join(e) } } label: {
                         Text(full ? "Full" : (chosen == nil || isGroupSelect ? "Join" : "Switch")).fontWeight(.semibold)
                             .foregroundColor(full ? Theme.muted : Theme.onAccent)
-                            .padding(.horizontal, 12).padding(.vertical, 6)
+                            .frame(width: 66).padding(.vertical, 6)
                             .background(full ? Theme.surface2 : Theme.accent)
                             .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                     }

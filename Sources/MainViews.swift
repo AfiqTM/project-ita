@@ -87,6 +87,7 @@ struct RootView: View {
         // A new identity per theme: every screen is rebuilt, so all colours are read again
         .id(themes.theme)
         .safeAreaInset(edge: .top, spacing: 0) { OfflineBanner().id(themes.theme) }   // small "Offline" pill, only while saved data is shown
+        .overlay { ToolsOverlay() }      // Noticeboard tool screens: full-screen, slide in / out to the right (ToolsOverlay.swift)
         .overlay { MessagesOverlay() }   // Messages: full-screen, above the tab bar (Messages.swift)
         // Load at launch so the badges are right before either tab is opened
         .task(id: app.site?.userid) {
@@ -594,6 +595,10 @@ struct AlertsView: View {
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 14) {
+                // title on the left, like Tasks and My courses
+                Text("Alerts").foregroundColor(Theme.txt).textGlow(radius: 4)
+                    .rocksHeading(16, normal: .title3.weight(.semibold), pt: 20)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 if let error { Text(error).font(Theme.font(.footnote)).foregroundColor(Theme.muted) }
                 ForEach(items) { n in
                     let card = VStack(alignment: .leading, spacing: 4) {
@@ -628,14 +633,13 @@ struct AlertsView: View {
                     }
                 }
                 if loading { ProgressView().tint(Theme.accent) }
-                else if items.isEmpty && error == nil { Text("You have no notifications").foregroundColor(Theme.muted) }
+                else if items.isEmpty && error == nil { Text("You have no alerts").foregroundColor(Theme.muted) }
             }
             .padding(16)
             .padding(.bottom, unread > 0 ? 56 : 0)   // room so the floating button never covers the last card
         }
         .background(Theme.bg.ignoresSafeArea())
-        .navigationTitle("Notifications")
-        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.hidden, for: .navigationBar)
         .overlay(alignment: .bottom) {
             if unread > 0 {
                 Button { Task { await markAllRead() } } label: {
