@@ -242,26 +242,15 @@ struct GroupChoiceView: View {
                         .frame(maxWidth: .infinity)
                 }
 
-                // always available: the activity's own page on the website
-                HStack(spacing: 10) {
-                    Button { showWebsite = true } label: {
-                        Label("Open in website", systemImage: "safari").fontWeight(.semibold)
-                            .foregroundColor(canCreate ? Theme.txt : Theme.onAccent)
+                if canCreate {
+                    Button { showCreate = true } label: {
+                        Label("Create group", systemImage: "plus").fontWeight(.semibold)
+                            .foregroundColor(Theme.onAccent)
                             .frame(maxWidth: .infinity).padding(.vertical, 11)
-                            .background(canCreate ? Theme.surface2 : Theme.accent)
+                            .background(Theme.accent)
                             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                     }
                     .buttonStyle(.plain)
-                    if canCreate {
-                        Button { showCreate = true } label: {
-                            Label("Create group", systemImage: "plus").fontWeight(.semibold)
-                                .foregroundColor(Theme.onAccent)
-                                .frame(maxWidth: .infinity).padding(.vertical, 11)
-                                .background(Theme.accent)
-                                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                        }
-                        .buttonStyle(.plain)
-                    }
                 }
 
                 // my group with all its members
@@ -295,6 +284,13 @@ struct GroupChoiceView: View {
                         .font(Theme.font(.footnote)).foregroundColor(Theme.muted).padding(.top, 8)
                 }
                 if loading { ProgressView().tint(Theme.accent) }
+
+                // same link as the attendance page: small, bottom left
+                Button { showWebsite = true } label: {
+                    Text("Open in website").font(Theme.font(.subheadline)).foregroundColor(Theme.accent)
+                }
+                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(16)
         }
@@ -347,6 +343,9 @@ struct GroupChoiceView: View {
         let full = limit > 0 && count >= limit && !mineNow
         let expanded = open.contains(e.id) || forceOpen
         let members = e.members.sorted { $0.fullname < $1.fullname }
+        // my own group: the header is the accent colour and fades out into the card, so its text uses the on-accent colour
+        let head: Color = mineNow ? Theme.onAccent : Theme.txt
+        let sub: Color = mineNow ? Theme.onAccent.opacity(0.75) : Theme.muted
         return VStack(spacing: 0) {
             HStack(spacing: 10) {
                 // tapping the title area expands / collapses the member list
@@ -357,24 +356,24 @@ struct GroupChoiceView: View {
                 } label: {
                     HStack(spacing: 8) {
                         VStack(alignment: .leading, spacing: 3) {
-                            Text(e.name).fontWeight(.semibold).foregroundColor(Theme.txt).multilineTextAlignment(.leading)
+                            Text(e.name).fontWeight(.semibold).foregroundColor(head).multilineTextAlignment(.leading)
                             Text(limit > 0 ? "\(count)/\(limit) members" : "\(count) member\(count == 1 ? "" : "s")")
-                                .font(Theme.font(.footnote)).foregroundColor(full ? Theme.accent : Theme.muted)
+                                .font(Theme.font(.footnote)).foregroundColor(full ? Theme.accent : sub)
                         }
                         Spacer(minLength: 0)
                         Image(systemName: expanded ? "chevron.up" : "chevron.down")
-                            .font(Theme.font(.caption)).foregroundColor(Theme.muted)
+                            .font(Theme.font(.caption)).foregroundColor(sub)
                     }
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
 
-                if busy == e.id { ProgressView().tint(Theme.accent) }
+                if busy == e.id { ProgressView().tint(mineNow ? Theme.onAccent : Theme.accent) }
                 else if mineNow {
                     Button { leaving = e } label: {
-                        Text("Leave").fontWeight(.semibold).foregroundColor(Theme.txt)
+                        Text("Leave").fontWeight(.semibold).foregroundColor(Theme.onAccent)
                             .padding(.horizontal, 14).padding(.vertical, 6)
-                            .overlay(Capsule().stroke(Theme.line))
+                            .overlay(Capsule().stroke(Theme.onAccent.opacity(0.55)))
                     }
                     .buttonStyle(.plain)
                 } else if e.option != nil {
@@ -390,6 +389,15 @@ struct GroupChoiceView: View {
                 }
             }
             .padding(12)
+            .background {
+                if mineNow {
+                    // solid accent behind the title, then a smooth fade into the card
+                    LinearGradient(stops: [.init(color: Theme.accent, location: 0),
+                                           .init(color: Theme.accent, location: 0.72),
+                                           .init(color: Theme.accent.opacity(0), location: 1)],
+                                   startPoint: .top, endPoint: .bottom)
+                }
+            }
 
             if expanded {
                 if !e.about.isEmpty {
@@ -406,6 +414,7 @@ struct GroupChoiceView: View {
                 Color.clear.frame(height: 8)      // the last name keeps the same distance from the card edge as the first
             }
         }
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .glowCard()
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(mineNow ? Theme.accent : .clear, lineWidth: 1.5))
     }
