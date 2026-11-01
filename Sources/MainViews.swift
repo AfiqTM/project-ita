@@ -358,6 +358,13 @@ struct CoursesView: View {
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
             .stroke(searchFocused ? Theme.accent.opacity(0.6) : Theme.line))
+        .background {   // Notebook: light edge on the right and bottom, like its cards
+            if ThemeStore.shared.theme == .notebook {
+                let p = ThemeStore.shared.palette
+                RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(hex: p.glow))
+                    .offset(x: p.hardOffset, y: p.hardOffset)
+            }
+        }
     }
 
     @ViewBuilder private var suggestionList: some View {
