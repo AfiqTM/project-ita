@@ -60,9 +60,21 @@ struct Palette {
                                   green: 0x2FBF7A, red: 0xE0483F, amber: 0xE0A21E, blue: 0x3A63D8,
                                   glow: 0x0D0D0D, card: .pixel)
 
+    // Notebook, dark: charcoal page and cards, light outline and a mid-grey block shadow (a black one would vanish on the
+    // page). Text is near-white (about 15:1 on the cards), muted grey about 6.5:1, the status colours are lifted so they
+    // read on dark, and the yellow accent keeps its black text.
+    static let notebookDark = Palette(bg: 0x131313, surface: 0x1E1E1E, surface2: 0x2A2A2A, titleBar: 0x1A1A1A,
+                                      line: 0xEDEDED, txt: 0xF2F2F2, muted: 0xA3A3A3, accent: 0xF4C95D,
+                                      onAccent: 0x111111,
+                                      green: 0x3DD68C, red: 0xFF6B61, amber: 0xF0B73A, blue: 0x7E9CFF,
+                                      glow: 0x9A9A9A, card: .pixel)
+
+    /// Both Notebook palettes are told apart by their shadow colour
+    private var isNotebookStyle: Bool { card == .pixel && (glow == 0x0D0D0D || glow == 0x9A9A9A) }
+
     /// Hard-shadow card styles: offset of the block shadow and width of the outline (Notebook: thin dark outline, 2 pt light edge)
-    var hardOffset: CGFloat { card == .pixel && self.glow == 0x0D0D0D ? 4 : 3 }
-    var hardLine: CGFloat { card == .pixel && self.glow == 0x0D0D0D ? 2.5 : 2 }
+    var hardOffset: CGFloat { isNotebookStyle ? 4 : 3 }
+    var hardLine: CGFloat { isNotebookStyle ? 2.5 : 2 }
 }
 
 // Every colour reads from the palette of the chosen theme (Themes.swift). Screens pick the new colours up
@@ -76,7 +88,7 @@ enum Theme {
     static var titleBar: Color { Color(hex: p.titleBar) }   // "General" title bar / table headers
     static var line: Color     { Color(hex: p.line) }
     /// Thin line between rows inside a card: the Notebook theme draws these light grey instead of black
-    static var softLine: Color { ThemeStore.shared.theme == .notebook ? Color(hex: 0xDADADA) : Color(hex: p.line) }
+    static var softLine: Color { ThemeStore.shared.theme.isNotebook ? Color(hex: ThemeStore.shared.theme.scheme == .dark ? 0x3A3A3A : 0xDADADA) : Color(hex: p.line) }
     static var txt: Color      { Color(hex: p.txt) }
     static var muted: Color    { Color(hex: p.muted) }
     static var accent: Color   { Color(hex: p.accent) }
@@ -99,7 +111,7 @@ enum Theme {
     /// sub-titles (largeTitle ... subheadline) and Zilla Slab for running text (body, footnote, caption).
     /// (`.weight()` and `.bold()` can still be chained on the result; the fonts have one weight here.)
     static func font(_ style: Font) -> Font {
-        if ThemeStore.shared.theme == .notebook, JakartaFont.available,
+        if ThemeStore.shared.theme.isNotebook, JakartaFont.available,
            let m = styleSizes.first(where: { $0.0 == style }) {
             return .custom(m.3 || m.2 == .headline ? JakartaFont.bold : JakartaFont.medium, size: m.1, relativeTo: m.2)
         }
@@ -118,7 +130,7 @@ enum Theme {
     /// Like `font`, but always the readable body font in Red Dead Redemption 2, even for the title/sub-title styles:
     /// for longer text that happens to be set in a sub-title size (descriptions, previews, page text).
     static func read(_ style: Font, bold: Bool = false) -> Font {
-        if ThemeStore.shared.theme == .notebook, JakartaFont.available,
+        if ThemeStore.shared.theme.isNotebook, JakartaFont.available,
            let m = styleSizes.first(where: { $0.0 == style }) {
             return .custom(bold ? JakartaFont.bold : JakartaFont.medium, size: m.1, relativeTo: m.2)
         }
@@ -165,7 +177,7 @@ enum Theme {
                 if let f = UIFont(name: PixelFont.bold, size: 28) { large[.font] = f }
             }
         }
-        if theme == .notebook, JakartaFont.available {
+        if theme.isNotebook, JakartaFont.available {
             if let f = UIFont(name: JakartaFont.bold, size: 17) { title[.font] = f }
             if let f = UIFont(name: JakartaFont.extraBold, size: 34) { large[.font] = f }
         }
@@ -276,7 +288,7 @@ struct GlowCard: ViewModifier {
         let p = themes.theme.palette
         let pixel = p.card == .pixel
         let western = p.card == .western
-        let notebook = themes.theme == .notebook
+        let notebook = themes.theme.isNotebook
         let shape = RoundedRectangle(cornerRadius: Theme.cardRadius(radius), style: .continuous)
         let g = Color(hex: p.glow)
         // three shadow layers: colour, blur, x offset, y offset
@@ -340,7 +352,7 @@ struct NotebookFolderTab<Content: View>: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             FolderTabShape()
-                .fill(Color(hex: 0x111111))
+                .fill(Theme.line)
                 .frame(width: 87, height: NotebookFolder.tabHeight + 14)
                 .padding(.leading, 7)
             content.padding(.top, NotebookFolder.tabHeight)
@@ -353,8 +365,10 @@ struct NotebookFolderTab<Content: View>: View {
 struct NotebookPattern: View {
     var seed: Int = 0
     var soft: Bool = false
+    @ObservedObject private var themes = ThemeStore.shared
 
     var body: some View {
+        let dark = themes.theme.scheme == .dark
         Canvas { ctx, size in
             let w = size.width, h = size.height
             let unit = min(w, h)
@@ -373,9 +387,10 @@ struct NotebookPattern: View {
                 }
                 y += step
             }
-            ctx.fill(dots, with: .color(Color.black.opacity(soft ? 0.12 : 0.16)))
+            ctx.fill(dots, with: .color((dark ? Color.white : Color.black).opacity(soft ? 0.10 : 0.14)))
 
-            let outline = Color.black.opacity(soft ? 0.5 : 0.75)
+            let outline = (dark ? Color.white : Color.black).opacity(soft ? 0.45 : 0.7)
+            let pale = Color.white.opacity(dark ? 0.10 : 0.22)
             let style = StrokeStyle(lineWidth: soft ? 2.5 : 2, lineJoin: .round)
             func draw(_ path: Path, _ fill: Color) {
                 ctx.fill(path, with: .color(fill))
@@ -386,13 +401,13 @@ struct NotebookPattern: View {
             let r = unit * 0.27
             let cx = w * 0.80, cy = h * (0.26 + 0.04 * k)
             draw(Path(ellipseIn: CGRect(x: cx - r, y: cy - r, width: r * 2, height: r * 2)),
-                 soft ? Color.white.opacity(0.45) : accent.opacity(0.45))
+                 soft ? Color.white.opacity(dark ? 0.08 : 0.45) : accent.opacity(dark ? 0.32 : 0.45))
 
             // tilted rounded square, bottom right
             let s = unit * 0.30
             let t = CGAffineTransform(translationX: w * 0.92, y: h * 0.78).rotated(by: (-18 + 14 * k) * .pi / 180)
             draw(Path(roundedRect: CGRect(x: -s / 2, y: -s / 2, width: s, height: s), cornerRadius: s * 0.22).applying(t),
-                 soft ? accent.opacity(0.6) : Color.white.opacity(0.22))
+                 soft ? accent.opacity(dark ? 0.35 : 0.6) : pale)
 
             // small triangle, top middle (covers only)
             if !soft {
@@ -402,7 +417,7 @@ struct NotebookPattern: View {
                 tri.addLine(to: CGPoint(x: tc.x + e, y: tc.y + e))
                 tri.addLine(to: CGPoint(x: tc.x - e, y: tc.y + e))
                 tri.closeSubpath()
-                draw(tri, Color.white.opacity(0.22))
+                draw(tri, pale)
             }
         }
     }
@@ -410,9 +425,13 @@ struct NotebookPattern: View {
 
 // The warm yellow page behind the course header in the Notebook theme
 struct NotebookHeaderArt: View {
+    @ObservedObject private var themes = ThemeStore.shared
     var body: some View {
+        let dark = themes.theme.scheme == .dark
         ZStack {
-            LinearGradient(colors: [Color(hex: 0xFAE9B4), Color(hex: 0xF5D98C)], startPoint: .top, endPoint: .bottom)
+            LinearGradient(colors: dark ? [Color(hex: 0x30290F), Color(hex: 0x221D0B)]   // dark, warm: the light text stays readable
+                                        : [Color(hex: 0xFAE9B4), Color(hex: 0xF5D98C)],
+                           startPoint: .top, endPoint: .bottom)
             NotebookPattern(seed: 1, soft: true)
         }
     }
@@ -423,12 +442,12 @@ struct RowIcon<Content: View>: View {
     private let content: Content
     init(@ViewBuilder content: () -> Content) { self.content = content() }
     var body: some View {
-        if ThemeStore.shared.theme == .notebook {
+        if ThemeStore.shared.theme.isNotebook {
             content
                 .font(.system(size: 18, weight: .regular))
                 .foregroundColor(Theme.txt)
                 .frame(width: 34, height: 34)
-                .background(Color(hex: 0xF2F2F4), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .background(Color(hex: ThemeStore.shared.theme.scheme == .dark ? 0x2E2E30 : 0xF2F2F4), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         } else {
             content.foregroundColor(Theme.accent).frame(width: 26)
         }
@@ -438,8 +457,8 @@ struct RowIcon<Content: View>: View {
 // Line between two rows of a card. Notebook: thin light grey, starting at the text. Other themes: the usual full-width line.
 struct RowDivider: View {
     var body: some View {
-        if ThemeStore.shared.theme == .notebook {
-            Rectangle().fill(Color(hex: 0xDADADA)).frame(height: 1).padding(.leading, 64)
+        if ThemeStore.shared.theme.isNotebook {
+            Rectangle().fill(Theme.softLine).frame(height: 1).padding(.leading, 64)
         } else {
             Rectangle().fill(Theme.line).frame(height: 1)
         }
@@ -567,7 +586,7 @@ struct NotebookSquare<Content: View>: View {
     private let content: Content
     init(size: CGFloat = 39, @ViewBuilder content: () -> Content) { self.size = size; self.content = content() }
     var body: some View {
-        let p = Palette.notebook
+        let p = ThemeStore.shared.palette
         let shape = RoundedRectangle(cornerRadius: 11, style: .continuous)
         content
             .frame(width: size, height: size)
@@ -634,7 +653,7 @@ struct NotebookBack: ViewModifier {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var themes = ThemeStore.shared
     func body(content: Content) -> some View {
-        if themes.theme == .notebook {
+        if themes.theme.isNotebook {
             content
                 .navigationBarBackButtonHidden(true)
                 .toolbar { NotebookBackToolbar { dismiss() } }
@@ -650,7 +669,7 @@ struct FlatCard: ViewModifier {
     var radius: CGFloat = 14
     @ObservedObject private var themes = ThemeStore.shared
     func body(content: Content) -> some View {
-        if themes.theme == .notebook {
+        if themes.theme.isNotebook {
             content.glowCard(radius: radius)
         } else {
             content.background(Theme.surface, in: RoundedRectangle(cornerRadius: radius))

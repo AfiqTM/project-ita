@@ -33,7 +33,7 @@ struct iTaleemApp: App {
             .onAppear { sync.configure(todos: todos, lib: driveLib, auth: driveAuth) }
             .onChange(of: scenePhase) { phase in if phase == .active { sync.syncNow(); AppIcon.syncWithTheme() } }
             .modifier(ThemeFont(mono: themes.theme.mono))
-            .environment(\.font, (themes.theme.westernHeadings || themes.theme == .notebook) ? Theme.font(.body) : nil)   // Red Dead: Chinese Rocks everywhere   // Terminal theme: monospaced font
+            .environment(\.font, (themes.theme.westernHeadings || themes.theme.isNotebook) ? Theme.font(.body) : nil)   // Red Dead: Chinese Rocks everywhere   // Terminal theme: monospaced font
             .preferredColorScheme(themes.theme.scheme)
             .tint(Theme.accent)
             .background(Theme.bg.ignoresSafeArea())

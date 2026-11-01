@@ -54,7 +54,7 @@ struct ToolsOverlay: View {
                     tool.screen
                         .background(NavGrab())
                         .toolbar {
-                            if ThemeStore.shared.theme == .notebook {
+                            if ThemeStore.shared.theme.isNotebook {
                                 NotebookBackToolbar { presenter.close() }
                             } else {
                                 ToolbarItem(placement: .navigationBarLeading) {

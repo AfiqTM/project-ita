@@ -288,7 +288,7 @@ struct CoursesView: View {
                                         .clipShape(Capsule())
                                 }
                                 .padding(10)
-                                .padding(.top, ThemeStore.shared.theme == .notebook ? NotebookFolder.tabHeight : 0)
+                                .padding(.top, ThemeStore.shared.theme.isNotebook ? NotebookFolder.tabHeight : 0)
                             } else {
                                 Button { Task { await toggleStar(c) } } label: {
                                     Image(systemName: starred ? "star.fill" : "star")
@@ -298,7 +298,7 @@ struct CoursesView: View {
                                         .clipShape(Circle())
                                 }
                                 .padding(10)
-                                .padding(.top, ThemeStore.shared.theme == .notebook ? NotebookFolder.tabHeight : 0)
+                                .padding(.top, ThemeStore.shared.theme.isNotebook ? NotebookFolder.tabHeight : 0)
                             }
                         }
                         .contextMenu {
@@ -361,7 +361,7 @@ struct CoursesView: View {
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
             .stroke(searchFocused ? Theme.accent.opacity(0.6) : Theme.line))
         .background {   // Notebook: light edge on the right and bottom, like its cards
-            if ThemeStore.shared.theme == .notebook {
+            if ThemeStore.shared.theme.isNotebook {
                 let p = ThemeStore.shared.palette
                 RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(hex: p.glow))
                     .offset(x: p.hardOffset, y: p.hardOffset)
@@ -483,7 +483,7 @@ struct CourseCard: View {
     @ObservedObject private var themes = ThemeStore.shared
 
     var body: some View {
-        if themes.theme == .notebook {
+        if themes.theme.isNotebook {
             NotebookFolderTab { normalCard }   // Notebook: a black folder tab behind the card
         } else {
             normalCard
@@ -498,7 +498,7 @@ struct CourseCard: View {
                     .foregroundColor(Theme.txt)
                     .multilineTextAlignment(.leading)
                     .textGlow(radius: 3)
-                    .pixelHeading(12, normal: .subheadline.weight(.semibold), pt: themes.theme == .notebook ? 14.5 : 15)
+                    .pixelHeading(12, normal: .subheadline.weight(.semibold), pt: themes.theme.isNotebook ? 14.5 : 15)
                 if let p = course.progress {
                     ProgressView(value: min(max(p, 0), 100), total: 100).tint(Theme.accent)
                     Text("\(Int(p))% complete").font(Theme.font(.caption)).foregroundColor(Theme.muted)
@@ -511,7 +511,7 @@ struct CourseCard: View {
     }
 
     @ViewBuilder private var cover: some View {
-        if themes.theme == .notebook {
+        if themes.theme.isNotebook {
             DefaultCover(course: course)   // Notebook: its own sticker-and-dots cover instead of the course photo
         } else if let str = course.courseimage, str.hasPrefix("http"), !str.lowercased().contains(".svg"),
            let u = MoodleAPI.shared.fileURL(str) {
@@ -544,7 +544,7 @@ struct DefaultCover: View {
         ZStack(alignment: .bottomLeading) {
             LinearGradient(colors: [Color(hex: p.0), Color(hex: p.1)],
                            startPoint: .topLeading, endPoint: .bottomTrailing)
-            if themes.theme == .notebook {
+            if themes.theme.isNotebook {
                 NotebookPattern(seed: course.id)
             } else {
                 Image(systemName: "book.closed.fill")
@@ -744,9 +744,9 @@ struct ProfileView: View {
     }
 
     private func sectionTitle(_ t: String) -> some View {
-        Text(t).font(ThemeStore.shared.theme == .notebook ? Theme.font(.subheadline) : Theme.font(.footnote).weight(.semibold))
+        Text(t).font(ThemeStore.shared.theme.isNotebook ? Theme.font(.subheadline) : Theme.font(.footnote).weight(.semibold))
             .foregroundColor(Theme.muted)
-            .textCase(.uppercase).padding(.horizontal, ThemeStore.shared.theme == .notebook ? 0 : 6).padding(.bottom, -8)
+            .textCase(.uppercase).padding(.horizontal, ThemeStore.shared.theme.isNotebook ? 0 : 6).padding(.bottom, -8)
     }
 
     var body: some View {
@@ -814,7 +814,7 @@ struct ProfileView: View {
                                    subtitle: themes.theme.name, showLine: true)
                     }
                     OfflineSupportRow()
-                    if ThemeStore.shared.theme != .notebook { Rectangle().fill(Theme.line).frame(height: 1) }   // Offline support has its own line
+                    if !ThemeStore.shared.theme.isNotebook { Rectangle().fill(Theme.line).frame(height: 1) }   // Offline support has its own line
                     SyncStatusRow()
                 }
                 .buttonStyle(.plain)
@@ -855,7 +855,7 @@ struct ProfileRow: View {
                 }
             }.textGlow()
             VStack(alignment: .leading, spacing: 3) {
-                Text(title).foregroundColor(Theme.txt).textGlow(radius: 3).rocksHeading(12, normal: .subheadline.weight(.semibold), pt: ThemeStore.shared.theme == .notebook ? 14.5 : 15)
+                Text(title).foregroundColor(Theme.txt).textGlow(radius: 3).rocksHeading(12, normal: .subheadline.weight(.semibold), pt: ThemeStore.shared.theme.isNotebook ? 14.5 : 15)
                 Text(subtitle).font(Theme.font(.caption)).foregroundColor(Theme.muted).lineLimit(subtitleLines)
             }
             Spacer()
@@ -866,7 +866,7 @@ struct ProfileRow: View {
             }
             Image(systemName: "chevron.right").font(Theme.font(.caption)).foregroundColor(Theme.muted)
         }
-        .padding(ThemeStore.shared.theme == .notebook ? 16 : 14)
+        .padding(ThemeStore.shared.theme.isNotebook ? 16 : 14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         .overlay(RowDivider().frame(height: showLine ? 1 : 0).opacity(showLine ? 1 : 0), alignment: .bottom)

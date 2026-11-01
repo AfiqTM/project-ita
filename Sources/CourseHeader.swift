@@ -168,8 +168,8 @@ struct CourseHeaderView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(course.headerCode)
-                .foregroundStyle(themes.theme == .notebook
-                                 ? AnyShapeStyle(Color(hex: Palette.notebook.line))   // Notebook: solid ink black, readable on the yellow page
+                .foregroundStyle(themes.theme.isNotebook
+                                 ? AnyShapeStyle(Theme.line)   // Notebook: solid ink (black on the yellow page, near-white on the dark one)
                                  : AnyShapeStyle(LinearGradient(colors: [Theme.txt, Theme.accent.opacity(0.85)],
                                                                 startPoint: .topLeading, endPoint: .bottomTrailing)))
                 .lineLimit(2).minimumScaleFactor(0.6)
@@ -235,7 +235,7 @@ struct CourseBackdrop: View {
         Color.clear
             .frame(maxWidth: .infinity).frame(height: height)
             .overlay {
-                if t == .notebook {
+                if t.isNotebook {
                     NotebookHeaderArt()   // Notebook: a yellow page with dots and stickers instead of the photo
                 } else {
                     // Light theme: a bright, warm version of the same photo (CourseHeaderLight) so the dark text stays readable

@@ -130,7 +130,7 @@ struct MessagesButton: View {
     var body: some View {
         Button { MessagesPresenter.shared.open() } label: {
             ZStack(alignment: .topTrailing) {
-                if ThemeStore.shared.theme == .notebook {
+                if ThemeStore.shared.theme.isNotebook {
                     NotebookSquare { glyph }
                 } else {
                     glyph.padding(6)
@@ -143,7 +143,7 @@ struct MessagesButton: View {
                         .frame(minWidth: 17, minHeight: 17)
                         .background(Theme.accent)
                         .clipShape(Capsule())
-                        .overlay(Capsule().stroke(ThemeStore.shared.theme == .notebook ? Theme.line : Theme.bg, lineWidth: 1.5))
+                        .overlay(Capsule().stroke(ThemeStore.shared.theme.isNotebook ? Theme.line : Theme.bg, lineWidth: 1.5))
                         .offset(x: 6, y: -4)
                 }
             }

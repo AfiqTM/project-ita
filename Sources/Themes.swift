@@ -14,18 +14,23 @@ import CoreText
 // happens and then faded out.
 
 enum AppTheme: String, CaseIterable, Identifiable {
-    case dark, light, terminal, retro, redDead, notebook
+    case dark, light, terminal, retro, redDead, notebook, notebookDark
 
     var id: String { rawValue }
 
+    /// Both Notebook looks (light and dark)
+    var isNotebook: Bool { self == .notebook || self == .notebookDark }
+
+    /// Shown where the current theme is named (Others > Themes)
     var name: String {
         switch self {
-        case .dark: return "Dark"
-        case .light: return "Light"
+        case .dark: return "Default \u{B7} Dark"
+        case .light: return "Default \u{B7} Light"
         case .terminal: return "Terminal"
         case .retro: return "Retro"
         case .redDead: return "Red Dead Redemption 2"
-        case .notebook: return "Notebook"
+        case .notebook: return "Notebook \u{B7} Light"
+        case .notebookDark: return "Notebook \u{B7} Dark"
         }
     }
 
@@ -37,6 +42,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
         case .retro: return "Old-school arcade: black and olive tiles, yellow accent, hard pixel edges and a pixel-style font."
         case .redDead: return "Rockstar-poster look: black and red, stencil-style caps headings, flat cards with a red banner strip."
         case .notebook: return "Neo-brutalist: near-white page, thick black outlines, solid block shadows, soft yellow accent and a rounded geometric font."
+        case .notebookDark: return "Notebook after dark: charcoal page, light outlines and block shadows, the same yellow accent and rounded font."
         }
     }
 
@@ -64,6 +70,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
         case .retro: return .retro
         case .redDead: return .redDead
         case .notebook: return .notebook
+        case .notebookDark: return .notebookDark
         }
     }
 
@@ -97,6 +104,10 @@ enum AppTheme: String, CaseIterable, Identifiable {
             // a little darker than the page so the cards stand out
             return [(0xB4B4B4, 0x9E9E9E), (0xC4A860, 0xBB953A), (0xC07F4C, 0xB16129),
                     (0xBC708A, 0xAB4F6E), (0x7084BD, 0x4963AC), (0x70AE90, 0x3C976F)]
+        case .notebookDark:
+            // deep, slightly muted versions of the same colours, so the yellow course code stays easy to read
+            return [(0x303030, 0x242424), (0x544816, 0x3F350F), (0x573619, 0x40260F),
+                    (0x54243A, 0x3F1A2B), (0x26335C, 0x1B2646), (0x1F4D3A, 0x16382A)]
         }
     }
 
@@ -109,6 +120,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
         case .retro: return -0.15
         case .redDead: return -0.4
         case .notebook: return -0.2
+        case .notebookDark: return -0.2
         }
     }
     var coverSaturation: Double {
@@ -160,6 +172,46 @@ enum AppTheme: String, CaseIterable, Identifiable {
     }
 }
 
+/// The cards on the Themes screen. Default and Notebook each hold a dark and a light look, picked with a switch on the
+/// card (dark on the left, light on the right); the others are a single look.
+enum ThemeFamily: String, CaseIterable, Identifiable {
+    case standard, terminal, retro, redDead, notebook
+
+    var id: String { rawValue }
+
+    /// Left to right on the switch: dark, then light. A single entry means the card has no switch.
+    var variants: [AppTheme] {
+        switch self {
+        case .standard: return [.dark, .light]
+        case .terminal: return [.terminal]
+        case .retro: return [.retro]
+        case .redDead: return [.redDead]
+        case .notebook: return [.notebookDark, .notebook]
+        }
+    }
+
+    var name: String {
+        switch self {
+        case .standard: return "Default"
+        case .terminal: return "Terminal"
+        case .retro: return "Retro"
+        case .redDead: return "Red Dead Redemption 2"
+        case .notebook: return "Notebook"
+        }
+    }
+
+    var hasSwitch: Bool { variants.count > 1 }
+    var variantKey: String { "app.themeVariant." + rawValue }
+
+    static func of(_ t: AppTheme) -> ThemeFamily { allCases.first { $0.variants.contains(t) } ?? .standard }
+
+    /// The look this card opens with when it is tapped: the one used last, else Dark (Notebook: Light, its original look)
+    var remembered: AppTheme {
+        if let raw = UserDefaults.standard.string(forKey: variantKey), let t = AppTheme(rawValue: raw), variants.contains(t) { return t }
+        return self == .notebook ? .notebook : variants[0]
+    }
+}
+
 /// The home-screen icon that goes with each theme. Each one is an alternate icon set in the asset catalog
 /// (Assets.xcassets/AppIcon-Light, AppIcon-Terminal, AppIcon-Retro, AppIcon-RedDead) and listed in project.yml under
 /// ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES.
@@ -181,7 +233,7 @@ enum AppIcon {
         case .terminal: return "AppIcon-Terminal"
         case .retro: return "AppIcon-Retro"
         case .redDead: return "AppIcon-RedDead"
-        case .notebook: return nil      // no icon of its own yet: the main (dark) icon
+        case .notebook, .notebookDark: return nil      // no icon of its own yet: the main (dark) icon
         }
     }
 
@@ -242,6 +294,7 @@ final class ThemeStore: ObservableObject {
 
         theme = new
         UserDefaults.standard.set(new.rawValue, forKey: Self.key)
+        UserDefaults.standard.set(new.rawValue, forKey: ThemeFamily.of(new).variantKey)   // the family opens with this look next time
         Theme.applyAppearance()   // new navigation / tab bars (created when the screens are rebuilt) get the new look
         if AppIcon.followsTheme { AppIcon.apply(for: new) }   // home-screen icon follows the theme (if switched on)
 
@@ -367,7 +420,7 @@ struct RocksText: ViewModifier {
             content
                 .font(.custom(Face.display.name, size: pt * Face.display.scale))
                 .tracking(tracking)
-        } else if themes.theme == .notebook, JakartaFont.available {
+        } else if themes.theme.isNotebook, JakartaFont.available {
             content.font(.custom(JakartaFont.bold, size: pt, relativeTo: .body))
         } else if let normal {
             content.font(normal)
@@ -425,7 +478,7 @@ struct PixelHeading: ViewModifier {
                 .font(Face.display.available ? Font.custom(Face.display.name, size: (pt ?? size) * Face.display.scale)
                                              : (normal ?? Font.system(size: pt ?? size, weight: .heavy)))
                 .tracking(Face.display.tracking)
-        } else if themes.theme == .notebook, JakartaFont.available, let pt {
+        } else if themes.theme.isNotebook, JakartaFont.available, let pt {
             content.font(.custom(JakartaFont.bold, size: pt, relativeTo: .body))   // Notebook: the theme's own bold font
         } else if let normal {
             content.font(normal)
@@ -611,11 +664,8 @@ struct ThemesView: View {
                     .foregroundColor(Theme.muted)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
-                ForEach(AppTheme.allCases) { t in
-                    Button { store.select(t) } label: {
-                        ThemeCard(theme: t, selected: store.theme == t)
-                    }
-                    .buttonStyle(.plain)
+                ForEach(ThemeFamily.allCases) { f in
+                    ThemeCard(family: f, active: store.theme)
                 }
             }
             .padding(24)
@@ -628,14 +678,18 @@ struct ThemesView: View {
 }
 
 private struct ThemeCard: View {
-    let theme: AppTheme
-    let selected: Bool
+    let family: ThemeFamily
+    let active: AppTheme
+
+    private var selected: Bool { family.variants.contains(active) }
+    /// The look the card shows: the active one, or (when another theme is active) the one a tap would pick
+    private var shown: AppTheme { selected ? active : family.remembered }
 
     /// The theme's name in that theme's own main font (not the font of the theme that is active right now).
     /// Sizes are picked so the capital letters are the same height (about 14 pt) in every theme:
     /// system 20 pt = 14.1, pixel 16 pt = 14.0 (2 pt pixels), Chinese Rocks 17 x scale = 13.9.
     private var nameFont: Font {
-        switch theme {
+        switch family {
         case .terminal: return .system(size: 20, weight: .semibold, design: .monospaced)
         case .retro: return PixelFont.available ? .custom(PixelFont.bold, size: 16)
                                                  : .system(size: 20, weight: .heavy, design: .monospaced)
@@ -643,27 +697,31 @@ private struct ThemeCard: View {
                                                   : .system(size: 20, weight: .semibold)
         case .notebook: return JakartaFont.available ? .custom(JakartaFont.bold, size: 20, relativeTo: .body)   // same font as the course names
                                                      : .system(size: 20, weight: .semibold)
-        default: return .system(size: 20, weight: .semibold)
+        case .standard: return .system(size: 20, weight: .semibold)
         }
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            ThemePreview(theme: theme)
+            ThemePreview(theme: shown)
                 .frame(height: 120)
 
             HStack(spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(theme.name).font(nameFont).foregroundColor(Theme.txt)
+                    Text(family.name).font(nameFont).foregroundColor(Theme.txt)
                         // the active theme may force a monospaced design on everything below it: reset it here
-                        .modifier(ThemeFont(mono: theme == .terminal))
-                    Text(theme.detail).font(Theme.font(.caption)).foregroundColor(Theme.muted)
+                        .modifier(ThemeFont(mono: family == .terminal))
+                    Text(shown.detail).font(Theme.font(.caption)).foregroundColor(Theme.muted)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 8)
                 Image(systemName: selected ? "checkmark.circle.fill" : "circle")
                     .font(Theme.font(.title3))
                     .foregroundColor(selected ? Theme.accent : Theme.muted.opacity(0.6))
+            }
+
+            if family.hasSwitch {
+                DarkLightSwitch(options: family.variants, shown: shown) { ThemeStore.shared.select($0) }
             }
         }
         .padding(14)
@@ -674,7 +732,45 @@ private struct ThemeCard: View {
                 .stroke(Theme.accent, lineWidth: selected ? 2 : 0)
         )
         .contentShape(Rectangle())
+        .onTapGesture { ThemeStore.shared.select(shown) }
+        .accessibilityElement(children: .contain)
         .animation(.easeInOut(duration: 0.25), value: selected)
+    }
+}
+
+/// Dark on the left, Light on the right. Tapping a side switches the whole app to that look.
+private struct DarkLightSwitch: View {
+    let options: [AppTheme]
+    let shown: AppTheme
+    let select: (AppTheme) -> Void
+
+    private func segment(_ t: AppTheme) -> some View {
+        let on = t == shown
+        let dark = t.scheme == .dark
+        return Button { select(t) } label: {
+            HStack(spacing: 6) {
+                Image(systemName: dark ? "moon.fill" : "sun.max.fill")
+                Text(dark ? "Dark" : "Light")
+            }
+            .font(Theme.font(.footnote).weight(.semibold))
+            .foregroundColor(on ? Theme.onAccent : Theme.muted)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .background(on ? Theme.accent : Color.clear, in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(dark ? "Dark" : "Light")
+        .accessibilityAddTraits(on ? .isSelected : [])
+    }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(options) { segment($0) }
+        }
+        .padding(3)
+        .background(Theme.surface2, in: Capsule())
+        .overlay(Capsule().stroke(Theme.line, lineWidth: 1))
+        .animation(.easeInOut(duration: 0.2), value: shown)
     }
 }
 
