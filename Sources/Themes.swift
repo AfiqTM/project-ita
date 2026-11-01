@@ -94,8 +94,9 @@ enum AppTheme: String, CaseIterable, Identifiable {
             return [(0x030303, 0x1A0605), (0x050303, 0x220706), (0x030303, 0x140404),
                     (0x060303, 0x260807), (0x040404, 0x1E0605), (0x030202, 0x160505)]
         case .notebook:
-            return [(0xE4E4E4, 0xC9C9C9), (0xF8D57A, 0xEDBD4A), (0xF4A261, 0xE07B35),
-                    (0xEE8FB0, 0xD9648C), (0x8FA8F0, 0x5E7DDB), (0x8FDDB8, 0x4DBF8E)]
+            // a little darker than the page so the cards stand out
+            return [(0xC8C8C8, 0xB0B0B0), (0xDABB6B, 0xD0A641), (0xD68E55, 0xC56C2E),
+                    (0xD17D9A, 0xBE587B), (0x7D93D3, 0x526EC0), (0x7DC2A1, 0x43A87C)]
         }
     }
 
@@ -107,7 +108,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
         case .terminal: return -0.25
         case .retro: return -0.15
         case .redDead: return -0.4
-        case .notebook: return 0
+        case .notebook: return -0.12
         }
     }
     var coverSaturation: Double {

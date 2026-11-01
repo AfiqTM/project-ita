@@ -274,6 +274,7 @@ struct GlowCard: ViewModifier {
         let p = themes.theme.palette
         let pixel = p.card == .pixel
         let western = p.card == .western
+        let notebook = themes.theme == .notebook
         let shape = RoundedRectangle(cornerRadius: Theme.cardRadius(radius), style: .continuous)
         let g = Color(hex: p.glow)
         // three shadow layers: colour, blur, x offset, y offset
@@ -284,7 +285,9 @@ struct GlowCard: ViewModifier {
         case .soft:
             layers = [(Color.black.opacity(0.06), 6, 0, 2), (Color.black.opacity(0.04), 18, 0, 6), (Color.clear, 0, 0, 0)]
         case .pixel:
-            layers = [(g, 0, p.hardOffset, p.hardOffset), (Color.clear, 0, 0, 0), (Color.clear, 0, 0, 0)]
+            // Notebook draws its block shadow as its own shape behind the card (see below), so the outline is never doubled
+            layers = notebook ? [(Color.clear, 0, 0, 0), (Color.clear, 0, 0, 0), (Color.clear, 0, 0, 0)]
+                              : [(g, 0, p.hardOffset, p.hardOffset), (Color.clear, 0, 0, 0), (Color.clear, 0, 0, 0)]
         case .western:
             layers = [(Color.black.opacity(0.7), 6, 0, 3), (Color.black.opacity(0.45), 18, 0, 8), (Color.clear, 0, 0, 0)]
         }
@@ -294,6 +297,9 @@ struct GlowCard: ViewModifier {
             .overlay(alignment: .top) { TornBand().fill(Color(hex: p.accent)).frame(height: western ? 9 : 0) }
             .clipShape(shape)
             .overlay(shape.stroke(Color(hex: p.line), lineWidth: p.card == .glow ? 0 : (pixel ? p.hardLine : 1)))
+            .background {
+                if notebook { shape.fill(g).offset(x: p.hardOffset, y: p.hardOffset) }
+            }
 
             .shadow(color: layers[0].0, radius: layers[0].1, x: layers[0].2, y: layers[0].3)
             .shadow(color: layers[1].0, radius: layers[1].1, x: layers[1].2, y: layers[1].3)
@@ -305,21 +311,7 @@ extension View {
 }
 
 // MARK: - Notebook widgets
-// Square outlined button: white, thick black outline, solid black block shadow to the bottom right.
-struct NotebookSquare<Content: View>: View {
-    var size: CGFloat = 39
-    private let content: Content
-    init(size: CGFloat = 39, @ViewBuilder content: () -> Content) { self.size = size; self.content = content() }
-    var body: some View {
-        let p = Palette.notebook
-        let shape = RoundedRectangle(cornerRadius: 11, style: .continuous)
-        content
-            .frame(width: size, height: size)
-            .background(Color(hex: p.surface), in: shape)
-            .overlay(shape.stroke(Color(hex: p.line), lineWidth: p.hardLine))
-            .background(shape.fill(Color(hex: p.glow)).offset(x: 3, y: 3))
-    }
-}
+enum NotebookFolder { static let tabHeight: CGFloat = 17 }
 
 // The tab of a folder: rounded on the top corners, flat at the bottom (that part is hidden behind the card)
 struct FolderTabShape: Shape {
@@ -339,52 +331,45 @@ struct FolderTabShape: Shape {
     }
 }
 
-// Notebook: small black rounded box with a white symbol
-struct NotebookIconBox: View {
-    var symbol: String = "book.closed.fill"
-    var body: some View {
-        Image(systemName: symbol)
-            .font(.system(size: 22, weight: .semibold))
-            .foregroundColor(.white)
-            .frame(width: 46, height: 39)
-            .background(Color(hex: 0x1A1A1A), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
-    }
-}
-
-// Notebook: a folder. Black tab behind a white outlined card, black icon box on the top left, a small grey line
-// next to it and the name at the bottom.
-struct NotebookFolderCard: View {
-    let title: String
-    let detail: String
-    var symbol: String = "book.closed.fill"
-    static let tabHeight: CGFloat = 17
-
+// Notebook: a black folder tab behind a card
+struct NotebookFolderTab<Content: View>: View {
+    private let content: Content
+    init(@ViewBuilder content: () -> Content) { self.content = content() }
     var body: some View {
         ZStack(alignment: .topLeading) {
             FolderTabShape()
                 .fill(Color(hex: 0x111111))
-                .frame(width: 87, height: Self.tabHeight + 14)
+                .frame(width: 87, height: NotebookFolder.tabHeight + 14)
                 .padding(.leading, 7)
-            VStack(alignment: .leading, spacing: 18) {
-                HStack(alignment: .top, spacing: 14) {
-                    NotebookIconBox(symbol: symbol)
-                    Text(detail)
-                        .font(Theme.font(.footnote))
-                        .foregroundColor(Theme.muted)
-                        .lineLimit(1)
-                    Spacer(minLength: 0)
-                }
-                Text(title)
-                    .font(Theme.font(.headline))
-                    .foregroundColor(Theme.txt)
-                    .multilineTextAlignment(.leading)
-                    .lineLimit(2)
-                    .frame(maxWidth: .infinity, minHeight: 40, alignment: .topLeading)
-            }
-            .padding(.horizontal, 11).padding(.vertical, 11)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .glowCard(radius: 14)
-            .padding(.top, Self.tabHeight)
+            content.padding(.top, NotebookFolder.tabHeight)
+        }
+    }
+}
+
+// Icon in a settings row. Notebook: dark icon in a light grey rounded square. Other themes: the bare accent-coloured icon.
+struct RowIcon<Content: View>: View {
+    private let content: Content
+    init(@ViewBuilder content: () -> Content) { self.content = content() }
+    var body: some View {
+        if ThemeStore.shared.theme == .notebook {
+            content
+                .font(.system(size: 18, weight: .regular))
+                .foregroundColor(Theme.txt)
+                .frame(width: 34, height: 34)
+                .background(Color(hex: 0xF2F2F4), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        } else {
+            content.foregroundColor(Theme.accent).frame(width: 26)
+        }
+    }
+}
+
+// Line between two rows of a card. Notebook: thin light grey, starting at the text. Other themes: the usual full-width line.
+struct RowDivider: View {
+    var body: some View {
+        if ThemeStore.shared.theme == .notebook {
+            Rectangle().fill(Color(hex: 0xDADADA)).frame(height: 1).padding(.leading, 64)
+        } else {
+            Rectangle().fill(Theme.line).frame(height: 1)
         }
     }
 }

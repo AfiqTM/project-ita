@@ -4,7 +4,6 @@ import UserNotifications
 extension Notification.Name {
     /// The Courses tab was tapped again while its list is already showing
     static let coursesScrollToTop = Notification.Name("coursesScrollToTop")
-    static let openOthersTab = Notification.Name("openOthersTab")   // Notebook: the gear button on Courses
 }
 
 struct RootView: View {
@@ -87,7 +86,6 @@ struct RootView: View {
         }
         // A new identity per theme: every screen is rebuilt, so all colours are read again
         .id(themes.theme)
-        .onReceive(NotificationCenter.default.publisher(for: .openOthersTab)) { _ in tab = 4 }
         .safeAreaInset(edge: .top, spacing: 0) { OfflineBanner().id(themes.theme) }   // small "Offline" pill, only while saved data is shown
         .overlay { ToolsOverlay() }      // Noticeboard tool screens: full-screen, slide in / out to the right (ToolsOverlay.swift)
         .overlay { MessagesOverlay() }   // Messages: full-screen, above the tab bar (Messages.swift)
@@ -187,7 +185,6 @@ struct CoursesView: View {
     @State private var allCourses: [Course] = []     // every enrolled course, used for search suggestions
     @State private var openCourse: Course?
     @FocusState private var searchFocused: Bool
-    @State private var searchOpen = false            // Notebook: the search field opens from the square search button
 
     // ---- search ----
 
@@ -225,7 +222,6 @@ struct CoursesView: View {
 
     private func openFromSearch(_ c: Course) {
         searchFocused = false
-        searchOpen = false
         query = ""
         openCourse = c
     }
@@ -254,7 +250,6 @@ struct CoursesView: View {
     private var list: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                if ThemeStore.shared.theme == .notebook { notebookButtons }
                 // intro animation per theme (Themes.swift): gunshot, Pac-Man or decoding symbols
                 HStack(spacing: 8) {
                     // new class changes in Noticeboard that you haven't looked at yet: a plain accent dot, no number
@@ -264,13 +259,13 @@ struct CoursesView: View {
                             .accessibilityLabel("New in Noticeboard")
                     }
                     GreetingBar(hello: "Hello,", name: firstTwoNames) {
-                        if ThemeStore.shared.theme != .notebook { MessagesButton() }   // chat icon + unread badge (Messages.swift)
+                        MessagesButton()   // chat icon + unread badge (Messages.swift)
                     }
                 }
                 .animation(.easeInOut(duration: 0.25), value: daily.unseenCount > 0)
                 .id("coursesTop")
 
-                if ThemeStore.shared.theme != .notebook || searchOpen { searchBar }
+                searchBar
                 suggestionList
 
                 filterBar
@@ -293,25 +288,17 @@ struct CoursesView: View {
                                         .clipShape(Capsule())
                                 }
                                 .padding(10)
-                                .padding(.top, ThemeStore.shared.theme == .notebook ? NotebookFolderCard.tabHeight : 0)
+                                .padding(.top, ThemeStore.shared.theme == .notebook ? NotebookFolder.tabHeight : 0)
                             } else {
                                 Button { Task { await toggleStar(c) } } label: {
-                                    if ThemeStore.shared.theme == .notebook {
-                                        Image(systemName: starred ? "star.fill" : "star")
-                                            .font(.system(size: 14, weight: .bold))
-                                            .foregroundColor(starred ? Theme.accent : .white)
-                                            .frame(width: 30, height: 30)
-                                            .background(Color(hex: 0x1A1A1A), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
-                                    } else {
-                                        Image(systemName: starred ? "star.fill" : "star")
-                                            .foregroundColor(starred ? Color(hex: ThemeStore.shared.theme.onCoverAccent) : Color.white.opacity(0.85))
-                                            .padding(10)
-                                            .background(Color.black.opacity(0.45))
-                                            .clipShape(Circle())
-                                    }
+                                    Image(systemName: starred ? "star.fill" : "star")
+                                        .foregroundColor(starred ? Color(hex: ThemeStore.shared.theme.onCoverAccent) : Color.white.opacity(0.85))
+                                        .padding(10)
+                                        .background(Color.black.opacity(0.45))
+                                        .clipShape(Circle())
                                 }
                                 .padding(10)
-                                .padding(.top, ThemeStore.shared.theme == .notebook ? NotebookFolderCard.tabHeight : 0)
+                                .padding(.top, ThemeStore.shared.theme == .notebook ? NotebookFolder.tabHeight : 0)
                             }
                         }
                         .contextMenu {
@@ -349,29 +336,6 @@ struct CoursesView: View {
         .task { await loadAll() }
         .onReceive(NotificationCenter.default.publisher(for: .offlineBackOnline)) { _ in Task { await load(); await loadAll() } }
         .onFreshData { await load(); await loadAll() }
-    }
-
-    /// Notebook: gear on the left, search and chat on the right, all as square outlined buttons
-    private var notebookButtons: some View {
-        HStack(spacing: 7) {
-            Button { NotificationCenter.default.post(name: .openOthersTab, object: nil) } label: {
-                NotebookSquare { Image(systemName: "gearshape").font(.system(size: 19, weight: .semibold)).foregroundColor(Theme.txt) }
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Settings")
-            Spacer()
-            Button {
-                withAnimation(.easeInOut(duration: 0.2)) { searchOpen.toggle() }
-                if searchOpen { DispatchQueue.main.async { searchFocused = true } }
-                else { query = ""; searchFocused = false }
-            } label: {
-                NotebookSquare { Image(systemName: searchOpen ? "xmark" : "magnifyingglass").font(.system(size: 19, weight: .semibold)).foregroundColor(Theme.txt) }
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Search")
-            MessagesButton()
-        }
-        .padding(.trailing, 3)   // room for the block shadow
     }
 
     private var searchBar: some View {
@@ -520,9 +484,7 @@ struct CourseCard: View {
 
     var body: some View {
         if themes.theme == .notebook {
-            // Notebook: a folder with a tab, a black icon box, progress (or the short name) and the course name
-            NotebookFolderCard(title: course.prettyFull,
-                               detail: course.progress.map { "\(Int(min(max($0, 0), 100)))% complete" } ?? (course.prettyShort ?? ""))
+            NotebookFolderTab { normalCard }   // Notebook: a black folder tab behind the card
         } else {
             normalCard
         }
@@ -776,8 +738,9 @@ struct ProfileView: View {
     }
 
     private func sectionTitle(_ t: String) -> some View {
-        Text(t).font(Theme.font(.footnote).weight(.semibold)).foregroundColor(Theme.muted)
-            .textCase(.uppercase).padding(.horizontal, 6).padding(.bottom, -8)
+        Text(t).font(ThemeStore.shared.theme == .notebook ? Theme.font(.subheadline) : Theme.font(.footnote).weight(.semibold))
+            .foregroundColor(Theme.muted)
+            .textCase(.uppercase).padding(.horizontal, ThemeStore.shared.theme == .notebook ? 0 : 6).padding(.bottom, -8)
     }
 
     var body: some View {
@@ -845,7 +808,7 @@ struct ProfileView: View {
                                    subtitle: themes.theme.name, showLine: true)
                     }
                     OfflineSupportRow()
-                    Rectangle().fill(Theme.line).frame(height: 1)
+                    if ThemeStore.shared.theme != .notebook { Rectangle().fill(Theme.line).frame(height: 1) }   // Offline support has its own line
                     SyncStatusRow()
                 }
                 .buttonStyle(.plain)
@@ -880,11 +843,13 @@ struct ProfileRow: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            Group {
-                if icon == "todo.book" { TodoBookIcon(size: 22) } else { Image(systemName: icon) }
-            }.foregroundColor(Theme.accent).frame(width: 26).textGlow()
+            RowIcon {
+                Group {
+                    if icon == "todo.book" { TodoBookIcon(size: 22) } else { Image(systemName: icon) }
+                }
+            }.textGlow()
             VStack(alignment: .leading, spacing: 3) {
-                Text(title).foregroundColor(Theme.txt).textGlow(radius: 3).rocksHeading(12, normal: .subheadline.weight(.semibold), pt: 15)
+                Text(title).foregroundColor(Theme.txt).textGlow(radius: 3).rocksHeading(12, normal: ThemeStore.shared.theme == .notebook ? Theme.font(.headline) : .subheadline.weight(.semibold), pt: 15)
                 Text(subtitle).font(Theme.font(.caption)).foregroundColor(Theme.muted).lineLimit(subtitleLines)
             }
             Spacer()
@@ -895,10 +860,10 @@ struct ProfileRow: View {
             }
             Image(systemName: "chevron.right").font(Theme.font(.caption)).foregroundColor(Theme.muted)
         }
-        .padding(14)
+        .padding(ThemeStore.shared.theme == .notebook ? 16 : 14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
-        .overlay(Rectangle().fill(Theme.line).frame(height: showLine ? 1 : 0), alignment: .bottom)
+        .overlay(RowDivider().frame(height: showLine ? 1 : 0).opacity(showLine ? 1 : 0), alignment: .bottom)
     }
 }
 

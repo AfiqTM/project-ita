@@ -614,7 +614,7 @@ struct OfflineSupportRow: View {
         HStack(spacing: 14) {
             Button { open = true } label: {
                 HStack(spacing: 14) {
-                    Image(systemName: "icloud.and.arrow.down").foregroundColor(Theme.accent).frame(width: 26)
+                    RowIcon { Image(systemName: "icloud.and.arrow.down") }
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Offline support").foregroundColor(Theme.txt).rocks(15, normal: .subheadline.weight(.semibold))
                         Text(subtitle).font(Theme.font(.caption)).foregroundColor(Theme.muted).lineLimit(2)
@@ -635,7 +635,7 @@ struct OfflineSupportRow: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay(Rectangle().fill(Theme.line).frame(height: 1), alignment: .bottom)
+        .overlay(RowDivider(), alignment: .bottom)
         .navigationDestination(isPresented: $open) { OfflineSupportScreen() }
         .onAppear { size = OfflineCache.sizeText() }
         .onChange(of: open) { v in if !v { size = OfflineCache.sizeText() } }

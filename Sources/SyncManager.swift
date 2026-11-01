@@ -335,7 +335,7 @@ struct SyncStatusRow: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            Image(systemName: "arrow.triangle.2.circlepath").foregroundColor(Theme.accent).frame(width: 26)
+            RowIcon { Image(systemName: "arrow.triangle.2.circlepath") }
             VStack(alignment: .leading, spacing: 3) {
                 Text("Sync with website").foregroundColor(Theme.txt).rocks(15, normal: .subheadline.weight(.semibold))
                 Text(text).font(Theme.font(.caption)).foregroundColor(Theme.muted).lineLimit(2)
