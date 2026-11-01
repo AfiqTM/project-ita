@@ -18,6 +18,11 @@ enum AppTheme: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    /// Archived themes keep their code but can't be picked any more (see Archive/Themes/README.md). A saved choice of
+    /// one of them falls back to Default (Notebook dark: Notebook).
+    static let archived: Set<AppTheme> = [.notebookDark, .retro, .redDead]
+    var isArchived: Bool { Self.archived.contains(self) }
+
     /// Both Notebook looks (light and dark)
     var isNotebook: Bool { self == .notebook || self == .notebookDark }
 
@@ -180,15 +185,21 @@ enum ThemeFamily: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 
     /// Left to right on the switch: dark, then light. A single entry means the card has no switch.
+    /// Archived themes are left out; a card with nothing left is not listed.
     var variants: [AppTheme] {
+        let all: [AppTheme]
         switch self {
-        case .standard: return [.dark, .light]
-        case .terminal: return [.terminal]
-        case .retro: return [.retro]
-        case .redDead: return [.redDead]
-        case .notebook: return [.notebookDark, .notebook]
+        case .standard: all = [.dark, .light]
+        case .terminal: all = [.terminal]
+        case .retro: all = [.retro]
+        case .redDead: all = [.redDead]
+        case .notebook: all = [.notebookDark, .notebook]
         }
+        return all.filter { !$0.isArchived }
     }
+
+    /// The cards the Themes screen shows
+    static var listed: [ThemeFamily] { allCases.filter { !$0.variants.isEmpty } }
 
     var name: String {
         switch self {
@@ -271,8 +282,12 @@ final class ThemeStore: ObservableObject {
         // "AMOLED Dark" and "Programmer" were renamed: keep what people had chosen
         let saved = UserDefaults.standard.string(forKey: Self.key) ?? ""
         let renamed = ["amoledDark": AppTheme.dark.rawValue, "programmer": AppTheme.terminal.rawValue][saved] ?? saved
-        theme = AppTheme(rawValue: renamed) ?? .dark
-        if renamed != saved { UserDefaults.standard.set(renamed, forKey: Self.key) }
+        var chosen = AppTheme(rawValue: renamed) ?? .dark
+        if chosen.isArchived {   // an archived theme was saved: fall back to its nearest living one
+            chosen = chosen == .notebookDark ? .notebook : .dark
+            UserDefaults.standard.set(chosen.rawValue, forKey: Self.key)
+        } else if renamed != saved { UserDefaults.standard.set(renamed, forKey: Self.key) }
+        theme = chosen
     }
 
     /// Switches theme with a cross-fade: the current screen is frozen as a picture on top of the window,
@@ -664,7 +679,7 @@ struct ThemesView: View {
                     .foregroundColor(Theme.muted)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
-                ForEach(ThemeFamily.allCases) { f in
+                ForEach(ThemeFamily.listed) { f in
                     ThemeCard(family: f, active: store.theme)
                 }
             }
