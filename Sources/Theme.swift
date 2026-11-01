@@ -304,6 +304,91 @@ extension View {
     func glowCard(radius: CGFloat = 14) -> some View { modifier(GlowCard(radius: radius)) }
 }
 
+// MARK: - Notebook widgets
+// Square outlined button: white, thick black outline, solid black block shadow to the bottom right.
+struct NotebookSquare<Content: View>: View {
+    var size: CGFloat = 39
+    private let content: Content
+    init(size: CGFloat = 39, @ViewBuilder content: () -> Content) { self.size = size; self.content = content() }
+    var body: some View {
+        let p = Palette.notebook
+        let shape = RoundedRectangle(cornerRadius: 11, style: .continuous)
+        content
+            .frame(width: size, height: size)
+            .background(Color(hex: p.surface), in: shape)
+            .overlay(shape.stroke(Color(hex: p.line), lineWidth: p.hardLine))
+            .background(shape.fill(Color(hex: p.glow)).offset(x: 3, y: 3))
+    }
+}
+
+// The tab of a folder: rounded on the top corners, flat at the bottom (that part is hidden behind the card)
+struct FolderTabShape: Shape {
+    var radius: CGFloat = 12
+    func path(in r: CGRect) -> Path {
+        var p = Path()
+        p.move(to: CGPoint(x: r.minX, y: r.maxY))
+        p.addLine(to: CGPoint(x: r.minX, y: r.minY + radius))
+        p.addArc(center: CGPoint(x: r.minX + radius, y: r.minY + radius), radius: radius,
+                 startAngle: .degrees(180), endAngle: .degrees(270), clockwise: false)
+        p.addLine(to: CGPoint(x: r.maxX - radius, y: r.minY))
+        p.addArc(center: CGPoint(x: r.maxX - radius, y: r.minY + radius), radius: radius,
+                 startAngle: .degrees(270), endAngle: .degrees(0), clockwise: false)
+        p.addLine(to: CGPoint(x: r.maxX, y: r.maxY))
+        p.closeSubpath()
+        return p
+    }
+}
+
+// Notebook: small black rounded box with a white symbol
+struct NotebookIconBox: View {
+    var symbol: String = "book.closed.fill"
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.system(size: 22, weight: .semibold))
+            .foregroundColor(.white)
+            .frame(width: 46, height: 39)
+            .background(Color(hex: 0x1A1A1A), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+    }
+}
+
+// Notebook: a folder. Black tab behind a white outlined card, black icon box on the top left, a small grey line
+// next to it and the name at the bottom.
+struct NotebookFolderCard: View {
+    let title: String
+    let detail: String
+    var symbol: String = "book.closed.fill"
+    static let tabHeight: CGFloat = 17
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            FolderTabShape()
+                .fill(Color(hex: 0x111111))
+                .frame(width: 87, height: Self.tabHeight + 14)
+                .padding(.leading, 7)
+            VStack(alignment: .leading, spacing: 18) {
+                HStack(alignment: .top, spacing: 14) {
+                    NotebookIconBox(symbol: symbol)
+                    Text(detail)
+                        .font(Theme.font(.footnote))
+                        .foregroundColor(Theme.muted)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                }
+                Text(title)
+                    .font(Theme.font(.headline))
+                    .foregroundColor(Theme.txt)
+                    .multilineTextAlignment(.leading)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, minHeight: 40, alignment: .topLeading)
+            }
+            .padding(.horizontal, 11).padding(.vertical, 11)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .glowCard(radius: 14)
+            .padding(.top, Self.tabHeight)
+        }
+    }
+}
+
 extension String {
     private func decodeOnce() -> String {
         guard contains("&") else { return self }
