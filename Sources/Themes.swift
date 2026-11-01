@@ -36,12 +36,12 @@ enum AppTheme: String, CaseIterable, Identifiable {
         case .terminal: return "Terminal look: near-black, neon green, a monospaced font and a green glow."
         case .retro: return "Old-school arcade: black and olive tiles, yellow accent, hard pixel edges and a pixel-style font."
         case .redDead: return "Rockstar-poster look: black and red, stencil-style caps headings, flat cards with a red banner strip."
-        case .notebook: return "Slate-grey page with raised charcoal cards, soft outlines and a bright yellow accent, like a tidy link-saving app."
+        case .notebook: return "Neo-brutalist: light grey page, thick black outlines, hard block shadows and a bright yellow accent."
         }
     }
 
     /// Light themes use the light look for system parts (keyboard, pickers, status bar); the others use dark
-    var scheme: ColorScheme { self == .light ? .light : .dark }
+    var scheme: ColorScheme { (self == .light || self == .notebook) ? .light : .dark }
 
     /// Monospaced font everywhere
     var mono: Bool { self == .terminal || self == .retro }
@@ -94,8 +94,8 @@ enum AppTheme: String, CaseIterable, Identifiable {
             return [(0x030303, 0x1A0605), (0x050303, 0x220706), (0x030303, 0x140404),
                     (0x060303, 0x260807), (0x040404, 0x1E0605), (0x030202, 0x160505)]
         case .notebook:
-            return [(0x23272c, 0x3a3f46), (0x20262c, 0x34424f), (0x2a2326, 0x4a3840),
-                    (0x1f2823, 0x34483c), (0x2b2820, 0x504726), (0x232333, 0x3d3d5c)]
+            return [(0xD9D9DC, 0xB9BBC0), (0xF2BE22, 0xE0A800), (0xF0884A, 0xE0662A),
+                    (0xE8628F, 0xD14575), (0x4F7BE8, 0x2F5BD6), (0x5CCB9A, 0x2FBF7A)]
         }
     }
 
@@ -107,7 +107,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
         case .terminal: return -0.25
         case .retro: return -0.15
         case .redDead: return -0.4
-        case .notebook: return -0.15
+        case .notebook: return 0
         }
     }
     var coverSaturation: Double {
