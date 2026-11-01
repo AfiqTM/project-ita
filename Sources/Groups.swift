@@ -373,7 +373,7 @@ struct GroupChoiceView: View {
                     Button { leaving = e } label: {
                         Text("Leave").fontWeight(.semibold).foregroundColor(Theme.onAccent)
                             .frame(width: 66).padding(.vertical, 6)
-                            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(Theme.onAccent.opacity(0.55)))
+                            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(Theme.onAccent.opacity(0.55), lineWidth: 1))
                     }
                     .buttonStyle(.plain)
                 } else if e.option != nil {
@@ -416,7 +416,7 @@ struct GroupChoiceView: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .glowCard()
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(mineNow ? Theme.accent : .clear, lineWidth: 1.5))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(mineNow ? Theme.accent : .clear, lineWidth: 1.5))
     }
 
     // MARK: Actions
