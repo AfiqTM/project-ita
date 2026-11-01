@@ -787,6 +787,7 @@ struct MyDriveView: View {
         .background(Theme.bg.ignoresSafeArea())
         .navigationTitle("My Drive")
         .navigationBarTitleDisplayMode(.inline)
+        .notebookBack()
         .toolbar {
             if auth.isSignedIn {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -894,6 +895,7 @@ struct DriveFolderView: View {
         .background(Theme.bg.ignoresSafeArea())
         .navigationTitle(folder.name)
         .navigationBarTitleDisplayMode(.inline)
+        .notebookBack()
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button { lib.togglePin(folder) } label: {
@@ -943,6 +945,7 @@ struct DrivePreviewView: View {
         .background(Theme.bg.ignoresSafeArea())
         .navigationTitle(ref.name)
         .navigationBarTitleDisplayMode(.inline)
+        .notebookBack()
         .toolbar {
             ToolbarItemGroup(placement: .navigationBarTrailing) {
                 if let fileURL { ShareLink(item: fileURL) }

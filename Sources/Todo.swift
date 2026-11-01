@@ -288,6 +288,7 @@ struct TodoListView: View {
         .background(Theme.bg.ignoresSafeArea())
         .navigationTitle("To-Do List")
         .navigationBarTitleDisplayMode(.inline)
+        .notebookBack()
         .toolbar {
             ToolbarItemGroup(placement: .navigationBarTrailing) {
                 NavigationLink { TodoHistoryView() } label: { Image(systemName: "clock.arrow.circlepath") }
@@ -351,6 +352,7 @@ struct TodoHistoryView: View {
         .background(Theme.bg.ignoresSafeArea())
         .navigationTitle("History")
         .navigationBarTitleDisplayMode(.inline)
+        .notebookBack()
         .toolbar {
             if !todos.history.isEmpty {
                 ToolbarItem(placement: .navigationBarTrailing) {

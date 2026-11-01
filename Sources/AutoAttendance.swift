@@ -401,6 +401,7 @@ struct AutoAttendanceView: View {
         .background(Theme.bg.ignoresSafeArea())
         .navigationTitle("Auto Attendance")
         .navigationBarTitleDisplayMode(.inline)
+        .notebookBack()
         .refreshable { await reload() }
         .task { m.userid = uid; await reload() }
     }

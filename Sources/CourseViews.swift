@@ -101,6 +101,7 @@ struct CourseDetailView: View {
         .toolbarBackground(Visibility.hidden, for: .navigationBar)
         .navigationTitle(course.prettyShort ?? course.prettyFull)
         .navigationBarTitleDisplayMode(.inline)
+        .notebookBack()
         // the open tab goes away when its last item is removed
         .onChange(of: tabs) { new in if !new.contains(tab) { tab = .course } }
         // the Groups page only starts loading once it is opened (or a swipe heads for it): it fetches the whole participant list
@@ -387,6 +388,7 @@ struct FolderView: View {
         .background(Theme.bg.ignoresSafeArea())
         .navigationTitle(module.name)
         .navigationBarTitleDisplayMode(.inline)
+        .notebookBack()
     }
 }
 
@@ -414,6 +416,7 @@ struct FileViewer: View {
             .background(Theme.bg.ignoresSafeArea())
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
+            .notebookBack()
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     if preparing {
@@ -485,6 +488,7 @@ struct ForumView: View {
         .background(Theme.bg.ignoresSafeArea())
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
+        .notebookBack()
         .refreshable { await load() }
         .task {
             await OfflineCache.paintFromCache { await load() }
@@ -534,6 +538,7 @@ struct PostsView: View {
         .background(Theme.bg.ignoresSafeArea())
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
+        .notebookBack()
         .task {
             await OfflineCache.paintFromCache { await load() }
             await load()
@@ -710,6 +715,7 @@ struct WebActivityView: View {
         .background(Theme.bg.ignoresSafeArea())
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
+        .notebookBack()
         .task {
             resolved = await MoodleAPI.shared.autologin(url, userid: app.site?.userid ?? 0)
         }
@@ -859,6 +865,7 @@ struct PageModuleView: View {
         .background(Theme.bg.ignoresSafeArea())
         .navigationTitle(module.name)
         .navigationBarTitleDisplayMode(.inline)
+        .notebookBack()
         // links to files on the site open in the app's viewer; other links go to Safari
         .environment(\.openURL, OpenURLAction { url in
             if url.absoluteString.contains("pluginfile.php") { openFile = url; return .handled }

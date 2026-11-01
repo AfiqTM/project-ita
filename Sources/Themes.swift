@@ -95,8 +95,8 @@ enum AppTheme: String, CaseIterable, Identifiable {
                     (0x060303, 0x260807), (0x040404, 0x1E0605), (0x030202, 0x160505)]
         case .notebook:
             // a little darker than the page so the cards stand out
-            return [(0xC8C8C8, 0xB0B0B0), (0xDABB6B, 0xD0A641), (0xD68E55, 0xC56C2E),
-                    (0xD17D9A, 0xBE587B), (0x7D93D3, 0x526EC0), (0x7DC2A1, 0x43A87C)]
+            return [(0xB4B4B4, 0x9E9E9E), (0xC4A860, 0xBB953A), (0xC07F4C, 0xB16129),
+                    (0xBC708A, 0xAB4F6E), (0x7084BD, 0x4963AC), (0x70AE90, 0x3C976F)]
         }
     }
 
@@ -108,7 +108,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
         case .terminal: return -0.25
         case .retro: return -0.15
         case .redDead: return -0.4
-        case .notebook: return -0.12
+        case .notebook: return -0.2
         }
     }
     var coverSaturation: Double {
@@ -367,6 +367,8 @@ struct RocksText: ViewModifier {
             content
                 .font(.custom(Face.display.name, size: pt * Face.display.scale))
                 .tracking(tracking)
+        } else if themes.theme == .notebook, JakartaFont.available {
+            content.font(.custom(JakartaFont.bold, size: pt, relativeTo: .body))
         } else if let normal {
             content.font(normal)
         } else {
@@ -423,6 +425,8 @@ struct PixelHeading: ViewModifier {
                 .font(Face.display.available ? Font.custom(Face.display.name, size: (pt ?? size) * Face.display.scale)
                                              : (normal ?? Font.system(size: pt ?? size, weight: .heavy)))
                 .tracking(Face.display.tracking)
+        } else if themes.theme == .notebook, JakartaFont.available, let pt {
+            content.font(.custom(JakartaFont.bold, size: pt, relativeTo: .body))   // Notebook: the theme's own bold font
         } else if let normal {
             content.font(normal)
         } else {
@@ -619,6 +623,7 @@ struct ThemesView: View {
         .background(Theme.bg.ignoresSafeArea())
         .navigationTitle("Themes")
         .navigationBarTitleDisplayMode(.inline)
+        .notebookBack()
     }
 }
 

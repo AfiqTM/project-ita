@@ -498,7 +498,7 @@ struct CourseCard: View {
                     .foregroundColor(Theme.txt)
                     .multilineTextAlignment(.leading)
                     .textGlow(radius: 3)
-                    .pixelHeading(12, normal: .subheadline.weight(.semibold), pt: 15)
+                    .pixelHeading(12, normal: .subheadline.weight(.semibold), pt: themes.theme == .notebook ? 17 : 15)
                 if let p = course.progress {
                     ProgressView(value: min(max(p, 0), 100), total: 100).tint(Theme.accent)
                     Text("\(Int(p))% complete").font(Theme.font(.caption)).foregroundColor(Theme.muted)
@@ -849,7 +849,7 @@ struct ProfileRow: View {
                 }
             }.textGlow()
             VStack(alignment: .leading, spacing: 3) {
-                Text(title).foregroundColor(Theme.txt).textGlow(radius: 3).rocksHeading(12, normal: ThemeStore.shared.theme == .notebook ? Theme.font(.headline) : .subheadline.weight(.semibold), pt: 15)
+                Text(title).foregroundColor(Theme.txt).textGlow(radius: 3).rocksHeading(12, normal: .subheadline.weight(.semibold), pt: ThemeStore.shared.theme == .notebook ? 17 : 15)
                 Text(subtitle).font(Theme.font(.caption)).foregroundColor(Theme.muted).lineLimit(subtitleLines)
             }
             Spacer()
@@ -883,6 +883,7 @@ struct CAMSCalculatorScreen: View {
         .background(Theme.bg.ignoresSafeArea())
         .navigationTitle("Final Exam Calculator")
         .navigationBarTitleDisplayMode(.inline)
+        .notebookBack()
     }
 }
 

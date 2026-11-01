@@ -524,6 +524,7 @@ struct AttendanceView: View {
         .background(Theme.bg.ignoresSafeArea())
         .navigationTitle(module.name)
         .navigationBarTitleDisplayMode(.inline)
+        .notebookBack()
         .refreshable { await loadSummary() }
         .navigationDestination(isPresented: Binding(get: { submitting != nil }, set: { if !$0 { submitting = nil } })) {
             if let l = submitting { AttendanceSubmitView(link: l, courseName: module.name) }
@@ -939,6 +940,7 @@ struct AssignmentView: View {
         .background(Theme.bg.ignoresSafeArea())
         .navigationTitle(module.name)
         .navigationBarTitleDisplayMode(.inline)
+        .notebookBack()
         .task { await load() }
         .onReceive(NotificationCenter.default.publisher(for: .offlineQueueSent)) { _ in Task { await load() } }
         // the connection came back while this screen showed the basic form: load the real details

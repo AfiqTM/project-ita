@@ -121,25 +121,32 @@ struct MessagesButton: View {
 
     private var uid: Int { app.site?.userid ?? 0 }
 
+    private var glyph: some View {
+        Image(systemName: "message")
+            .font(.system(size: 19, weight: .semibold))
+            .foregroundColor(Theme.txt)
+    }
+
     var body: some View {
         Button { MessagesPresenter.shared.open() } label: {
-            Image(systemName: "message")
-                .font(.system(size: 19, weight: .semibold))
-                .foregroundColor(Theme.txt)
-                .padding(6)
-                .overlay(alignment: .topTrailing) {
-                    if store.unread > 0 {
-                        Text(store.unread > 99 ? "99+" : "\(store.unread)")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundColor(Theme.onAccent)
-                            .padding(.horizontal, 5)
-                            .frame(minWidth: 17, minHeight: 17)
-                            .background(Theme.accent)
-                            .clipShape(Capsule())
-                            .overlay(Capsule().stroke(Theme.bg, lineWidth: 1.5))
-                            .offset(x: 6, y: -4)
-                    }
+            ZStack(alignment: .topTrailing) {
+                if ThemeStore.shared.theme == .notebook {
+                    NotebookSquare { glyph }
+                } else {
+                    glyph.padding(6)
                 }
+                if store.unread > 0 {
+                    Text(store.unread > 99 ? "99+" : "\(store.unread)")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(Theme.onAccent)
+                        .padding(.horizontal, 5)
+                        .frame(minWidth: 17, minHeight: 17)
+                        .background(Theme.accent)
+                        .clipShape(Capsule())
+                        .overlay(Capsule().stroke(ThemeStore.shared.theme == .notebook ? Theme.line : Theme.bg, lineWidth: 1.5))
+                        .offset(x: 6, y: -4)
+                }
+            }
         }
         .buttonStyle(.plain)
         .accessibilityLabel(store.unread > 0 ? "Messages, \(store.unread) unread" : "Messages")

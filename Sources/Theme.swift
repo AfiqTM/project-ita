@@ -75,6 +75,8 @@ enum Theme {
     static var surface2: Color { Color(hex: p.surface2) }
     static var titleBar: Color { Color(hex: p.titleBar) }   // "General" title bar / table headers
     static var line: Color     { Color(hex: p.line) }
+    /// Thin line between rows inside a card: the Notebook theme draws these light grey instead of black
+    static var softLine: Color { ThemeStore.shared.theme == .notebook ? Color(hex: 0xDADADA) : Color(hex: p.line) }
     static var txt: Color      { Color(hex: p.txt) }
     static var muted: Color    { Color(hex: p.muted) }
     static var accent: Color   { Color(hex: p.accent) }
@@ -485,4 +487,107 @@ enum WebTheme {
       window.addEventListener('load', put);
     })();
     """#
+}
+
+// MARK: - Notebook: square buttons, back button, flat cards
+
+/// Square outlined button: white, thick black outline, solid black block shadow to the bottom right.
+struct NotebookSquare<Content: View>: View {
+    var size: CGFloat = 39
+    private let content: Content
+    init(size: CGFloat = 39, @ViewBuilder content: () -> Content) { self.size = size; self.content = content() }
+    var body: some View {
+        let p = Palette.notebook
+        let shape = RoundedRectangle(cornerRadius: 11, style: .continuous)
+        content
+            .frame(width: size, height: size)
+            .background(Color(hex: p.surface), in: shape)
+            .overlay(shape.stroke(Color(hex: p.line), lineWidth: p.hardLine))
+            .background(shape.fill(Color(hex: p.glow)).offset(x: 3, y: 3))
+    }
+}
+
+/// The square back button of the Notebook theme (arrow in an outlined square)
+struct NotebookBackLabel: View {
+    let action: () -> Void
+    var body: some View {
+        Button(action: action) {
+            NotebookSquare { Image(systemName: "arrow.left").font(.system(size: 19, weight: .semibold)).foregroundColor(Theme.txt) }
+                .padding(.trailing, 3).padding(.bottom, 3)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Back")
+    }
+}
+
+/// Leading toolbar item with the square back button. On iOS 26 the system's glass background behind bar buttons is switched off.
+struct NotebookBackToolbar: ToolbarContent {
+    let action: () -> Void
+    var body: some ToolbarContent {
+        if #available(iOS 26.0, *) {
+            ToolbarItem(placement: .navigationBarLeading) { NotebookBackLabel(action: action) }
+                .sharedBackgroundVisibility(.hidden)
+        } else {
+            ToolbarItem(placement: .navigationBarLeading) { NotebookBackLabel(action: action) }
+        }
+    }
+}
+
+/// Hiding the system back button switches off iOS's swipe back from the left edge; this keeps it working on the screen it is attached to.
+private final class PermissiveEdgePop: NSObject, UIGestureRecognizerDelegate {
+    static let shared = PermissiveEdgePop()
+    weak var nav: UINavigationController?
+    func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool { (nav?.viewControllers.count ?? 0) > 1 }
+}
+private struct KeepEdgeSwipeBack: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> Controller { Controller() }
+    func updateUIViewController(_ vc: Controller, context: Context) {}
+    final class Controller: UIViewController {
+        private weak var saved: UIGestureRecognizerDelegate?
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            guard let nav = navigationController, let g = nav.interactivePopGestureRecognizer else { return }
+            if g.delegate !== PermissiveEdgePop.shared { saved = g.delegate }
+            PermissiveEdgePop.shared.nav = nav
+            g.delegate = PermissiveEdgePop.shared
+            g.isEnabled = true
+        }
+        override func viewWillDisappear(_ animated: Bool) {
+            super.viewWillDisappear(animated)
+            if let g = navigationController?.interactivePopGestureRecognizer, g.delegate === PermissiveEdgePop.shared { g.delegate = saved }
+        }
+    }
+}
+
+/// Notebook: replaces the system back button (liquid glass on iOS 26) with the square one. Other themes: no change.
+struct NotebookBack: ViewModifier {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var themes = ThemeStore.shared
+    func body(content: Content) -> some View {
+        if themes.theme == .notebook {
+            content
+                .navigationBarBackButtonHidden(true)
+                .toolbar { NotebookBackToolbar { dismiss() } }
+                .background(KeepEdgeSwipeBack())
+        } else {
+            content
+        }
+    }
+}
+
+/// A flat card: the surface colour in a rounded rectangle. Notebook: the outlined card with its block shadow.
+struct FlatCard: ViewModifier {
+    var radius: CGFloat = 14
+    @ObservedObject private var themes = ThemeStore.shared
+    func body(content: Content) -> some View {
+        if themes.theme == .notebook {
+            content.glowCard(radius: radius)
+        } else {
+            content.background(Theme.surface, in: RoundedRectangle(cornerRadius: radius))
+        }
+    }
+}
+extension View {
+    func notebookBack() -> some View { modifier(NotebookBack()) }
+    func flatCard(radius: CGFloat = 14) -> some View { modifier(FlatCard(radius: radius)) }
 }

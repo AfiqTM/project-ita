@@ -46,6 +46,7 @@ struct SemesterResourcesView: View {
         .background(Theme.bg.ignoresSafeArea())
         .navigationTitle("Semester Resources")
         .navigationBarTitleDisplayMode(.inline)
+        .notebookBack()
     }
 
     private func card(_ r: SemesterResource) -> some View {
@@ -87,6 +88,7 @@ struct PDFScreen: View {
         .background(Theme.bg.ignoresSafeArea())
         .navigationTitle(resource.title)
         .navigationBarTitleDisplayMode(.inline)
+        .notebookBack()
         .toolbar {
             if let url = resource.url {
                 ToolbarItem(placement: .navigationBarTrailing) {

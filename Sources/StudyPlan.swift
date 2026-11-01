@@ -1114,6 +1114,7 @@ struct StudyPlanTrackerView: View {
         .background(Theme.bg.ignoresSafeArea())
         .navigationTitle("Study Plan Tracker")
         .navigationBarTitleDisplayMode(.inline)
+        .notebookBack()
         .toolbar {
             if store.plan != nil {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -1190,7 +1191,7 @@ struct StudyPlanTrackerView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14).background(Theme.surface, in: RoundedRectangle(cornerRadius: 14))
+        .padding(14).flatCard()
     }
 
     @ViewBuilder private func content(_ plan: StudyPlan) -> some View {
@@ -1213,7 +1214,7 @@ struct StudyPlanTrackerView: View {
                 }.pickerStyle(.menu).tint(Theme.accent)
             }
         }
-        .padding(14).background(Theme.surface, in: RoundedRectangle(cornerRadius: 14))
+        .padding(14).flatCard()
 
         // concentration: chosen once, then the field-elective slots below fill themselves
         if !store.areaNames.isEmpty {
@@ -1238,7 +1239,7 @@ struct StudyPlanTrackerView: View {
                 }.foregroundStyle(Theme.accent)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(14).background(Theme.surface, in: RoundedRectangle(cornerRadius: 14))
+            .padding(14).flatCard()
         }
 
         // categories
@@ -1256,7 +1257,7 @@ struct StudyPlanTrackerView: View {
                 }
             }
         }
-        .padding(14).background(Theme.surface, in: RoundedRectangle(cornerRadius: 14))
+        .padding(14).flatCard()
 
         // semesters
         ForEach(plan.semesters) { s in semesterCard(s) }
@@ -1287,10 +1288,10 @@ struct StudyPlanTrackerView: View {
 
             if open {
                 ForEach(store.visible(s)) { c in
-                    Divider().overlay(Theme.line)
+                    Divider().overlay(Theme.softLine)
                     courseRow(c)
                 }
-                Divider().overlay(Theme.line)
+                Divider().overlay(Theme.softLine)
                 HStack {
                     Spacer()
                     let all = store.visible(s).allSatisfy { store.isTaken($0) }
@@ -1299,7 +1300,7 @@ struct StudyPlanTrackerView: View {
                 }.padding(.horizontal, 14).padding(.vertical, 10)
             }
         }
-        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14))
+        .flatCard()
     }
 
     @ViewBuilder private func courseRow(_ c: PlanCourse) -> some View {
@@ -1426,7 +1427,7 @@ struct ConcentrationPickerView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(14).background(Theme.surface, in: RoundedRectangle(cornerRadius: 14))
+            .padding(14).flatCard()
         }.buttonStyle(.plain)
     }
 }

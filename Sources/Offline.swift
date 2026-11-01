@@ -733,6 +733,7 @@ struct OfflineSupportScreen: View {
         .background(Theme.bg.ignoresSafeArea())
         .navigationTitle("Offline support")
         .navigationBarTitleDisplayMode(.inline)
+        .notebookBack()
         .onChange(of: mobile) { v in   // allowed again: catch up now
             guard v, on, let uid = app.site?.userid else { return }
             Task { await OfflinePrefetch.run(uid: uid, force: true) }

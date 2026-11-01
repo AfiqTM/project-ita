@@ -54,11 +54,15 @@ struct ToolsOverlay: View {
                     tool.screen
                         .background(NavGrab())
                         .toolbar {
-                            ToolbarItem(placement: .navigationBarLeading) {
-                                Button { presenter.close() } label: {
-                                    Image(systemName: "chevron.left").font(.system(size: 17, weight: .semibold))
+                            if ThemeStore.shared.theme == .notebook {
+                                NotebookBackToolbar { presenter.close() }
+                            } else {
+                                ToolbarItem(placement: .navigationBarLeading) {
+                                    Button { presenter.close() } label: {
+                                        Image(systemName: "chevron.left").font(.system(size: 17, weight: .semibold))
+                                    }
+                                    .accessibilityLabel("Back")
                                 }
-                                .accessibilityLabel("Back")
                             }
                         }
                 }

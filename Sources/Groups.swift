@@ -538,7 +538,7 @@ private struct GroupNavTitle: ViewModifier {
     let title: String
     let embedded: Bool
     func body(content: Content) -> some View {
-        if embedded { content } else { content.navigationTitle(title).navigationBarTitleDisplayMode(.inline) }
+        if embedded { content } else { content.navigationTitle(title).navigationBarTitleDisplayMode(.inline).notebookBack() }
     }
 }
 
