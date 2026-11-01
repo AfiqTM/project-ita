@@ -599,6 +599,7 @@ struct AlertsView: View {
                 Text("Alerts").foregroundColor(Theme.txt).textGlow(radius: 4)
                     .rocksHeading(16, normal: .title3.weight(.semibold), pt: 20)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.leading, 4)   // just slightly to the right of the boxes' edge
                 if let error { Text(error).font(Theme.font(.footnote)).foregroundColor(Theme.muted) }
                 ForEach(items) { n in
                     let card = VStack(alignment: .leading, spacing: 4) {
