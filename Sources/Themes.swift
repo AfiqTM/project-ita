@@ -641,6 +641,8 @@ private struct ThemeCard: View {
                                                  : .system(size: 20, weight: .heavy, design: .monospaced)
         case .redDead: return RocksFont.available ? .custom(RocksFont.name, size: 17 * RocksFont.scale)
                                                   : .system(size: 20, weight: .semibold)
+        case .notebook: return JakartaFont.available ? .custom(JakartaFont.bold, size: 20, relativeTo: .body)   // same font as the course names
+                                                     : .system(size: 20, weight: .semibold)
         default: return .system(size: 20, weight: .semibold)
         }
     }

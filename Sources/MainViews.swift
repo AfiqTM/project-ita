@@ -498,7 +498,7 @@ struct CourseCard: View {
                     .foregroundColor(Theme.txt)
                     .multilineTextAlignment(.leading)
                     .textGlow(radius: 3)
-                    .pixelHeading(12, normal: .subheadline.weight(.semibold), pt: themes.theme == .notebook ? 17 : 15)
+                    .pixelHeading(12, normal: .subheadline.weight(.semibold), pt: themes.theme == .notebook ? 15.5 : 15)
                 if let p = course.progress {
                     ProgressView(value: min(max(p, 0), 100), total: 100).tint(Theme.accent)
                     Text("\(Int(p))% complete").font(Theme.font(.caption)).foregroundColor(Theme.muted)
