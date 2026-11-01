@@ -51,17 +51,18 @@ struct Palette {
                                  green: 0x8FA35A, red: 0xFF5440, amber: 0xFF8040, blue: 0x7C9BB0,
                                  glow: 0x000000, card: .western)
 
-    // Notebook (after a link-saving app): dark slate page, blue-grey cards with a thin outline and a light grey edge
-    // on the right and bottom (the hard offset shadow of card: .pixel, in light grey; no pixel font), yellow accent.
-    static let notebook = Palette(bg: 0x14171a, surface: 0x2b3238, surface2: 0x353d44, titleBar: 0x1d2227,
-                                  line: 0x1f2428, txt: 0xf2f3f4, muted: 0x9aa3ab, accent: 0xF5C93A,
-                                  onAccent: 0x151515,
-                                  green: 0x2fc27a, red: 0xe5605a, amber: 0xf5c93a, blue: 0x5a9be0,
-                                  glow: 0x77828a, card: .pixel)
+    // Notebook (after a neo-brutalist link-saving app): near-white page, white cards with a thick black outline and a
+    // solid black block shadow on the right and bottom (card: .pixel, without the pixel font), soft yellow accent
+    // with black text on it, Plus Jakarta Sans.
+    static let notebook = Palette(bg: 0xFAFAFA, surface: 0xFFFFFF, surface2: 0xF0F0F0, titleBar: 0xEFEFEF,
+                                  line: 0x0D0D0D, txt: 0x111111, muted: 0x777777, accent: 0xF8D57A,
+                                  onAccent: 0x111111,
+                                  green: 0x2FBF7A, red: 0xE0483F, amber: 0xE0A21E, blue: 0x3A63D8,
+                                  glow: 0x0D0D0D, card: .pixel)
 
     /// Hard-shadow card styles: offset of the block shadow and width of the outline (Notebook: thin dark outline, 2 pt light edge)
-    var hardOffset: CGFloat { card == .pixel && self.glow == 0x77828a ? 2 : 3 }
-    var hardLine: CGFloat { card == .pixel && self.glow == 0x77828a ? 1 : 2 }
+    var hardOffset: CGFloat { card == .pixel && self.glow == 0x0D0D0D ? 4 : 3 }
+    var hardLine: CGFloat { card == .pixel && self.glow == 0x0D0D0D ? 2.5 : 2 }
 }
 
 // Every colour reads from the palette of the chosen theme (Themes.swift). Screens pick the new colours up
@@ -96,6 +97,10 @@ enum Theme {
     /// sub-titles (largeTitle ... subheadline) and Zilla Slab for running text (body, footnote, caption).
     /// (`.weight()` and `.bold()` can still be chained on the result; the fonts have one weight here.)
     static func font(_ style: Font) -> Font {
+        if ThemeStore.shared.theme == .notebook, JakartaFont.available,
+           let m = styleSizes.first(where: { $0.0 == style }) {
+            return .custom(m.3 || m.2 == .headline ? JakartaFont.bold : JakartaFont.medium, size: m.1, relativeTo: m.2)
+        }
         guard ThemeStore.shared.theme.westernHeadings,
               let m = styleSizes.first(where: { $0.0 == style }) else { return style }
         if m.3 {
@@ -111,6 +116,10 @@ enum Theme {
     /// Like `font`, but always the readable body font in Red Dead Redemption 2, even for the title/sub-title styles:
     /// for longer text that happens to be set in a sub-title size (descriptions, previews, page text).
     static func read(_ style: Font, bold: Bool = false) -> Font {
+        if ThemeStore.shared.theme == .notebook, JakartaFont.available,
+           let m = styleSizes.first(where: { $0.0 == style }) {
+            return .custom(bold ? JakartaFont.bold : JakartaFont.medium, size: m.1, relativeTo: m.2)
+        }
         let f = Face.body
         guard ThemeStore.shared.theme.westernHeadings, f.available,
               let m = styleSizes.first(where: { $0.0 == style }) else { return bold ? style.bold() : style }
@@ -153,6 +162,10 @@ enum Theme {
                 if let f = UIFont(name: PixelFont.bold, size: 14) { title[.font] = f }
                 if let f = UIFont(name: PixelFont.bold, size: 28) { large[.font] = f }
             }
+        }
+        if theme == .notebook, JakartaFont.available {
+            if let f = UIFont(name: JakartaFont.bold, size: 17) { title[.font] = f }
+            if let f = UIFont(name: JakartaFont.extraBold, size: 34) { large[.font] = f }
         }
         if theme.westernHeadings {
             // the game's lettering, a little bigger than the system sizes (17 / 34) since the letters are narrow

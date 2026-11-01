@@ -17,7 +17,7 @@ struct iTaleemApp: App {
     @StateObject private var sync = SyncManager()
     @ObservedObject private var themes = ThemeStore.shared   // chosen look (Others > Themes)
     @Environment(\.scenePhase) private var scenePhase
-    init() { PixelFont.register(); WesternFont.register(); RocksFont.register(); Theme.applyAppearance(); NotificationManager.shared.setup(); OfflineNet.shared.start() }
+    init() { PixelFont.register(); WesternFont.register(); RocksFont.register(); JakartaFont.register(); Theme.applyAppearance(); NotificationManager.shared.setup(); OfflineNet.shared.start() }
 
     var body: some Scene {
         WindowGroup {
@@ -33,7 +33,7 @@ struct iTaleemApp: App {
             .onAppear { sync.configure(todos: todos, lib: driveLib, auth: driveAuth) }
             .onChange(of: scenePhase) { phase in if phase == .active { sync.syncNow(); AppIcon.syncWithTheme() } }
             .modifier(ThemeFont(mono: themes.theme.mono))
-            .environment(\.font, themes.theme.westernHeadings ? Theme.font(.body) : nil)   // Red Dead: Chinese Rocks everywhere   // Terminal theme: monospaced font
+            .environment(\.font, (themes.theme.westernHeadings || themes.theme == .notebook) ? Theme.font(.body) : nil)   // Red Dead: Chinese Rocks everywhere   // Terminal theme: monospaced font
             .preferredColorScheme(themes.theme.scheme)
             .tint(Theme.accent)
             .background(Theme.bg.ignoresSafeArea())
