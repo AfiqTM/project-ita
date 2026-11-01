@@ -80,13 +80,12 @@ private struct ToolSlot: Identifiable { let id: Int }
 struct DailyToolsRow: View {
     @ObservedObject private var store = DailyToolStore.shared
     @State private var picking: ToolSlot?
-    @State private var pushed: DailyTool?        // the tool whose screen is open
 
     var body: some View {
         HStack(spacing: 10) {
             ForEach(0..<DailyToolStore.slotCount, id: \.self) { i in
                 if let tool = store.slots[i] {
-                    Button { pushed = tool } label: { DailyToolTile(tool: tool) }
+                    Button { ToolPresenter.shared.open(tool) } label: { DailyToolTile(tool: tool) }
                         .buttonStyle(.plain)
                         .contextMenu {
                             Button { picking = ToolSlot(id: i) } label: { Label("Change", systemImage: "arrow.triangle.2.circlepath") }
@@ -101,23 +100,6 @@ struct DailyToolsRow: View {
             }
         }
         .sheet(item: $picking) { slot in DailyToolPicker(slot: slot.id) }
-        // The tool opens over the whole screen, so there is no tab bar on it, and nothing under the Noticeboard changes (hiding
-        // the bar for a pushed screen made the Noticeboard jump down and back up when you came back, and keeping it invisible
-        // did not hold). The chevron at the top left closes it.
-        .fullScreenCover(item: $pushed) { t in
-            ToolCover { destination(t) }
-        }
-    }
-
-    @ViewBuilder private func destination(_ t: DailyTool) -> some View {
-        switch t {
-        case .todo: TodoListView()
-        case .calculator: CAMSCalculatorScreen()
-        case .drive: MyDriveView()
-        case .attendance: AutoAttendanceView()
-        case .studyPlan: StudyPlanTrackerView()
-        case .resources: SemesterResourcesView()
-        }
     }
 
     private var emptyTile: some View {
