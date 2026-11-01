@@ -919,9 +919,7 @@ struct DrivePreviewView: View {
                 if let fileURL {
                     if fileURL.pathExtension.lowercased() == "pdf" {
                         // PDFKit instead of QuickLook: QuickLook leaves the nav bar white after closing
-                        PDFKitView(url: fileURL)
-                            .padding(.bottom, 72)          // last lines stay clear of the tab bar (same room as server files)
-                            .background(Theme.bg)
+                        PDFKitView(url: fileURL, bottomInset: 72)   // reaches the screen bottom; extra scroll room above the tab bar
                             .ignoresSafeArea(edges: .bottom)
                     } else {
                         QuickLookView(url: fileURL).ignoresSafeArea(edges: .bottom)

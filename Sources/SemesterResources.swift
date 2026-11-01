@@ -99,6 +99,7 @@ struct PDFScreen: View {
 
 struct PDFKitView: UIViewRepresentable {
     let url: URL
+    var bottomInset: CGFloat = 0
 
     func makeUIView(context: Context) -> PDFView {
         let v = PDFView()
@@ -111,5 +112,19 @@ struct PDFKitView: UIViewRepresentable {
         return v
     }
 
-    func updateUIView(_ v: PDFView, context: Context) {}
+    func updateUIView(_ v: PDFView, context: Context) {
+        guard bottomInset > 0 else { return }
+        DispatchQueue.main.async {
+            func scroll(in view: UIView) -> UIScrollView? {
+                if let s = view as? UIScrollView { return s }
+                for c in view.subviews { if let s = scroll(in: c) { return s } }
+                return nil
+            }
+            if let sv = scroll(in: v) {
+                sv.contentInsetAdjustmentBehavior = .never
+                sv.contentInset.bottom = bottomInset
+                sv.verticalScrollIndicatorInsets.bottom = bottomInset
+            }
+        }
+    }
 }
