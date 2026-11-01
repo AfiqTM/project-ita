@@ -50,6 +50,13 @@ struct Palette {
                                  onAccent: 0xFFFFFF,
                                  green: 0x8FA35A, red: 0xFF5440, amber: 0xFF8040, blue: 0x7C9BB0,
                                  glow: 0x000000, card: .western)
+
+    // Notebook (after a link-saving app): slate-grey page, raised charcoal cards with a soft outline, bright yellow accent.
+    static let notebook = Palette(bg: 0x16191c, surface: 0x262b30, surface2: 0x30363c, titleBar: 0x1d2125,
+                                  line: 0x3a4148, txt: 0xf2f3f4, muted: 0x9aa3ab, accent: 0xF5C93A,
+                                  onAccent: 0x1a1a1a,
+                                  green: 0x2fc27a, red: 0xe5605a, amber: 0xf5c93a, blue: 0x5a9be0,
+                                  glow: 0x0a0b0c, card: .glow)
 }
 
 // Every colour reads from the palette of the chosen theme (Themes.swift). Screens pick the new colours up
