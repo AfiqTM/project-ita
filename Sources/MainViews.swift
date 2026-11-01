@@ -602,7 +602,7 @@ struct AlertsView: View {
                 if let error { Text(error).font(Theme.font(.footnote)).foregroundColor(Theme.muted) }
                 ForEach(items) { n in
                     let card = VStack(alignment: .leading, spacing: 4) {
-                        Text(n.subject ?? "Notification")
+                        Text(n.subject ?? "Alert")
                             .foregroundColor(Theme.txt).fontWeight(isRead(n) ? .regular : .semibold)
                         if let m = n.smallmessage, !m.isEmpty {
                             Text(m.plainText).font(Theme.font(.caption)).foregroundColor(Theme.muted).lineLimit(3)
@@ -621,11 +621,11 @@ struct AlertsView: View {
                     } else if let cm = n.cmid {
                         // Announcements, assignments, pages...: opened with the app's own screens
                         NavigationLink { ModuleLoaderView(cmid: cm, url: n.contexturl.flatMap { URL(string: $0) },
-                                                          title: n.subject ?? "Notification") } label: { card }
+                                                          title: n.subject ?? "Alert") } label: { card }
                             .buttonStyle(.plain)
                             .simultaneousGesture(TapGesture().onEnded { Task { await markRead(n) } })
                     } else if let s = n.contexturl, let u = URL(string: s) {
-                        NavigationLink { WebActivityView(url: u, title: n.subject ?? "Notification") } label: { card }
+                        NavigationLink { WebActivityView(url: u, title: n.subject ?? "Alert") } label: { card }
                             .buttonStyle(.plain)
                             .simultaneousGesture(TapGesture().onEnded { Task { await markRead(n) } })
                     } else {

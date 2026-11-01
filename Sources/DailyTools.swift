@@ -161,27 +161,6 @@ private struct DailyToolTile: View {
     }
 }
 
-/// A tool's screen shown over everything: its own navigation, a back chevron that closes it
-private struct ToolCover<Content: View>: View {
-    @Environment(\.dismiss) private var dismiss
-    @ViewBuilder let content: () -> Content
-
-    var body: some View {
-        NavigationStack {
-            content()
-                .toolbar {
-                    ToolbarItem(placement: .navigationBarLeading) {
-                        Button { dismiss() } label: {
-                            Image(systemName: "chevron.left").font(Theme.font(.body).weight(.semibold)).foregroundColor(Theme.accent)
-                        }
-                        .accessibilityLabel("Back")
-                    }
-                }
-        }
-        .preferredColorScheme(ThemeStore.shared.theme.scheme)
-    }
-}
-
 private struct DailyToolPicker: View {
     let slot: Int
     @ObservedObject private var store = DailyToolStore.shared
