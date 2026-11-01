@@ -36,12 +36,12 @@ enum AppTheme: String, CaseIterable, Identifiable {
         case .terminal: return "Terminal look: near-black, neon green, a monospaced font and a green glow."
         case .retro: return "Old-school arcade: black and olive tiles, yellow accent, hard pixel edges and a pixel-style font."
         case .redDead: return "Rockstar-poster look: black and red, stencil-style caps headings, flat cards with a red banner strip."
-        case .notebook: return "Neo-brutalist: light grey page, thick black outlines, hard block shadows and a bright yellow accent."
+        case .notebook: return "Dark slate page, blue-grey cards with a light edge on the right and bottom, and a bright yellow accent."
         }
     }
 
     /// Light themes use the light look for system parts (keyboard, pickers, status bar); the others use dark
-    var scheme: ColorScheme { (self == .light || self == .notebook) ? .light : .dark }
+    var scheme: ColorScheme { self == .light ? .light : .dark }
 
     /// Monospaced font everywhere
     var mono: Bool { self == .terminal || self == .retro }
@@ -94,8 +94,8 @@ enum AppTheme: String, CaseIterable, Identifiable {
             return [(0x030303, 0x1A0605), (0x050303, 0x220706), (0x030303, 0x140404),
                     (0x060303, 0x260807), (0x040404, 0x1E0605), (0x030202, 0x160505)]
         case .notebook:
-            return [(0xD9D9DC, 0xB9BBC0), (0xF2BE22, 0xE0A800), (0xF0884A, 0xE0662A),
-                    (0xE8628F, 0xD14575), (0x4F7BE8, 0x2F5BD6), (0x5CCB9A, 0x2FBF7A)]
+            return [(0x23292e, 0x3d454c), (0x2b2a1c, 0x5a4d1c), (0x2e2420, 0x59382a),
+                    (0x2e2029, 0x59304a), (0x1f2638, 0x2f4274), (0x1d2d27, 0x2a5a45)]
         }
     }
 
@@ -107,7 +107,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
         case .terminal: return -0.25
         case .retro: return -0.15
         case .redDead: return -0.4
-        case .notebook: return 0
+        case .notebook: return -0.15
         }
     }
     var coverSaturation: Double {
