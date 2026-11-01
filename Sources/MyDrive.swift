@@ -644,7 +644,7 @@ struct DriveListCard: ViewModifier {
                     if let h = halo {
                         StackedGlow(color: h.0, rings: h.1, dy: h.2, radius: r)
                     }
-                    if pixel { shape.fill(Color(hex: p.glow)).offset(x: 3, y: 3) }
+                    if pixel { shape.fill(Color(hex: p.glow)).offset(x: p.hardOffset, y: p.hardOffset) }
                     shape.fill(Color(hex: p.surface))
                         .overlay(alignment: .top) {
                             if western { TornBand().fill(Color(hex: p.accent)).frame(height: 9) }
@@ -652,7 +652,7 @@ struct DriveListCard: ViewModifier {
                         .clipShape(shape)
                 }
             }
-            .overlay(shape.stroke(Color(hex: p.line), lineWidth: p.card == .glow ? 0 : (pixel ? 2 : 1))
+            .overlay(shape.stroke(Color(hex: p.line), lineWidth: p.card == .glow ? 0 : (pixel ? p.hardLine : 1))
                 .allowsHitTesting(false))
     }
 }

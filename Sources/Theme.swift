@@ -54,10 +54,14 @@ struct Palette {
     // Notebook (after a link-saving app): dark slate page, blue-grey cards with a thin outline and a light grey edge
     // on the right and bottom (the hard offset shadow of card: .pixel, in light grey; no pixel font), yellow accent.
     static let notebook = Palette(bg: 0x14171a, surface: 0x2b3238, surface2: 0x353d44, titleBar: 0x1d2227,
-                                  line: 0x5a646b, txt: 0xf2f3f4, muted: 0x9aa3ab, accent: 0xF5C93A,
+                                  line: 0x1f2428, txt: 0xf2f3f4, muted: 0x9aa3ab, accent: 0xF5C93A,
                                   onAccent: 0x151515,
                                   green: 0x2fc27a, red: 0xe5605a, amber: 0xf5c93a, blue: 0x5a9be0,
-                                  glow: 0x8c969d, card: .pixel)
+                                  glow: 0x77828a, card: .pixel)
+
+    /// Hard-shadow card styles: offset of the block shadow and width of the outline (Notebook: thin dark outline, 2 pt light edge)
+    var hardOffset: CGFloat { card == .pixel && self.glow == 0x77828a ? 2 : 3 }
+    var hardLine: CGFloat { card == .pixel && self.glow == 0x77828a ? 1 : 2 }
 }
 
 // Every colour reads from the palette of the chosen theme (Themes.swift). Screens pick the new colours up
@@ -267,7 +271,7 @@ struct GlowCard: ViewModifier {
         case .soft:
             layers = [(Color.black.opacity(0.06), 6, 0, 2), (Color.black.opacity(0.04), 18, 0, 6), (Color.clear, 0, 0, 0)]
         case .pixel:
-            layers = [(g, 0, p.glow == Palette.notebook.glow ? 2 : 3, p.glow == Palette.notebook.glow ? 2 : 3), (Color.clear, 0, 0, 0), (Color.clear, 0, 0, 0)]
+            layers = [(g, 0, p.hardOffset, p.hardOffset), (Color.clear, 0, 0, 0), (Color.clear, 0, 0, 0)]
         case .western:
             layers = [(Color.black.opacity(0.7), 6, 0, 3), (Color.black.opacity(0.45), 18, 0, 8), (Color.clear, 0, 0, 0)]
         }
@@ -276,7 +280,7 @@ struct GlowCard: ViewModifier {
             // western: a red banner along the top edge with a torn-paper lower edge (inside the rounded corners)
             .overlay(alignment: .top) { TornBand().fill(Color(hex: p.accent)).frame(height: western ? 9 : 0) }
             .clipShape(shape)
-            .overlay(shape.stroke(Color(hex: p.line), lineWidth: p.card == .glow ? 0 : (pixel ? 2 : 1)))
+            .overlay(shape.stroke(Color(hex: p.line), lineWidth: p.card == .glow ? 0 : (pixel ? p.hardLine : 1)))
 
             .shadow(color: layers[0].0, radius: layers[0].1, x: layers[0].2, y: layers[0].3)
             .shadow(color: layers[1].0, radius: layers[1].1, x: layers[1].2, y: layers[1].3)
