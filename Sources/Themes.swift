@@ -42,7 +42,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
         case .retro: return "Old-school arcade: black and olive tiles, yellow accent, hard pixel edges and a pixel-style font."
         case .redDead: return "Rockstar-poster look: black and red, stencil-style caps headings, flat cards with a red banner strip."
         case .notebook: return "Neo-brutalist: near-white page, thick black outlines, solid block shadows, soft yellow accent and a rounded geometric font."
-        case .notebookDark: return "Notebook after dark: charcoal page, light outlines and block shadows, the same yellow accent and rounded font."
+        case .notebookDark: return "Notebook after dark: charcoal page, light outlines and block shadows, a white accent and the same rounded font."
         }
     }
 
