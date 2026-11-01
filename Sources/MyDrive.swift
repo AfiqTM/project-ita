@@ -917,7 +917,12 @@ struct DrivePreviewView: View {
         DriveGate {
             Group {
                 if let fileURL {
-                    QuickLookView(url: fileURL).ignoresSafeArea(edges: .bottom)
+                    if fileURL.pathExtension.lowercased() == "pdf" {
+                        // PDFKit instead of QuickLook: QuickLook leaves the nav bar white after closing
+                        PDFKitView(url: fileURL)
+                    } else {
+                        QuickLookView(url: fileURL).ignoresSafeArea(edges: .bottom)
+                    }
                 } else if let error {
                     VStack(spacing: 14) {
                         Text(error).font(Theme.font(.footnote)).foregroundColor(Theme.muted).multilineTextAlignment(.center)

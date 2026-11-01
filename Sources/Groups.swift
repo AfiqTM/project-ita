@@ -385,7 +385,7 @@ struct GroupChoiceView: View {
                             .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                     }
                     .buttonStyle(.plain)
-                    .padding(.trailing, 4)     // Join sits a little in from the right edge; the expand arrow beside it moves with it
+                    .padding(.trailing, 6)     // Join sits a little in from the right edge; the expand arrow beside it moves with it
                     .disabled(full || busy != nil || e.option?.disabled?.value == true)
                 }
             }
