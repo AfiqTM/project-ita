@@ -64,13 +64,13 @@ struct Palette {
     // vanish on the page). Text is near-white (about 16:1 on the cards), muted grey about 7:1, the status colours are
     // lifted so they read on dark, and the yellow accent keeps its black text.
     static let notebookDark = Palette(bg: 0x080808, surface: 0x141414, surface2: 0x1E1E1E, titleBar: 0x0E0E0E,
-                                      line: 0x8E8E8E, txt: 0xF2F2F2, muted: 0xA3A3A3, accent: 0xF4C95D,
+                                      line: 0x6B6B6B, txt: 0xF2F2F2, muted: 0xA3A3A3, accent: 0xF4C95D,
                                       onAccent: 0x111111,
                                       green: 0x3DD68C, red: 0xFF6B61, amber: 0xF0B73A, blue: 0x7E9CFF,
-                                      glow: 0x575757, card: .pixel)
+                                      glow: 0x3D3D3D, card: .pixel)
 
     /// Both Notebook palettes are told apart by their shadow colour
-    private var isNotebookStyle: Bool { card == .pixel && (glow == 0x0D0D0D || glow == 0x575757) }
+    private var isNotebookStyle: Bool { card == .pixel && (glow == 0x0D0D0D || glow == 0x3D3D3D) }
 
     /// Hard-shadow card styles: offset of the block shadow and width of the outline (Notebook: thin dark outline, 2 pt light edge)
     var hardOffset: CGFloat { isNotebookStyle ? 4 : 3 }
