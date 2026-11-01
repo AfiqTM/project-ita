@@ -727,11 +727,10 @@ struct ProfileView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                // title on the left, in the same place as Tasks, My courses and Alerts (this page pads 24 where those pad 16)
+                // title on the left; the page pads 16 like Tasks, My courses and Alerts, so the boxes start where the title starts
                 Text("Others").foregroundColor(Theme.txt).textGlow(radius: 4)
                     .rocksHeading(16, normal: .title3.weight(.semibold), pt: 20)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, -8).padding(.top, -8)
                 // 1. account
                 sectionTitle("Account")
                 VStack(spacing: 0) {
@@ -808,7 +807,7 @@ struct ProfileView: View {
                 }
                 .padding(.top, 6)
             }
-            .padding(24)
+            .padding(16)
         }
         .background(Theme.bg.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
