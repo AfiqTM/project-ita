@@ -727,6 +727,11 @@ struct ProfileView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
+                // title on the left, in the same place as Tasks, My courses and Alerts (this page pads 24 where those pad 16)
+                Text("Others").foregroundColor(Theme.txt).textGlow(radius: 4)
+                    .rocksHeading(16, normal: .title3.weight(.semibold), pt: 20)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, -8).padding(.top, -8)
                 // 1. account
                 sectionTitle("Account")
                 VStack(spacing: 0) {
@@ -806,8 +811,7 @@ struct ProfileView: View {
             .padding(24)
         }
         .background(Theme.bg.ignoresSafeArea())
-        .navigationTitle("Others")
-        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.hidden, for: .navigationBar)
     }
 }
 
