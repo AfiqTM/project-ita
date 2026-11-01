@@ -71,7 +71,7 @@ struct AssignItem: Identifiable {
 
     var id: Int { a.id }
     var due: Int { a.duedate ?? 0 }
-    var subStatus: String { status?.lastattempt?.submission?.status ?? "" }
+    var subStatus: String { status?.lastattempt?.shown?.status ?? "" }
     var grade: String { (status?.feedback?.gradefordisplay ?? "").plainText }
     var graded: Bool { status?.lastattempt?.gradingstatus == "graded" || !grade.isEmpty }
     var submitted: Bool { subStatus == "submitted" || graded }

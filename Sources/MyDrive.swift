@@ -960,17 +960,74 @@ struct DrivePreviewView: View {
     }
 }
 
+/// QuickLook restyles the navigation bar it sits in (it turned white) and left it that way after the screen was closed, until
+/// another screen change. This one writes the bar's look down before the preview appears and puts it back when it goes.
+final class BarKeepingPreviewController: QLPreviewController {
+    private struct Look {
+        let standard: UINavigationBarAppearance
+        let scrollEdge: UINavigationBarAppearance?
+        let compact: UINavigationBarAppearance?
+        let compactScrollEdge: UINavigationBarAppearance?
+        let tint: UIColor?
+        let barTint: UIColor?
+        let translucent: Bool
+        let style: UIBarStyle
+        let titleAttributes: [NSAttributedString.Key: Any]?
+    }
+    private weak var bar: UINavigationBar?
+    private var look: Look?
+
+    override func viewWillAppear(_ animated: Bool) {
+        if look == nil, let b = navigationController?.navigationBar {
+            bar = b
+            func copy(_ x: UINavigationBarAppearance?) -> UINavigationBarAppearance? {
+                x.map { UINavigationBarAppearance(barAppearance: $0) }
+            }
+            look = Look(standard: UINavigationBarAppearance(barAppearance: b.standardAppearance),
+                        scrollEdge: copy(b.scrollEdgeAppearance), compact: copy(b.compactAppearance),
+                        compactScrollEdge: copy(b.compactScrollEdgeAppearance),
+                        tint: b.tintColor, barTint: b.barTintColor, translucent: b.isTranslucent, style: b.barStyle,
+                        titleAttributes: b.titleTextAttributes)
+        }
+        super.viewWillAppear(animated)
+    }
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        restoreBar()
+    }
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        restoreBar()
+    }
+
+    func restoreBar() {
+        guard let b = bar, let l = look else { return }
+        b.standardAppearance = l.standard
+        b.scrollEdgeAppearance = l.scrollEdge
+        b.compactAppearance = l.compact
+        b.compactScrollEdgeAppearance = l.compactScrollEdge
+        b.tintColor = l.tint
+        b.barTintColor = l.barTint
+        b.isTranslucent = l.translucent
+        b.barStyle = l.style
+        b.titleTextAttributes = l.titleAttributes
+    }
+}
+
 struct QuickLookView: UIViewControllerRepresentable {
     let url: URL
 
     func makeCoordinator() -> Coordinator { Coordinator(url) }
     func makeUIViewController(context: Context) -> QLPreviewController {
-        let c = QLPreviewController()
+        let c = BarKeepingPreviewController()
         c.dataSource = context.coordinator
         return c
     }
     func updateUIViewController(_ vc: QLPreviewController, context: Context) {
         if context.coordinator.url != url { context.coordinator.url = url; vc.reloadData() }
+    }
+    static func dismantleUIViewController(_ vc: QLPreviewController, coordinator: Coordinator) {
+        (vc as? BarKeepingPreviewController)?.restoreBar()
     }
 
     final class Coordinator: NSObject, QLPreviewControllerDataSource {

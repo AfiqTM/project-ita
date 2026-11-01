@@ -873,7 +873,7 @@ struct AssignmentView: View {
 
     private var existingFiles: [FileRef] {
         var out: [FileRef] = []
-        let plugins = status?.lastattempt?.submission?.plugins ?? []
+        let plugins = status?.lastattempt?.shown?.plugins ?? []
         for p in plugins where p.type == "file" {
             for area in p.fileareas ?? [] {
                 out.append(contentsOf: area.files ?? [])
@@ -899,12 +899,12 @@ struct AssignmentView: View {
             .accessibilityLabel("Share submitted files")
     }
 
-    private var subStatus: String { status?.lastattempt?.submission?.status ?? "" }
+    private var subStatus: String { status?.lastattempt?.shown?.status ?? "" }
     private var canEdit: Bool { status?.lastattempt?.canedit?.value ?? true }
     private var hasSubmission: Bool { ["draft", "submitted", "reopened"].contains(subStatus) }
 
     private func savedText(_ s: StatusResp?) -> String? {
-        let plugins = s?.lastattempt?.submission?.plugins ?? []
+        let plugins = s?.lastattempt?.shown?.plugins ?? []
         for p in plugins where p.type == "onlinetext" {
             if let t = p.editorfields?.first?.text { return t }
         }

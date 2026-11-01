@@ -376,6 +376,7 @@ struct GroupChoiceView: View {
                             .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(Theme.onAccent.opacity(0.55), lineWidth: 1))
                     }
                     .buttonStyle(.plain)
+                    .padding(.trailing, 4)     // a little in from the right edge, same for Join below
                 } else if e.option != nil {
                     Button { Task { await join(e) } } label: {
                         Text(full ? "Full" : (chosen == nil || isGroupSelect ? "Join" : "Switch")).fontWeight(.semibold)
@@ -385,6 +386,7 @@ struct GroupChoiceView: View {
                             .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                     }
                     .buttonStyle(.plain)
+                    .padding(.trailing, 4)
                     .disabled(full || busy != nil || e.option?.disabled?.value == true)
                 }
             }

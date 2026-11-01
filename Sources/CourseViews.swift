@@ -406,7 +406,9 @@ struct FileViewer: View {
             if let local = files.localURL(for: url, modified: modified) {
                 QuickLookView(url: local).ignoresSafeArea(edges: .bottom)
             } else {
-                WebView(url: url, theme: false)
+                // reaches the bottom edge of the screen (it stopped at the tab bar, which looked cut off); the extra room lets the
+                // last lines scroll up clear of the tab bar
+                WebView(url: url, theme: false, bottomInset: 72).ignoresSafeArea(edges: .bottom)
             }
         }
             .background(Theme.bg.ignoresSafeArea())
@@ -674,6 +676,8 @@ struct ParticipantsView: View {
 struct WebView: UIViewRepresentable {
     let url: URL
     var theme = false   // pages are shown as the normal site (no injected dark theme)
+    /// Extra scroll room at the bottom, on top of the system's own (the home indicator)
+    var bottomInset: CGFloat = 0
 
     func makeUIView(context: Context) -> WKWebView {
         let cfg = WKWebViewConfiguration()
@@ -682,6 +686,10 @@ struct WebView: UIViewRepresentable {
                 WKUserScript(source: WebTheme.js, injectionTime: .atDocumentStart, forMainFrameOnly: false))
         }
         let w = WKWebView(frame: .zero, configuration: cfg)
+        if bottomInset > 0 {
+            w.scrollView.contentInset.bottom = bottomInset
+            w.scrollView.verticalScrollIndicatorInsets.bottom = bottomInset
+        }
         w.load(URLRequest(url: url))
         return w
     }

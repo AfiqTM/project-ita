@@ -513,6 +513,15 @@ struct LastAttempt: Decodable {
     let canedit: FlexBool?
     let cansubmit: FlexBool?
     let locked: FlexBool?
+    let teamsubmission: Sub?      // group assignments: the group's submission carries the files, text and status
+}
+extension LastAttempt {
+    /// The submission the student sees. In a group assignment that is the group's, which holds the submitted files; the
+    /// student's own record in those assignments has none (the website shows the group's, the app used to read only the own)
+    var shown: Sub? {
+        if let t = teamsubmission, t.plugins?.isEmpty == false || submission == nil { return t }
+        return submission
+    }
 }
 struct Sub: Decodable { let status: String?; let plugins: [SubPlugin]? }
 struct SubPlugin: Decodable { let type: String?; let fileareas: [FileArea]?; let editorfields: [EditorField]? }
