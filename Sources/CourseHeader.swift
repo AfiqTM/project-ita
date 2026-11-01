@@ -141,6 +141,7 @@ extension Person {
 struct CourseHeaderView: View {
     let course: Course
     @StateObject private var lecturers: CourseLecturers
+    @ObservedObject private var themes = ThemeStore.shared
 
     init(course: Course) {
         self.course = course
@@ -167,8 +168,10 @@ struct CourseHeaderView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(course.headerCode)
-                .foregroundStyle(LinearGradient(colors: [Theme.txt, Theme.accent.opacity(0.85)],
-                                                startPoint: .topLeading, endPoint: .bottomTrailing))
+                .foregroundStyle(themes.theme == .notebook
+                                 ? AnyShapeStyle(Color(hex: Palette.notebook.line))   // Notebook: solid ink black, readable on the yellow page
+                                 : AnyShapeStyle(LinearGradient(colors: [Theme.txt, Theme.accent.opacity(0.85)],
+                                                                startPoint: .topLeading, endPoint: .bottomTrailing)))
                 .lineLimit(2).minimumScaleFactor(0.6)
                 .pixelHeading(22, normal: .system(size: 38, weight: .bold), pt: 38)
             subtitle
@@ -232,11 +235,15 @@ struct CourseBackdrop: View {
         Color.clear
             .frame(maxWidth: .infinity).frame(height: height)
             .overlay {
-                // Light theme: a bright, warm version of the same photo (CourseHeaderLight) so the dark text stays readable
-                Image(light ? "CourseHeaderLight" : "CourseHeader").resizable().scaledToFill()
-                    .saturation(t.coverSaturation)
-                    .brightness(light ? 0 : t.coverBrightness * 0.5)
-                    .overlay { if let c = t.coverTint { Color(hex: c).opacity(0.35).blendMode(.multiply) } }
+                if t == .notebook {
+                    NotebookHeaderArt()   // Notebook: a yellow page with dots and stickers instead of the photo
+                } else {
+                    // Light theme: a bright, warm version of the same photo (CourseHeaderLight) so the dark text stays readable
+                    Image(light ? "CourseHeaderLight" : "CourseHeader").resizable().scaledToFill()
+                        .saturation(t.coverSaturation)
+                        .brightness(light ? 0 : t.coverBrightness * 0.5)
+                        .overlay { if let c = t.coverTint { Color(hex: c).opacity(0.35).blendMode(.multiply) } }
+                }
             }
             .clipped()
             // no dark band at the top: the photo goes straight up under the status bar and navigation bar

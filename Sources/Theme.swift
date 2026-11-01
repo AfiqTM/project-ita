@@ -55,7 +55,7 @@ struct Palette {
     // solid black block shadow on the right and bottom (card: .pixel, without the pixel font), soft yellow accent
     // with black text on it, Plus Jakarta Sans.
     static let notebook = Palette(bg: 0xFAFAFA, surface: 0xFFFFFF, surface2: 0xF0F0F0, titleBar: 0xEFEFEF,
-                                  line: 0x0D0D0D, txt: 0x111111, muted: 0x777777, accent: 0xF8D57A,
+                                  line: 0x0D0D0D, txt: 0x111111, muted: 0x777777, accent: 0xF4C95D,
                                   onAccent: 0x111111,
                                   green: 0x2FBF7A, red: 0xE0483F, amber: 0xE0A21E, blue: 0x3A63D8,
                                   glow: 0x0D0D0D, card: .pixel)
@@ -344,6 +344,76 @@ struct NotebookFolderTab<Content: View>: View {
                 .frame(width: 87, height: NotebookFolder.tabHeight + 14)
                 .padding(.leading, 7)
             content.padding(.top, NotebookFolder.tabHeight)
+        }
+    }
+}
+
+// Notebook artwork for the course covers and the course page header: a dot grid with a few flat shapes in a thick
+// outline, like stickers on a page. `soft` is the quieter version behind the text of the course page.
+struct NotebookPattern: View {
+    var seed: Int = 0
+    var soft: Bool = false
+
+    var body: some View {
+        Canvas { ctx, size in
+            let w = size.width, h = size.height
+            let unit = min(w, h)
+            let k = CGFloat(abs(seed) % 3)
+            let accent = Color(hex: Palette.notebook.accent)
+
+            // dot grid
+            var dots = Path()
+            let step: CGFloat = 14
+            var y = step / 2
+            while y < h {
+                var x = step / 2
+                while x < w {
+                    dots.addEllipse(in: CGRect(x: x - 1, y: y - 1, width: 2, height: 2))
+                    x += step
+                }
+                y += step
+            }
+            ctx.fill(dots, with: .color(Color.black.opacity(soft ? 0.12 : 0.16)))
+
+            let outline = Color.black.opacity(soft ? 0.5 : 0.75)
+            let style = StrokeStyle(lineWidth: soft ? 2.5 : 2, lineJoin: .round)
+            func draw(_ path: Path, _ fill: Color) {
+                ctx.fill(path, with: .color(fill))
+                ctx.stroke(path, with: .color(outline), style: style)
+            }
+
+            // big circle, top right
+            let r = unit * 0.27
+            let cx = w * 0.80, cy = h * (0.26 + 0.04 * k)
+            draw(Path(ellipseIn: CGRect(x: cx - r, y: cy - r, width: r * 2, height: r * 2)),
+                 soft ? Color.white.opacity(0.45) : accent.opacity(0.45))
+
+            // tilted rounded square, bottom right
+            let s = unit * 0.30
+            let t = CGAffineTransform(translationX: w * 0.92, y: h * 0.78).rotated(by: (-18 + 14 * k) * .pi / 180)
+            draw(Path(roundedRect: CGRect(x: -s / 2, y: -s / 2, width: s, height: s), cornerRadius: s * 0.22).applying(t),
+                 soft ? accent.opacity(0.6) : Color.white.opacity(0.22))
+
+            // small triangle, top middle (covers only)
+            if !soft {
+                let tc = CGPoint(x: w * 0.50, y: h * 0.18), e = unit * 0.09
+                var tri = Path()
+                tri.move(to: CGPoint(x: tc.x, y: tc.y - e))
+                tri.addLine(to: CGPoint(x: tc.x + e, y: tc.y + e))
+                tri.addLine(to: CGPoint(x: tc.x - e, y: tc.y + e))
+                tri.closeSubpath()
+                draw(tri, Color.white.opacity(0.22))
+            }
+        }
+    }
+}
+
+// The warm yellow page behind the course header in the Notebook theme
+struct NotebookHeaderArt: View {
+    var body: some View {
+        ZStack {
+            LinearGradient(colors: [Color(hex: 0xFAE9B4), Color(hex: 0xF5D98C)], startPoint: .top, endPoint: .bottom)
+            NotebookPattern(seed: 1, soft: true)
         }
     }
 }

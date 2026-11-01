@@ -498,7 +498,7 @@ struct CourseCard: View {
                     .foregroundColor(Theme.txt)
                     .multilineTextAlignment(.leading)
                     .textGlow(radius: 3)
-                    .pixelHeading(12, normal: .subheadline.weight(.semibold), pt: themes.theme == .notebook ? 15.5 : 15)
+                    .pixelHeading(12, normal: .subheadline.weight(.semibold), pt: themes.theme == .notebook ? 14.5 : 15)
                 if let p = course.progress {
                     ProgressView(value: min(max(p, 0), 100), total: 100).tint(Theme.accent)
                     Text("\(Int(p))% complete").font(Theme.font(.caption)).foregroundColor(Theme.muted)
@@ -511,7 +511,9 @@ struct CourseCard: View {
     }
 
     @ViewBuilder private var cover: some View {
-        if let str = course.courseimage, str.hasPrefix("http"), !str.lowercased().contains(".svg"),
+        if themes.theme == .notebook {
+            DefaultCover(course: course)   // Notebook: its own sticker-and-dots cover instead of the course photo
+        } else if let str = course.courseimage, str.hasPrefix("http"), !str.lowercased().contains(".svg"),
            let u = MoodleAPI.shared.fileURL(str) {
             AsyncImage(url: u) { phase in
                 switch phase {
@@ -542,11 +544,15 @@ struct DefaultCover: View {
         ZStack(alignment: .bottomLeading) {
             LinearGradient(colors: [Color(hex: p.0), Color(hex: p.1)],
                            startPoint: .topLeading, endPoint: .bottomTrailing)
-            Image(systemName: "book.closed.fill")
-                .font(.system(size: 64))
-                .foregroundColor(Theme.accent.opacity(0.16))
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                .padding(14)
+            if themes.theme == .notebook {
+                NotebookPattern(seed: course.id)
+            } else {
+                Image(systemName: "book.closed.fill")
+                    .font(.system(size: 64))
+                    .foregroundColor(Theme.accent.opacity(0.16))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                    .padding(14)
+            }
             Text(course.prettyShort ?? "")
                 .foregroundColor(themes.theme.westernHeadings ? Color.white : Theme.accent.opacity(0.92))
                 .textGlow()
@@ -849,7 +855,7 @@ struct ProfileRow: View {
                 }
             }.textGlow()
             VStack(alignment: .leading, spacing: 3) {
-                Text(title).foregroundColor(Theme.txt).textGlow(radius: 3).rocksHeading(12, normal: .subheadline.weight(.semibold), pt: ThemeStore.shared.theme == .notebook ? 17 : 15)
+                Text(title).foregroundColor(Theme.txt).textGlow(radius: 3).rocksHeading(12, normal: .subheadline.weight(.semibold), pt: ThemeStore.shared.theme == .notebook ? 14.5 : 15)
                 Text(subtitle).font(Theme.font(.caption)).foregroundColor(Theme.muted).lineLimit(subtitleLines)
             }
             Spacer()
