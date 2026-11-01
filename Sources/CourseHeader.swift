@@ -169,7 +169,7 @@ struct CourseHeaderView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text(course.headerCode)
                 .foregroundStyle(themes.theme.isNotebook
-                                 ? AnyShapeStyle(Theme.line)   // Notebook: solid ink (black on the yellow page, near-white on the dark one)
+                                 ? AnyShapeStyle(Theme.txt)   // Notebook: solid ink (black on the yellow page, near-white on the dark one)
                                  : AnyShapeStyle(LinearGradient(colors: [Theme.txt, Theme.accent.opacity(0.85)],
                                                                 startPoint: .topLeading, endPoint: .bottomTrailing)))
                 .lineLimit(2).minimumScaleFactor(0.6)
