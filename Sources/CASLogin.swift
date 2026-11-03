@@ -56,6 +56,8 @@ enum CASLogin {
         fields[form.userField] = user
         fields[form.passField] = pass
         if fields["_eventId"] == nil { fields["_eventId"] = "submit" }
+        // The real page fills these in with JavaScript; a plain request would send them empty
+        if let fp = fields["deviceFingerprint"], fp.isEmpty { fields["deviceFingerprint"] = deviceFingerprint() }
         var req = URLRequest(url: form.action)
         req.httpMethod = "POST"
         req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
@@ -66,11 +68,13 @@ enum CASLogin {
         // CAS shows the form again when the details are wrong
         if afterResp.url?.host == casURL.host {
             let t = String(decoding: afterData, as: UTF8.self)
-            if HTMLForm.loginForm(in: t, base: afterResp.url ?? casURL) != nil {
+            if let newForm = HTMLForm.loginForm(in: t, base: afterResp.url ?? casURL) {
+                let cookies = (cfg.httpCookieStorage?.cookies(for: casURL) ?? []).map { $0.name }.sorted().joined(separator: ",")
+                let execSame = (newForm.fields["execution"] ?? "") == (form.fields["execution"] ?? "")
                 let status = (afterResp as? HTTPURLResponse)?.statusCode ?? 0
                 let page = afterResp.url.map { ($0.host ?? "") + $0.path } ?? "?"
                 let sent = fields.keys.sorted().joined(separator: ",")
-                throw APIError(message: "Matric no. or password is wrong. [debug: HTTP \(status) \(page) | sent: \(sent) | user field: \(form.userField), pass field: \(form.passField) | page says: \(pageMessage(t))]",
+                throw APIError(message: "Matric no. or password is wrong. [debug: HTTP \(status) \(page) | sent: \(sent) | user field: \(form.userField), pass field: \(form.passField) | cookies: \(cookies.isEmpty ? "none" : cookies) | execution unchanged: \(execSame) | page says: \(pageMessage(t))]",
                                code: "invalidlogin")
             }
             throw APIError(message: "IIUM sign-in needs another step (2FA or a confirmation). Use the browser sign-in instead.", code: "casstep")
@@ -102,18 +106,28 @@ enum CASLogin {
         }
         let ns = h as NSString
         if let rx = try? NSRegularExpression(pattern: "<(div|span|p)\\b[^>]*(id=\"msg\"|class=\"[^\"]*(alert|error|danger)[^\"]*\")[^>]*>(.*?)</\\1>",
-                                             options: [.caseInsensitive, .dotMatchesLineSeparators]),
-           let m = rx.firstMatch(in: h, range: NSRange(location: 0, length: ns.length)) {
-            let t = strip(ns.substring(with: m.range(at: 4)))
-            if !t.isEmpty { return String(t.prefix(200)) }
+                                             options: [.caseInsensitive, .dotMatchesLineSeparators]) {
+            let found = rx.matches(in: h, range: NSRange(location: 0, length: ns.length))
+                .map { strip(ns.substring(with: $0.range(at: 4))) }
+                .filter { !$0.isEmpty && !$0.lowercased().contains("caps") }
+            if !found.isEmpty { return String(found.joined(separator: " / ").prefix(300)) }
         }
-        return "(no error box) " + String(strip(h).prefix(160))
+        return "(no error box) " + String(strip(h).prefix(300))
     }
 
     private static func strip(_ s: String) -> String {
         let noTags = s.replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
         return noTags.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Stable random id standing in for the browser fingerprint the CAS page script would create
+    private static func deviceFingerprint() -> String {
+        let k = "cas.devicefp"
+        if let s = UserDefaults.standard.string(forKey: k) { return s }
+        let s = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+        UserDefaults.standard.set(s, forKey: k)
+        return s
     }
 
     private static func enc(_ s: String) -> String {
