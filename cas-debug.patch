@@ -1,0 +1,48 @@
+diff --git a/Sources/CASLogin.swift b/Sources/CASLogin.swift
+index 9c2caaf..fb522e9 100644
+--- a/Sources/CASLogin.swift
++++ b/Sources/CASLogin.swift
+@@ -67,7 +67,11 @@ enum CASLogin {
+         if afterResp.url?.host == casURL.host {
+             let t = String(decoding: afterData, as: UTF8.self)
+             if HTMLForm.loginForm(in: t, base: afterResp.url ?? casURL) != nil {
+-                throw APIError(message: "Matric no. or password is wrong.", code: "invalidlogin")
++                let status = (afterResp as? HTTPURLResponse)?.statusCode ?? 0
++                let page = afterResp.url.map { ($0.host ?? "") + $0.path } ?? "?"
++                let sent = fields.keys.sorted().joined(separator: ",")
++                throw APIError(message: "Matric no. or password is wrong. [debug: HTTP \(status) \(page) | sent: \(sent) | user field: \(form.userField), pass field: \(form.passField) | page says: \(pageMessage(t))]",
++                               code: "invalidlogin")
+             }
+             throw APIError(message: "IIUM sign-in needs another step (2FA or a confirmation). Use the browser sign-in instead.", code: "casstep")
+         }
+@@ -88,6 +92,30 @@ enum CASLogin {
+                        code: "notoken")
+     }
+ 
++    /// The visible error text on a CAS page (for the debug part of the error message)
++    private static func pageMessage(_ html: String) -> String {
++        var h = html
++        for tag in ["script", "style"] {
++            if let rx = try? NSRegularExpression(pattern: "<\\(tag)\\b.*?</\\(tag)>", options: [.caseInsensitive, .dotMatchesLineSeparators]) {
++                h = rx.stringByReplacingMatches(in: h, range: NSRange(location: 0, length: (h as NSString).length), withTemplate: " ")
++            }
++        }
++        let ns = h as NSString
++        if let rx = try? NSRegularExpression(pattern: "<(div|span|p)\\b[^>]*(id=\"msg\"|class=\"[^\"]*(alert|error|danger)[^\"]*\")[^>]*>(.*?)</\\1>",
++                                             options: [.caseInsensitive, .dotMatchesLineSeparators]),
++           let m = rx.firstMatch(in: h, range: NSRange(location: 0, length: ns.length)) {
++            let t = strip(ns.substring(with: m.range(at: 4)))
++            if !t.isEmpty { return String(t.prefix(200)) }
++        }
++        return "(no error box) " + String(strip(h).prefix(160))
++    }
++
++    private static func strip(_ s: String) -> String {
++        let noTags = s.replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
++        return noTags.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
++            .trimmingCharacters(in: .whitespacesAndNewlines)
++    }
++
+     private static func enc(_ s: String) -> String {
+         var allowed = CharacterSet.alphanumerics
+         allowed.insert(charactersIn: "-._~")

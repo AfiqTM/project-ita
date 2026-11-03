@@ -1,0 +1,689 @@
+diff --git a/Sources/API.swift b/Sources/API.swift
+index 1524ecd..502f4a5 100644
+--- a/Sources/API.swift
++++ b/Sources/API.swift
+@@ -84,7 +84,26 @@ final class MoodleAPI {
+         return OfflineCache.apiName(fn, keyItems.map { "\($0.0)=\($0.1)" }.sorted().joined(separator: "&"))
+     }
+ 
++    /// Every call goes through here: if the site says the token is no longer valid and login info is saved
++    /// (Others > Save login info), it signs in again and repeats the call once.
+     func raw(_ fn: String, _ params: [String: Any] = [:]) async throws -> Data {
++        let used = token
++        do {
++            return try await rawOnce(fn, params)
++        } catch let e as APIError where e.isAuth {
++            if token == used {   // nobody has renewed the token meanwhile
++                switch await SavedLogin.shared.relogin() {
++                case .ok: break
++                case .offline: throw URLError(.notConnectedToInternet)
++                case .unavailable: throw e
++                }
++            }
++            if token.isEmpty { throw e }   // signed out in the meantime
++            return try await rawOnce(fn, params)
++        }
++    }
++
++    private func rawOnce(_ fn: String, _ params: [String: Any] = [:]) async throws -> Data {
+         let useCache = OfflineSettings.enabled && OfflineCache.isCacheable(fn)
+         let cacheName = useCache ? offlineName(fn, params) : ""
+         let saved: Data? = useCache ? OfflineCache.load(cacheName) : nil
+diff --git a/Sources/App.swift b/Sources/App.swift
+index 7b9d0b3..fc4727e 100644
+--- a/Sources/App.swift
++++ b/Sources/App.swift
+@@ -62,6 +62,7 @@ final class AppState: ObservableObject {
+         MoodleAPI.shared.privateToken = s.privateToken
+         site = try await MoodleAPI.shared.siteInfo()
+         Keychain.save(s)
++        SavedLogin.shared.manualSignOut = false
+         loggedIn = true
+     }
+ 
+@@ -71,7 +72,9 @@ final class AppState: ObservableObject {
+         catch { /* offline: keep cached session */ }
+     }
+ 
+-    func signOut() {
++    /// `manual`: the Sign out button. The app then stays signed out instead of using the saved login info.
++    func signOut(manual: Bool = false) {
++        if manual { SavedLogin.shared.manualSignOut = true }
+         Keychain.delete()
+         MoodleAPI.shared.token = ""
+         MoodleAPI.shared.privateToken = nil
+diff --git a/Sources/LoginView.swift b/Sources/LoginView.swift
+index b1cbf53..3d6b650 100644
+--- a/Sources/LoginView.swift
++++ b/Sources/LoginView.swift
+@@ -7,6 +7,7 @@ struct LoginView: View {
+     @State private var busy = false
+     @State private var error: String?
+     @State private var showPassword = false
++    @State private var saveLogin = false
+     private let webAuth = WebAuth()
+ 
+     var body: some View {
+@@ -39,6 +40,7 @@ struct LoginView: View {
+                         field { TextField("Username / Matric no.", text: $user)
+                                     .textInputAutocapitalization(.never).autocorrectionDisabled() }
+                         field { SecureField("Password", text: $pass) }
++                        Toggle("Save login info", isOn: $saveLogin).tint(Theme.accent).foregroundColor(Theme.txt)
+                         Button { Task { await passwordLogin() } } label: {
+                             Text("Sign in")
+                                 .foregroundColor(Theme.txt)
+@@ -58,6 +60,16 @@ struct LoginView: View {
+             .padding(24)
+         }
+         .background(Theme.bg.ignoresSafeArea())
++        .task { await autoLogin() }
++    }
++
++    /// Signed out without pressing "Sign out": sign in again with the saved login info
++    private func autoLogin() async {
++        guard !busy, SavedLogin.shared.canRelogin else { return }
++        busy = true; error = nil
++        do { try await SavedLogin.shared.signInFromSaved(app) }
++        catch { self.error = "Automatic sign-in failed: \(error.localizedDescription)" }
++        busy = false
+     }
+ 
+     private func field<C: View>(@ViewBuilder _ c: () -> C) -> some View {
+@@ -88,6 +100,11 @@ struct LoginView: View {
+         do {
+             let s = try await MoodleAPI.shared.passwordLogin(user, pass)
+             try await app.signIn(s)
++            if saveLogin {
++                SavedLoginStore.save(SavedCredentials(user: user, pass: pass))
++                SavedLogin.shared.badCredentials = false
++                SavedLogin.shared.enabled = true
++            }
+         } catch { self.error = error.localizedDescription }
+         busy = false
+     }
+diff --git a/Sources/MainViews.swift b/Sources/MainViews.swift
+index 072c870..c8b7a48 100644
+--- a/Sources/MainViews.swift
++++ b/Sources/MainViews.swift
+@@ -743,6 +743,12 @@ struct ProfileView: View {
+         }.joined(separator: " ")
+     }
+ 
++    private var savedLoginSubtitle: String {
++        guard SavedLogin.shared.hasSaved else { return "Sign in again automatically" }
++        if SavedLogin.shared.badCredentials { return "Password rejected · update it" }
++        return SavedLogin.shared.enabled ? "On · \(SavedLoginStore.load()?.user ?? "")" : "Saved · automatic sign-in off"
++    }
++
+     private func sectionTitle(_ t: String) -> some View {
+         Text(t).font(ThemeStore.shared.theme.isNotebook ? Theme.font(.subheadline) : Theme.font(.footnote).weight(.semibold))
+             .foregroundColor(Theme.muted)
+@@ -813,6 +819,10 @@ struct ProfileView: View {
+                         ProfileRow(icon: "paintpalette", title: "Themes",
+                                    subtitle: themes.theme.name, showLine: true)
+                     }
++                    NavigationLink { SavedLoginView() } label: {
++                        ProfileRow(icon: "key", title: "Save login info",
++                                   subtitle: savedLoginSubtitle, showLine: true)
++                    }
+                     OfflineSupportRow()
+                     if !ThemeStore.shared.theme.isNotebook { Rectangle().fill(Theme.line).frame(height: 1) }   // Offline support has its own line
+                     SyncStatusRow()
+@@ -824,7 +834,7 @@ struct ProfileView: View {
+                 Button(role: .destructive) {
+                     SiteBrowser.wipeSession(); AttendanceStore.clear()
+                     UNUserNotificationCenter.current().setBadgeCount(0) { _ in }
+-                    app.signOut()
++                    app.signOut(manual: true)
+                 } label: {
+                     Text("Sign out").font(Theme.font(.subheadline).weight(.semibold)).frame(maxWidth: .infinity).padding(.vertical, 12)
+                         .background(Theme.surface2).foregroundColor(.red.opacity(0.85))
+diff --git a/Sources/MyDrive.swift b/Sources/MyDrive.swift
+index 3734b76..97f18a4 100644
+--- a/Sources/MyDrive.swift
++++ b/Sources/MyDrive.swift
+@@ -914,6 +914,7 @@ struct DrivePreviewView: View {
+     @EnvironmentObject var lib: DriveLibrary
+     @State private var fileURL: URL?
+     @State private var error: String?
++    @State private var showSubmit = false
+ 
+     var body: some View {
+         DriveGate {
+@@ -946,9 +947,14 @@ struct DrivePreviewView: View {
+         .navigationTitle(ref.name)
+         .navigationBarTitleDisplayMode(.inline)
+         .notebookBack()
++        .sheet(isPresented: $showSubmit) { if let fileURL { SubmitToWorkSheet(fileURL: fileURL) } }
+         .toolbar {
+             ToolbarItemGroup(placement: .navigationBarTrailing) {
+-                if let fileURL { ShareLink(item: fileURL) }
++                if let fileURL {
++                    Button { showSubmit = true } label: { Image(systemName: "paperplane") }
++                        .accessibilityLabel("Submit to work")
++                    ShareLink(item: fileURL)
++                }
+                 Button { lib.togglePin(ref) } label: {
+                     Image(systemName: lib.isPinned(ref) ? "pin.fill" : "pin")
+                 }
+diff --git a/Sources/SavedLogin.swift b/Sources/SavedLogin.swift
+new file mode 100644
+index 0000000..e40cde7
+--- /dev/null
++++ b/Sources/SavedLogin.swift
+@@ -0,0 +1,230 @@
++import SwiftUI
++
++// MARK: - Save login info (Others > App Preferences > Save login info)
++//
++// Matric no. + password are kept in the iPhone Keychain. When the site token stops working (or the app
++// is signed out without you pressing "Sign out"), the app signs in again by itself with them.
++//
++// Safeguards:
++//  - a wrong password is never retried (that is how accounts get locked): it stops until you save new details
++//  - after a failed attempt it waits a minute before trying again
++//  - pressing "Sign out" yourself does not sign you back in
++//  - it uses the username + password sign-in, so it can't complete 2FA
++
++struct SavedCredentials: Codable { var user: String; var pass: String }
++
++enum SavedLoginStore {
++    private static func query() -> [String: Any] {
++        [kSecClass as String: kSecClassGenericPassword,
++         kSecAttrService as String: "italeem",
++         kSecAttrAccount as String: "credentials"]
++    }
++    static func save(_ c: SavedCredentials) {
++        guard let d = try? JSONEncoder().encode(c) else { return }
++        SecItemDelete(query() as CFDictionary)
++        var q = query()
++        q[kSecValueData as String] = d
++        q[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock   // background refreshes can read it
++        SecItemAdd(q as CFDictionary, nil)
++    }
++    static func load() -> SavedCredentials? {
++        var q = query()
++        q[kSecReturnData as String] = true
++        q[kSecMatchLimit as String] = kSecMatchLimitOne
++        var out: AnyObject?
++        guard SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess,
++              let d = out as? Data else { return nil }
++        return try? JSONDecoder().decode(SavedCredentials.self, from: d)
++    }
++    static func delete() { SecItemDelete(query() as CFDictionary) }
++}
++
++enum ReloginResult { case ok, unavailable, offline }
++
++final class SavedLogin: @unchecked Sendable {
++    static let shared = SavedLogin()
++
++    private let lock = NSLock()
++    private var inflight: Task<ReloginResult, Never>?
++    private var lastFail = Date.distantPast
++    private let d = UserDefaults.standard
++
++    /// The "Sign in automatically" switch (on by default once details are saved)
++    var enabled: Bool {
++        get { d.object(forKey: "savedlogin.enabled") as? Bool ?? true }
++        set { d.set(newValue, forKey: "savedlogin.enabled") }
++    }
++    /// The site said the saved password is wrong: stop trying until new details are saved
++    var badCredentials: Bool {
++        get { d.bool(forKey: "savedlogin.bad") }
++        set { d.set(newValue, forKey: "savedlogin.bad") }
++    }
++    /// "Sign out" was pressed: stay signed out until the next sign-in
++    var manualSignOut: Bool {
++        get { d.bool(forKey: "savedlogin.manualOut") }
++        set { d.set(newValue, forKey: "savedlogin.manualOut") }
++    }
++
++    var hasSaved: Bool { SavedLoginStore.load() != nil }
++    var canRelogin: Bool { enabled && !badCredentials && !manualSignOut && hasSaved }
++
++    private func claim() -> Task<ReloginResult, Never>? {
++        lock.lock(); defer { lock.unlock() }
++        if let t = inflight { return t }                              // one attempt at a time; everyone shares it
++        guard canRelogin, Date().timeIntervalSince(lastFail) > 60 else { return nil }
++        let t = Task<ReloginResult, Never> { await SavedLogin.shared.perform() }
++        inflight = t
++        return t
++    }
++    private func release(failed: Bool) {
++        lock.lock()
++        inflight = nil
++        if failed { lastFail = Date() }
++        lock.unlock()
++    }
++
++    /// Signs in again with the saved details and stores the new token (used when a request is refused as "invalid token")
++    func relogin() async -> ReloginResult {
++        guard let t = claim() else { return .unavailable }
++        let r = await t.value
++        release(failed: r != .ok)
++        return r
++    }
++
++    private func perform() async -> ReloginResult {
++        guard let c = SavedLoginStore.load() else { return .unavailable }
++        do {
++            let s = try await MoodleAPI.shared.passwordLogin(c.user, c.pass)
++            MoodleAPI.shared.token = s.token
++            MoodleAPI.shared.privateToken = s.privateToken
++            Keychain.save(s)
++            return .ok
++        } catch let e as APIError {
++            if e.code == "invalidlogin" { badCredentials = true }
++            return .unavailable
++        } catch {
++            return isOfflineError(error) ? .offline : .unavailable
++        }
++    }
++
++    /// For the login screen: sign in with the saved details right now (no waiting period)
++    @MainActor func signInFromSaved(_ app: AppState) async throws {
++        guard let c = SavedLoginStore.load() else { return }
++        do {
++            let s = try await MoodleAPI.shared.passwordLogin(c.user, c.pass)
++            try await app.signIn(s)
++        } catch let e as APIError {
++            if e.code == "invalidlogin" { badCredentials = true }
++            throw e
++        }
++    }
++
++    /// Checks the details with the site without touching the current session, then stores them
++    func verifyAndSave(user: String, pass: String) async throws {
++        _ = try await MoodleAPI.shared.passwordLogin(user, pass)
++        SavedLoginStore.save(SavedCredentials(user: user, pass: pass))
++        badCredentials = false
++        enabled = true
++    }
++
++    func remove() {
++        SavedLoginStore.delete()
++        badCredentials = false
++    }
++}
++
++// MARK: - Screen
++
++struct SavedLoginView: View {
++    @State private var user = ""
++    @State private var pass = ""
++    @State private var auto = SavedLogin.shared.enabled
++    @State private var saved = SavedLogin.shared.hasSaved
++    @State private var busy = false
++    @State private var message: String?
++    @State private var failed = false
++
++    var body: some View {
++        ScrollView {
++            VStack(alignment: .leading, spacing: 18) {
++                VStack(alignment: .leading, spacing: 10) {
++                    Toggle(isOn: Binding(get: { auto }, set: { auto = $0; SavedLogin.shared.enabled = $0 })) {
++                        Text("Sign in automatically").fontWeight(.semibold).foregroundColor(Theme.txt)
++                    }
++                    .tint(Theme.accent)
++                    Text("When you get signed out, the app signs back in with these details, so attendance and everything else keeps working. "
++                         + "They are stored in this iPhone's Keychain and only sent to iTa'leem.")
++                        .font(Theme.font(.caption)).foregroundColor(Theme.muted)
++                }
++                .padding(16).frame(maxWidth: .infinity, alignment: .leading).glowCard()
++
++                VStack(alignment: .leading, spacing: 10) {
++                    Text("LOGIN DETAILS").font(Theme.font(.caption)).foregroundColor(Theme.muted)
++                    TextField("Matric no.", text: $user)
++                        .textInputAutocapitalization(.never).autocorrectionDisabled()
++                        .padding(10).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 10))
++                    SecureField(saved ? "Password (saved · type to change)" : "Password", text: $pass)
++                        .padding(10).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 10))
++
++                    HStack(spacing: 18) {
++                        Button { Task { await save() } } label: {
++                            if busy { ProgressView().tint(Theme.accent) } else { Text("Save") }
++                        }
++                        .disabled(busy || !canSave)
++                        if saved {
++                            Button("Remove", role: .destructive) {
++                                SavedLogin.shared.remove()
++                                saved = false; user = ""; pass = ""
++                                failed = false; message = "Saved login removed."
++                            }
++                            .disabled(busy)
++                        }
++                    }
++                    .font(Theme.font(.subheadline).weight(.semibold)).foregroundColor(Theme.accent)
++
++                    if let message {
++                        Text(message).font(Theme.font(.caption))
++                            .foregroundColor(failed ? .red.opacity(0.85) : Theme.muted)
++                    } else if saved && SavedLogin.shared.badCredentials {
++                        Text("The site rejected the saved password, so automatic sign-in is paused. Save your new password to resume.")
++                            .font(Theme.font(.caption)).foregroundColor(.red.opacity(0.85))
++                    }
++                    Text("The details are checked with the site before they are saved. This uses the username & password sign-in, "
++                         + "so it can't complete 2FA.")
++                        .font(Theme.font(.caption)).foregroundColor(Theme.muted)
++                }
++                .padding(16).frame(maxWidth: .infinity, alignment: .leading).glowCard()
++            }
++            .padding(16)
++        }
++        .scrollDismissesKeyboard(.interactively)
++        .background(Theme.bg.ignoresSafeArea())
++        .navigationTitle("Save login info")
++        .navigationBarTitleDisplayMode(.inline)
++        .notebookBack()
++        .onAppear { if user.isEmpty { user = SavedLoginStore.load()?.user ?? "" } }
++    }
++
++    private var canSave: Bool {
++        let u = user.trimmingCharacters(in: .whitespaces)
++        if u.isEmpty { return false }
++        if !pass.isEmpty { return true }
++        return false   // a password is needed to save (it is not shown again once saved)
++    }
++
++    private func save() async {
++        busy = true; message = nil; failed = false
++        let u = user.trimmingCharacters(in: .whitespaces)
++        do {
++            try await SavedLogin.shared.verifyAndSave(user: u, pass: pass)
++            saved = true; pass = ""
++            message = "Saved. The app will sign in for you when it's signed out."
++        } catch {
++            failed = true
++            message = (error as? APIError)?.code == "invalidlogin"
++                ? "Matric no. or password is wrong, nothing was saved."
++                : "Couldn't check the details: \(error.localizedDescription)"
++        }
++        busy = false
++    }
++}
+diff --git a/Sources/SubmitToWork.swift b/Sources/SubmitToWork.swift
+new file mode 100644
+index 0000000..16f0b11
+--- /dev/null
++++ b/Sources/SubmitToWork.swift
+@@ -0,0 +1,279 @@
++import SwiftUI
++
++// MARK: - Submit a My Drive file to a work (assignment)
++//
++// Opened from the paper-plane button when a My Drive file is viewed (Others > My Drive and a subject's My Drive tab
++// both open the same viewer). Steps: subject -> assignment that accepts files -> save as draft / submit.
++// Files already on the submission are kept; a file with the same name is replaced.
++
++struct SubmitToWorkSheet: View {
++    let fileURL: URL
++    @EnvironmentObject var catalog: CourseCatalog
++    @Environment(\.dismiss) private var dismiss
++
++    var body: some View {
++        NavigationStack {
++            ScrollView {
++                VStack(alignment: .leading, spacing: 12) {
++                    Text("Choose the subject, then the work to send “\(fileURL.lastPathComponent)” to.")
++                        .font(Theme.font(.footnote)).foregroundColor(Theme.muted)
++                    if catalog.courses.isEmpty {
++                        Text(catalog.loaded ? "No subjects found." : "Loading subjects…")
++                            .foregroundColor(Theme.muted).padding(.top, 20)
++                    } else {
++                        VStack(spacing: 0) {
++                            ForEach(catalog.courses) { c in
++                                NavigationLink {
++                                    SubmitWorkList(course: c, fileURL: fileURL, close: { dismiss() })
++                                } label: {
++                                    HStack(spacing: 12) {
++                                        Text(c.subjectName).foregroundColor(Theme.txt).multilineTextAlignment(.leading)
++                                        Spacer()
++                                        Image(systemName: "chevron.right").font(Theme.font(.caption).weight(.semibold))
++                                            .foregroundColor(Theme.muted)
++                                    }
++                                    .padding(14).contentShape(Rectangle())
++                                    .overlay(Rectangle().fill(Theme.line).frame(height: 1), alignment: .bottom)
++                                }
++                                .buttonStyle(.plain)
++                            }
++                        }
++                        .glowCard()
++                    }
++                }
++                .padding(16)
++            }
++            .background(Theme.bg.ignoresSafeArea())
++            .navigationTitle("Submit to work")
++            .navigationBarTitleDisplayMode(.inline)
++            .toolbar {
++                ToolbarItem(placement: .navigationBarTrailing) {
++                    Button("Cancel") { dismiss() }
++                }
++            }
++        }
++        .preferredColorScheme(ThemeStore.shared.theme.scheme)
++        .task { await catalog.loadIfNeeded() }
++    }
++}
++
++private struct SubmitWorkList: View {
++    let course: Course
++    let fileURL: URL
++    let close: () -> Void
++    @State private var items: [Assign] = []
++    @State private var loading = true
++    @State private var error: String?
++
++    var body: some View {
++        ScrollView {
++            VStack(alignment: .leading, spacing: 12) {
++                if loading {
++                    ProgressView().tint(Theme.accent).frame(maxWidth: .infinity).padding(.top, 20)
++                } else if let error {
++                    VStack(spacing: 12) {
++                        Text(error).font(Theme.font(.footnote)).foregroundColor(Theme.muted).multilineTextAlignment(.center)
++                        Button("Try again") { Task { await load() } }.foregroundColor(Theme.accent)
++                    }
++                    .frame(maxWidth: .infinity).padding(.top, 20)
++                } else if items.isEmpty {
++                    Text("No assignments in this subject take a file.")
++                        .font(Theme.font(.footnote)).foregroundColor(Theme.muted).padding(.top, 20)
++                } else {
++                    VStack(spacing: 0) {
++                        ForEach(items) { a in
++                            NavigationLink {
++                                SubmitConfirmView(assign: a, fileURL: fileURL, close: close)
++                            } label: {
++                                HStack(spacing: 12) {
++                                    VStack(alignment: .leading, spacing: 3) {
++                                        Text(a.name.decodedEntities).foregroundColor(Theme.txt).multilineTextAlignment(.leading)
++                                        Text(due(a)).font(Theme.font(.caption)).foregroundColor(Theme.muted)
++                                    }
++                                    Spacer()
++                                    Image(systemName: "chevron.right").font(Theme.font(.caption).weight(.semibold))
++                                        .foregroundColor(Theme.muted)
++                                }
++                                .padding(14).contentShape(Rectangle())
++                                .overlay(Rectangle().fill(Theme.line).frame(height: 1), alignment: .bottom)
++                            }
++                            .buttonStyle(.plain)
++                        }
++                    }
++                    .glowCard()
++                }
++            }
++            .padding(16)
++        }
++        .background(Theme.bg.ignoresSafeArea())
++        .navigationTitle(course.subjectName)
++        .navigationBarTitleDisplayMode(.inline)
++        .task { await load() }
++    }
++
++    private func due(_ a: Assign) -> String {
++        guard let d = a.duedate, d > 0 else { return "No due date" }
++        return "Due " + fmt(d)
++    }
++
++    private func load() async {
++        loading = true; error = nil
++        do {
++            let r: AssignResp = try await MoodleAPI.shared.call("mod_assign_get_assignments", ["courseids": [course.id]])
++            items = (r.courses.first?.assignments ?? []).filter { $0.enabled("file") }
++        } catch {
++            if !(error is CancellationError) { self.error = error.localizedDescription }
++        }
++        loading = false
++    }
++}
++
++private struct SubmitConfirmView: View {
++    let assign: Assign
++    let fileURL: URL
++    let close: () -> Void
++    @EnvironmentObject var app: AppState
++    @ObservedObject private var queue = OfflineQueue.shared
++    @State private var status: StatusResp?
++    @State private var loading = true
++    @State private var loadError: String?
++    @State private var busy = false
++    @State private var message: String?
++    @State private var done = false
++    @State private var confirmSubmit = false
++
++    private var uid: Int { app.site?.userid ?? 0 }
++    private var newName: String { fileURL.lastPathComponent }
++    private var usesDrafts: Bool { assign.submissiondrafts == 1 }
++    private var canEdit: Bool { status?.lastattempt?.canedit?.value ?? true }
++
++    private var existing: [FileRef] {
++        var out: [FileRef] = []
++        for p in status?.lastattempt?.shown?.plugins ?? [] where p.type == "file" {
++            for area in p.fileareas ?? [] { out.append(contentsOf: area.files ?? []) }
++        }
++        return out.filter { $0.fileurl != nil }
++    }
++    private var replaced: [FileRef] { existing.filter { $0.filename == newName } }
++    private var kept: [FileRef] { existing.filter { $0.filename != newName } }
++
++    private var existingText: String? {
++        for p in status?.lastattempt?.shown?.plugins ?? [] where p.type == "onlinetext" {
++            if let t = p.editorfields?.first?.text { return t }
++        }
++        return nil
++    }
++
++    var body: some View {
++        ScrollView {
++            VStack(alignment: .leading, spacing: 14) {
++                VStack(alignment: .leading, spacing: 8) {
++                    Text(assign.name.decodedEntities).font(Theme.font(.headline)).foregroundColor(Theme.txt)
++                    Label(newName, systemImage: "paperplane").font(Theme.font(.subheadline)).foregroundColor(Theme.accent)
++                    ForEach(replaced) { f in
++                        Text("Replaces the submitted “\(f.filename ?? "file")”.")
++                            .font(Theme.font(.caption)).foregroundColor(Theme.muted)
++                    }
++                    if !kept.isEmpty {
++                        Text("Already submitted and kept: " + kept.map { $0.filename ?? "file" }.joined(separator: ", "))
++                            .font(Theme.font(.caption)).foregroundColor(Theme.muted)
++                    }
++                }
++                .padding(16).frame(maxWidth: .infinity, alignment: .leading).glowCard()
++
++                if loading {
++                    ProgressView().tint(Theme.accent).frame(maxWidth: .infinity)
++                } else if let loadError {
++                    VStack(spacing: 10) {
++                        Text(loadError).font(Theme.font(.footnote)).foregroundColor(Theme.muted).multilineTextAlignment(.center)
++                        Button("Try again") { Task { await loadStatus() } }.foregroundColor(Theme.accent)
++                    }
++                    .frame(maxWidth: .infinity)
++                } else if !canEdit {
++                    Text("This assignment can't be edited right now (locked or already graded).")
++                        .font(Theme.font(.footnote)).foregroundColor(.red.opacity(0.85))
++                } else if done {
++                    Button { close() } label: { actionLabel("Done", filled: true) }
++                } else {
++                    if usesDrafts {
++                        Button { Task { await send(submit: false) } } label: { actionLabel("Save as draft", filled: true) }
++                        Button { confirmSubmit = true } label: { actionLabel("Submit for grading", filled: false) }
++                    } else {
++                        Button { Task { await send(submit: false) } } label: { actionLabel("Submit", filled: true) }
++                    }
++                }
++                if busy { ProgressView().tint(Theme.accent).frame(maxWidth: .infinity) }
++                if let message {
++                    Text(message).font(Theme.font(.footnote)).foregroundColor(Theme.muted)
++                }
++            }
++            .padding(16)
++        }
++        .background(Theme.bg.ignoresSafeArea())
++        .navigationTitle("Submit")
++        .navigationBarTitleDisplayMode(.inline)
++        .task { await loadStatus() }
++        .confirmationDialog("Submit for grading? You may not be able to change it afterwards.",
++                            isPresented: $confirmSubmit, titleVisibility: .visible) {
++            Button("Submit for grading") { Task { await send(submit: true) } }
++            Button("Cancel", role: .cancel) {}
++        }
++    }
++
++    private func actionLabel(_ t: String, filled: Bool) -> some View {
++        Text(t).fontWeight(.semibold)
++            .foregroundColor(filled ? Theme.onAccent : Theme.txt)
++            .frame(maxWidth: .infinity).padding(.vertical, 13)
++            .background(filled ? Theme.accent : Theme.surface2)
++            .clipShape(RoundedRectangle(cornerRadius: 12))
++            .opacity(busy ? 0.5 : 1)
++    }
++
++    private func loadStatus() async {
++        loading = true; loadError = nil
++        do {
++            status = try await MoodleAPI.shared.call("mod_assign_get_submission_status",
++                                                     ["assignid": assign.id, "userid": uid])
++        } catch {
++            // without the current files the submission could be overwritten, so don't go on
++            if !(error is CancellationError) { loadError = "Couldn't load your current submission: \(error.localizedDescription)" }
++        }
++        loading = false
++    }
++
++    private func send(submit: Bool) async {
++        guard !busy else { return }
++        busy = true; message = nil
++        // a private copy, so the queue / upload never depends on the preview's temp folder
++        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("send-" + UUID().uuidString)
++        let copy = dir.appendingPathComponent(newName)
++        do {
++            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
++            try FileManager.default.copyItem(at: fileURL, to: copy)
++        } catch {
++            message = "Couldn't read the file: \(error.localizedDescription)"
++            busy = false
++            return
++        }
++        let job = SubmissionJob(
++            kind: .save, assignId: assign.id, name: assign.name, due: assign.duedate,
++            text: assign.enabled("onlinetext") ? (existingText ?? "") : nil,   // keep any typed text as it is
++            submit: submit, rebuildFiles: true,
++            keep: kept.map { KeptFile(name: $0.filename ?? "file", url: $0.fileurl ?? "") })
++        do {
++            try await MoodleAPI.shared.run(job, newFiles: [copy])
++            message = submit ? "Submitted for grading." : (usesDrafts ? "Draft saved." : "Submitted.")
++            done = true
++            await loadStatus()
++        } catch {
++            if queue.shouldQueue(error) {
++                queue.enqueue(job, files: [copy])
++                message = "No internet. Saved on your phone, it will be sent automatically when you're back online."
++                done = true
++            } else {
++                message = error.localizedDescription
++            }
++        }
++        busy = false
++    }
++}
