@@ -222,7 +222,7 @@ struct SavedLoginView: View {
         } catch {
             failed = true
             message = (error as? APIError)?.code == "invalidlogin"
-                ? "Matric no. or password is wrong, nothing was saved."
+                ? "Not saved. \(error.localizedDescription)"
                 : "Couldn't check the details: \(error.localizedDescription)"
         }
         busy = false

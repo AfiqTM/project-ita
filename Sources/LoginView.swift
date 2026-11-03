@@ -92,10 +92,11 @@ struct LoginView: View {
     private func passwordLogin() async {
         busy = true; error = nil
         do {
-            let s = try await MoodleAPI.shared.passwordLogin(user, pass)
+            let u = user.trimmingCharacters(in: .whitespacesAndNewlines)
+            let s = try await MoodleAPI.shared.passwordLogin(u, pass)
             try await app.signIn(s)
             if saveLogin {
-                SavedLoginStore.save(SavedCredentials(user: user, pass: pass))
+                SavedLoginStore.save(SavedCredentials(user: u, pass: pass))
                 SavedLogin.shared.badCredentials = false
                 SavedLogin.shared.enabled = true
             }
