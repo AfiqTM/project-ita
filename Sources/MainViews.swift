@@ -743,6 +743,12 @@ struct ProfileView: View {
         }.joined(separator: " ")
     }
 
+    private var savedLoginSubtitle: String {
+        guard SavedLogin.shared.hasSaved else { return "Sign in again automatically" }
+        if SavedLogin.shared.badCredentials { return "Password rejected · update it" }
+        return SavedLogin.shared.enabled ? "On · \(SavedLoginStore.load()?.user ?? "")" : "Saved · automatic sign-in off"
+    }
+
     private func sectionTitle(_ t: String) -> some View {
         Text(t).font(ThemeStore.shared.theme.isNotebook ? Theme.font(.subheadline) : Theme.font(.footnote).weight(.semibold))
             .foregroundColor(Theme.muted)
@@ -813,6 +819,10 @@ struct ProfileView: View {
                         ProfileRow(icon: "paintpalette", title: "Themes",
                                    subtitle: themes.theme.name, showLine: true)
                     }
+                    NavigationLink { SavedLoginView() } label: {
+                        ProfileRow(icon: "key", title: "Save login info",
+                                   subtitle: savedLoginSubtitle, showLine: true)
+                    }
                     OfflineSupportRow()
                     if !ThemeStore.shared.theme.isNotebook { Rectangle().fill(Theme.line).frame(height: 1) }   // Offline support has its own line
                     SyncStatusRow()
@@ -824,7 +834,7 @@ struct ProfileView: View {
                 Button(role: .destructive) {
                     SiteBrowser.wipeSession(); AttendanceStore.clear()
                     UNUserNotificationCenter.current().setBadgeCount(0) { _ in }
-                    app.signOut()
+                    app.signOut(manual: true)
                 } label: {
                     Text("Sign out").font(Theme.font(.subheadline).weight(.semibold)).frame(maxWidth: .infinity).padding(.vertical, 12)
                         .background(Theme.surface2).foregroundColor(.red.opacity(0.85))

@@ -62,6 +62,7 @@ final class AppState: ObservableObject {
         MoodleAPI.shared.privateToken = s.privateToken
         site = try await MoodleAPI.shared.siteInfo()
         Keychain.save(s)
+        SavedLogin.shared.manualSignOut = false
         loggedIn = true
     }
 
@@ -71,7 +72,9 @@ final class AppState: ObservableObject {
         catch { /* offline: keep cached session */ }
     }
 
-    func signOut() {
+    /// `manual`: the Sign out button. The app then stays signed out instead of using the saved login info.
+    func signOut(manual: Bool = false) {
+        if manual { SavedLogin.shared.manualSignOut = true }
         Keychain.delete()
         MoodleAPI.shared.token = ""
         MoodleAPI.shared.privateToken = nil

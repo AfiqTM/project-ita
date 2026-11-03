@@ -7,6 +7,7 @@ struct LoginView: View {
     @State private var busy = false
     @State private var error: String?
     @State private var showPassword = false
+    @State private var saveLogin = false
     private let webAuth = WebAuth()
 
     var body: some View {
@@ -39,6 +40,7 @@ struct LoginView: View {
                         field { TextField("Username / Matric no.", text: $user)
                                     .textInputAutocapitalization(.never).autocorrectionDisabled() }
                         field { SecureField("Password", text: $pass) }
+                        Toggle("Save login info", isOn: $saveLogin).tint(Theme.accent).foregroundColor(Theme.txt)
                         Button { Task { await passwordLogin() } } label: {
                             Text("Sign in")
                                 .foregroundColor(Theme.txt)
@@ -58,6 +60,16 @@ struct LoginView: View {
             .padding(24)
         }
         .background(Theme.bg.ignoresSafeArea())
+        .task { await autoLogin() }
+    }
+
+    /// Signed out without pressing "Sign out": sign in again with the saved login info
+    private func autoLogin() async {
+        guard !busy, SavedLogin.shared.canRelogin else { return }
+        busy = true; error = nil
+        do { try await SavedLogin.shared.signInFromSaved(app) }
+        catch { self.error = "Automatic sign-in failed: \(error.localizedDescription)" }
+        busy = false
     }
 
     private func field<C: View>(@ViewBuilder _ c: () -> C) -> some View {
@@ -88,6 +100,11 @@ struct LoginView: View {
         do {
             let s = try await MoodleAPI.shared.passwordLogin(user, pass)
             try await app.signIn(s)
+            if saveLogin {
+                SavedLoginStore.save(SavedCredentials(user: user, pass: pass))
+                SavedLogin.shared.badCredentials = false
+                SavedLogin.shared.enabled = true
+            }
         } catch { self.error = error.localizedDescription }
         busy = false
     }

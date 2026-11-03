@@ -914,6 +914,7 @@ struct DrivePreviewView: View {
     @EnvironmentObject var lib: DriveLibrary
     @State private var fileURL: URL?
     @State private var error: String?
+    @State private var showSubmit = false
 
     var body: some View {
         DriveGate {
@@ -946,9 +947,14 @@ struct DrivePreviewView: View {
         .navigationTitle(ref.name)
         .navigationBarTitleDisplayMode(.inline)
         .notebookBack()
+        .sheet(isPresented: $showSubmit) { if let fileURL { SubmitToWorkSheet(fileURL: fileURL) } }
         .toolbar {
             ToolbarItemGroup(placement: .navigationBarTrailing) {
-                if let fileURL { ShareLink(item: fileURL) }
+                if let fileURL {
+                    Button { showSubmit = true } label: { Image(systemName: "paperplane") }
+                        .accessibilityLabel("Submit to work")
+                    ShareLink(item: fileURL)
+                }
                 Button { lib.togglePin(ref) } label: {
                     Image(systemName: lib.isPinned(ref) ? "pin.fill" : "pin")
                 }

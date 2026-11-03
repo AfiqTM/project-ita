@@ -84,7 +84,26 @@ final class MoodleAPI {
         return OfflineCache.apiName(fn, keyItems.map { "\($0.0)=\($0.1)" }.sorted().joined(separator: "&"))
     }
 
+    /// Every call goes through here: if the site says the token is no longer valid and login info is saved
+    /// (Others > Save login info), it signs in again and repeats the call once.
     func raw(_ fn: String, _ params: [String: Any] = [:]) async throws -> Data {
+        let used = token
+        do {
+            return try await rawOnce(fn, params)
+        } catch let e as APIError where e.isAuth {
+            if token == used {   // nobody has renewed the token meanwhile
+                switch await SavedLogin.shared.relogin() {
+                case .ok: break
+                case .offline: throw URLError(.notConnectedToInternet)
+                case .unavailable: throw e
+                }
+            }
+            if token.isEmpty { throw e }   // signed out in the meantime
+            return try await rawOnce(fn, params)
+        }
+    }
+
+    private func rawOnce(_ fn: String, _ params: [String: Any] = [:]) async throws -> Data {
         let useCache = OfflineSettings.enabled && OfflineCache.isCacheable(fn)
         let cacheName = useCache ? offlineName(fn, params) : ""
         let saved: Data? = useCache ? OfflineCache.load(cacheName) : nil
