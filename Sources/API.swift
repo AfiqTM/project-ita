@@ -268,16 +268,10 @@ final class MoodleAPI {
         }
     }
 
-    // Username + password (accounts WITHOUT 2FA)
+    // Matric no. + password. IIUM students sign in through CAS (the "IIUM Student and Staff Login" button),
+    // Moodle's own token.php has no password for them, so this goes through CASLogin (CASLogin.swift).
     func passwordLogin(_ user: String, _ pass: String) async throws -> Session {
-        var req = URLRequest(url: Site.url.appendingPathComponent("login/token.php"))
-        req.httpMethod = "POST"
-        req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        req.httpBody = "username=\(enc(user))&password=\(enc(pass))&service=moodle_mobile_app".data(using: .utf8)
-        let (data, _) = try await URLSession.shared.data(for: req)
-        let r = try JSONDecoder().decode(TokenResp.self, from: data)
-        if let t = r.token { return Session(token: t, privateToken: r.privatetoken) }
-        throw APIError(message: r.error ?? "Login failed", code: r.errorcode)
+        try await CASLogin.login(user, pass)
     }
 }
 

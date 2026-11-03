@@ -6,7 +6,7 @@ struct LoginView: View {
     @State private var pass = ""
     @State private var busy = false
     @State private var error: String?
-    @State private var showPassword = false
+    @State private var showPassword = true
     @State private var saveLogin = false
     private let webAuth = WebAuth()
 
@@ -20,37 +20,31 @@ struct LoginView: View {
                 Text("Sign in to continue")
                     .foregroundColor(Theme.muted)
 
-                Button { Task { await browserLogin() } } label: {
-                    Text("Sign in with iTa'leem (supports 2FA)")
-                        .fontWeight(.semibold)
-                        .foregroundColor(Theme.onAccent)
-                        .frame(maxWidth: .infinity).padding(.vertical, 14)
-                        .background(Theme.accent)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                }
-                .disabled(busy)
-
-                Button { withAnimation { showPassword.toggle() } } label: {
-                    Text(showPassword ? "Hide password sign-in" : "Use username & password instead")
-                        .foregroundColor(Theme.accent).font(Theme.font(.subheadline))
-                }
+                Text("IIUM Student and Staff Login")
+                    .font(Theme.font(.subheadline)).foregroundColor(Theme.muted)
 
                 if showPassword {
                     VStack(spacing: 12) {
-                        field { TextField("Username / Matric no.", text: $user)
+                        field { TextField("Matric no.", text: $user)
                                     .textInputAutocapitalization(.never).autocorrectionDisabled() }
                         field { SecureField("Password", text: $pass) }
                         Toggle("Save login info", isOn: $saveLogin).tint(Theme.accent).foregroundColor(Theme.txt)
                         Button { Task { await passwordLogin() } } label: {
                             Text("Sign in")
-                                .foregroundColor(Theme.txt)
-                                .frame(maxWidth: .infinity).padding(.vertical, 12)
-                                .background(Theme.surface2)
+                                .fontWeight(.semibold)
+                                .foregroundColor(Theme.onAccent)
+                                .frame(maxWidth: .infinity).padding(.vertical, 14)
+                                .background(Theme.accent)
                                 .clipShape(RoundedRectangle(cornerRadius: 12))
                         }
                         .disabled(busy || user.isEmpty || pass.isEmpty)
-                        Text("Password sign-in can't complete 2FA. If your account uses 2FA, use the button above.")
+                        Text("Use your IIUM matric no. and CAS password. The app signs in through IIUM single sign-on for you.")
                             .font(Theme.font(.footnote)).foregroundColor(Theme.muted)
+                        Button { Task { await browserLogin() } } label: {
+                            Text("Having trouble? Sign in with the browser")
+                                .foregroundColor(Theme.accent).font(Theme.font(.subheadline))
+                        }
+                        .disabled(busy)
                     }
                 }
 

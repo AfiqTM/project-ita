@@ -9,7 +9,7 @@ import SwiftUI
 //  - a wrong password is never retried (that is how accounts get locked): it stops until you save new details
 //  - after a failed attempt it waits a minute before trying again
 //  - pressing "Sign out" yourself does not sign you back in
-//  - it uses the username + password sign-in, so it can't complete 2FA
+//  - it signs in through IIUM CAS (CASLogin.swift), so it can't complete 2FA / captcha
 
 struct SavedCredentials: Codable { var user: String; var pass: String }
 
@@ -189,8 +189,8 @@ struct SavedLoginView: View {
                         Text("The site rejected the saved password, so automatic sign-in is paused. Save your new password to resume.")
                             .font(Theme.font(.caption)).foregroundColor(.red.opacity(0.85))
                     }
-                    Text("The details are checked with the site before they are saved. This uses the username & password sign-in, "
-                         + "so it can't complete 2FA.")
+                    Text("The details are checked with IIUM single sign-on before they are saved. "
+                         + "It can't complete 2FA.")
                         .font(Theme.font(.caption)).foregroundColor(Theme.muted)
                 }
                 .padding(16).frame(maxWidth: .infinity, alignment: .leading).glowCard()
