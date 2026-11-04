@@ -65,7 +65,7 @@ enum CASLogin {
 
         // Whatever CAS answers while we are still on its site is another step: the authenticator code,
         // a "trust this device" page, or the sign-in form again (wrong details)
-        var sentCode = false, registered = false
+        var sentCode = false, registered = false, lastSent = ""
         for _ in 0..<4 {
             guard resp.url?.host == casURL.host else { break }   // left CAS: signed in
             let t = String(decoding: data, as: UTF8.self)
@@ -86,13 +86,25 @@ enum CASLogin {
                                    code: "casmfa")
                 }
                 if sentCode {
-                    throw APIError(message: "IIUM rejected the authenticator code. Wait for a fresh code and try again. [debug: inputs: \(inputSummary(t)) | page says: \(msg)]",
+                    throw APIError(message: "IIUM rejected the authenticator code. Wait for a fresh code and try again. [debug: inputs: \(inputSummary(t)) | sent: \(lastSent) | page says: \(msg)]",
                                    code: "casmfarejected")
                 }
                 var f = step.hidden
                 f[tf] = otp
                 if loginAgain { f[form.userField] = user; f[form.passField] = pass }
+                // The code form names the selected authenticator device in a hidden `accountId` field. The real page
+                // fills it in with JavaScript, so in the raw HTML it can be empty, and CAS then answers
+                // "required on accountId" + "token does not belong to the device". Find the value elsewhere on the page.
+                if let cur = f["accountId"], cur.isEmpty {
+                    if let id = accountId(in: t) {
+                        f["accountId"] = id
+                    } else {
+                        throw APIError(message: "IIUM needs to know which authenticator device the code is for, but its page didn't say. Use the browser sign-in instead. [debug: hidden: \(hiddenSummary(step.hidden)) | accountId on page: \(accountIdContext(in: t))]",
+                                       code: "casdevice")
+                    }
+                }
                 fillDefaults(&f)
+                lastSent = hiddenSummary(f)
                 (data, resp) = try await post(http, to: step.action, referer: base, fields: f)
                 sentCode = true
                 continue
@@ -100,7 +112,7 @@ enum CASLogin {
 
             if loginAgain {
                 if sentCode {
-                    throw APIError(message: "IIUM rejected the authenticator code. Wait for a fresh code and try again. [debug: inputs: \(inputSummary(t)) | page says: \(msg)]",
+                    throw APIError(message: "IIUM rejected the authenticator code. Wait for a fresh code and try again. [debug: inputs: \(inputSummary(t)) | sent: \(lastSent) | page says: \(msg)]",
                                    code: "casmfarejected")
                 }
                 if msg.lowercased().contains("token") {
@@ -190,6 +202,52 @@ enum CASLogin {
         if let fp = f["deviceFingerprint"], fp.isEmpty { f["deviceFingerprint"] = deviceFingerprint() }
     }
 
+    /// Field names that were sent, with whether each carried a value (never the values: `execution` and the code are secret-ish)
+    private static func hiddenSummary(_ f: [String: String]) -> String {
+        f.keys.sorted().map { k -> String in
+            let v = f[k] ?? ""
+            if k == "accountId" { return "accountId=" + (v.isEmpty ? "(empty)" : String(v.prefix(24))) }
+            return k + (v.isEmpty ? "=(empty)" : "=set")
+        }.joined(separator: ",")
+    }
+
+    private static let notAnId: Set<String> = ["", "null", "undefined", "true", "false", "this", "value", "function"]
+
+    /// The selected authenticator device's id, looked for on the whole CAS code page (not just in the first form)
+    private static func accountId(in html: String) -> String? {
+        let ns = html as NSString
+        let whole = NSRange(location: 0, length: ns.length)
+        // 1. any <input name="accountId" value="..."> that has a value, whichever form it sits in
+        if let rx = try? NSRegularExpression(pattern: "<input\\b[^>]*>", options: .caseInsensitive) {
+            for m in rx.matches(in: html, range: whole) {
+                let a = HTMLForm.attributes(of: ns.substring(with: m.range))
+                if a["name"] == "accountId", let v = a["value"], !notAnId.contains(v.lowercased()) { return v }
+            }
+        }
+        // 2. a data attribute, or a script / JSON that sets it (accountId = "12", accountId: 12, "accountId":"12")
+        let patterns = ["data-account-?id\\s*=\\s*[\"']([^\"']+)[\"']",
+                        "accountId[\"']?\\s*[:=]\\s*[\"']?([A-Za-z0-9_.@-]{1,64})"]
+        for p in patterns {
+            guard let rx = try? NSRegularExpression(pattern: p, options: .caseInsensitive) else { continue }
+            for m in rx.matches(in: html, range: whole) where m.numberOfRanges > 1 {
+                let v = ns.substring(with: m.range(at: 1))
+                if !notAnId.contains(v.lowercased()) { return v }
+            }
+        }
+        return nil
+    }
+
+    /// A few characters around each mention of accountId, so a failure shows how the page really supplies it
+    private static func accountIdContext(in html: String) -> String {
+        let ns = html as NSString
+        guard let rx = try? NSRegularExpression(pattern: "accountId", options: .caseInsensitive) else { return "?" }
+        let hits = rx.matches(in: html, range: NSRange(location: 0, length: ns.length)).prefix(4).map { m -> String in
+            let lo = max(0, m.range.location - 60), hi = min(ns.length, m.range.location + m.range.length + 90)
+            return strip(ns.substring(with: NSRange(location: lo, length: hi - lo)))
+        }
+        return hits.isEmpty ? "(not on page)" : hits.joined(separator: " ... ")
+    }
+
     /// name:type of every <input> on a page (no values), for working out what a CAS step asks for
     private static func inputSummary(_ html: String) -> String {
         guard let rx = try? NSRegularExpression(pattern: "<input\\b[^>]*>", options: .caseInsensitive) else { return "" }
@@ -263,7 +321,7 @@ struct HTMLForm {
         return rx.matches(in: s, range: NSRange(location: 0, length: ns.length)).map { ns.substring(with: $0.range) }
     }
 
-    private static func attributes(of tag: String) -> [String: String] {
+    static func attributes(of tag: String) -> [String: String] {
         guard let rx = try? NSRegularExpression(pattern: "([a-zA-Z_:-]+)\\s*=\\s*(\"([^\"]*)\"|'([^']*)')") else { return [:] }
         let ns = tag as NSString
         var out: [String: String] = [:]
