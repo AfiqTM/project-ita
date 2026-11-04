@@ -133,11 +133,28 @@ final class SavedLogin: @unchecked Sendable {
     }
 
     /// Checks the details with the site without touching the current session, then stores them
+    /// Saves first, then checks through the hidden browser (WebCASLogin), which can run CAS's own page like a real
+    /// browser. A successful run also stores the CAS "trusted device" cookie, so later sign-ins skip the code.
+    /// If CAS wants the authenticator code the details stay saved and `casmfa` is thrown: enter the code, save again.
     func verifyAndSave(user: String, pass: String, code: String? = nil) async throws {
-        _ = try await MoodleAPI.shared.passwordLogin(user, pass, code: code)
         SavedLoginStore.save(SavedCredentials(user: user, pass: pass))
         badCredentials = false
         enabled = true
+        manualSignOut = false   // WebCASLogin.refresh refuses to run while "signed out by hand" is set
+        let r = await WebCASLogin.shared.refresh(code: code, wantToken: false)
+        switch r.result {
+        case .ok:
+            break
+        case .needsCode:
+            throw APIError(message: "Saved. IIUM wants the authenticator code: type it in the code box and press Save again.",
+                           code: "casmfa")
+        case .badCredentials:
+            SavedLoginStore.delete()
+            badCredentials = false
+            throw APIError(message: "IIUM says the matric no. or password is wrong. Nothing was saved.", code: "invalidlogin")
+        case .failed(let m):
+            throw APIError(message: "Saved, but couldn't check it right now: \(m)", code: "casstep")
+        }
     }
 
     func remove() {
@@ -207,8 +224,8 @@ struct SavedLoginView: View {
                         Text("The site rejected the saved password, so automatic sign-in is paused. Save your new password to resume.")
                             .font(Theme.font(.caption)).foregroundColor(.red.opacity(0.85))
                     }
-                    Text("The details are checked with IIUM single sign-on before they are saved. "
-                         + "It can't complete 2FA.")
+                    Text("The details are saved, then checked with IIUM single sign-on in a hidden browser. "
+                         + "If IIUM asks for the authenticator code, enter it above and save again; after that it remembers this device.")
                         .font(Theme.font(.caption)).foregroundColor(Theme.muted)
                 }
                 .padding(16).frame(maxWidth: .infinity, alignment: .leading).glowCard()
@@ -239,8 +256,10 @@ struct SavedLoginView: View {
             message = "Saved. The app will sign in for you when it's signed out."
         } catch {
             failed = true
-            message = (error as? APIError)?.code == "invalidlogin"
-                ? "Not saved. \(error.localizedDescription)"
+            saved = SavedLogin.shared.hasSaved   // details are kept when only the check could not finish
+            let code = (error as? APIError)?.code
+            message = code == "invalidlogin" ? "Not saved. \(error.localizedDescription)"
+                : (code == "casmfa" || code == "casstep") ? error.localizedDescription
                 : "Couldn't check the details: \(error.localizedDescription)"
         }
         busy = false
