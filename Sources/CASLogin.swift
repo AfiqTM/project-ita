@@ -1,4 +1,5 @@
 import Foundation
+import Security
 
 // MARK: - IIUM CAS sign-in (matric no. + password, no browser)
 //
@@ -34,12 +35,16 @@ enum CASLogin {
         }
     }
 
-    static func login(_ user: String, _ pass: String) async throws -> Session {
+    private static let tokenNames: Set<String> = ["token", "otp", "code", "totp", "verificationcode", "passcode"]
+
+    static func login(_ user: String, _ pass: String, code: String? = nil) async throws -> Session {
+        let otp = (code ?? "").filter { $0.isNumber }
         let cfg = URLSessionConfiguration.ephemeral
         cfg.httpCookieAcceptPolicy = .always
         cfg.httpShouldSetCookies = true
         cfg.timeoutIntervalForRequest = 30
         cfg.httpAdditionalHeaders = ["User-Agent": ua, "Accept-Language": "en"]
+        CASTrust.restore(into: cfg.httpCookieStorage)   // the "trusted device" cookie from an earlier code sign-in
         let http = URLSession(configuration: cfg)
         defer { http.finishTasksAndInvalidate() }
 
@@ -55,30 +60,79 @@ enum CASLogin {
         var fields = form.fields
         fields[form.userField] = user
         fields[form.passField] = pass
-        if fields["_eventId"] == nil { fields["_eventId"] = "submit" }
-        // The real page fills these in with JavaScript; a plain request would send them empty
-        if let fp = fields["deviceFingerprint"], fp.isEmpty { fields["deviceFingerprint"] = deviceFingerprint() }
-        var req = URLRequest(url: form.action)
-        req.httpMethod = "POST"
-        req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        req.setValue(pageURL.absoluteString, forHTTPHeaderField: "Referer")
-        req.httpBody = fields.map { "\(enc($0.key))=\(enc($0.value))" }.joined(separator: "&").data(using: .utf8)
-        let (afterData, afterResp) = try await http.data(for: req)
+        fillDefaults(&fields)
+        var (data, resp) = try await post(http, to: form.action, referer: pageURL, fields: fields)
 
-        // CAS shows the form again when the details are wrong
-        if afterResp.url?.host == casURL.host {
-            let t = String(decoding: afterData, as: UTF8.self)
-            if let newForm = HTMLForm.loginForm(in: t, base: afterResp.url ?? casURL) {
-                let cookies = (cfg.httpCookieStorage?.cookies(for: casURL) ?? []).map { $0.name }.sorted().joined(separator: ",")
-                let execSame = (newForm.fields["execution"] ?? "") == (form.fields["execution"] ?? "")
-                let status = (afterResp as? HTTPURLResponse)?.statusCode ?? 0
-                let page = afterResp.url.map { ($0.host ?? "") + $0.path } ?? "?"
+        // Whatever CAS answers while we are still on its site is another step: the authenticator code,
+        // a "trust this device" page, or the sign-in form again (wrong details)
+        var sentCode = false, registered = false
+        for _ in 0..<4 {
+            guard resp.url?.host == casURL.host else { break }   // left CAS: signed in
+            let t = String(decoding: data, as: UTF8.self)
+            let base = resp.url ?? casURL
+            let msg = pageMessage(t)
+            guard let step = HTMLForm.stepForm(in: t, base: base) else {
+                throw APIError(message: "IIUM sign-in needs another step I couldn't read. Use the browser sign-in instead. [debug: \(base.path) | inputs: \(inputSummary(t)) | page says: \(msg)]",
+                               code: "casstep")
+            }
+            let names = Set(step.visible.map { $0.name })
+            let loginAgain = names.contains(form.userField) && names.contains(form.passField)
+            let tokenField: String? = step.visible.first(where: { tokenNames.contains($0.name.lowercased()) })?.name
+                ?? (loginAgain ? nil : step.visible.first(where: { ["password", "tel", "number"].contains($0.type) })?.name)
+
+            if let tf = tokenField {
+                if otp.isEmpty {
+                    throw APIError(message: "IIUM wants the code from your authenticator app. Type it in the code box, then sign in again.",
+                                   code: "casmfa")
+                }
+                if sentCode {
+                    throw APIError(message: "IIUM rejected the authenticator code. Wait for a fresh code and try again. [debug: inputs: \(inputSummary(t)) | page says: \(msg)]",
+                                   code: "casmfarejected")
+                }
+                var f = step.hidden
+                f[tf] = otp
+                if loginAgain { f[form.userField] = user; f[form.passField] = pass }
+                fillDefaults(&f)
+                (data, resp) = try await post(http, to: step.action, referer: base, fields: f)
+                sentCode = true
+                continue
+            }
+
+            if loginAgain {
+                if sentCode {
+                    throw APIError(message: "IIUM rejected the authenticator code. Wait for a fresh code and try again. [debug: inputs: \(inputSummary(t)) | page says: \(msg)]",
+                                   code: "casmfarejected")
+                }
+                if msg.lowercased().contains("token") {
+                    throw APIError(message: "IIUM asked for a second step after your password, but I couldn't find where the code goes. Use the browser sign-in. [debug: inputs: \(inputSummary(t)) | page says: \(msg)]",
+                                   code: "casstep")
+                }
+                let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
+                let page = resp.url.map { ($0.host ?? "") + $0.path } ?? "?"
                 let sent = fields.keys.sorted().joined(separator: ",")
-                throw APIError(message: "Matric no. or password is wrong. [debug: HTTP \(status) \(page) | sent: \(sent) | user field: \(form.userField), pass field: \(form.passField) | cookies: \(cookies.isEmpty ? "none" : cookies) | execution unchanged: \(execSame) | page says: \(pageMessage(t))]",
+                let cookies = (cfg.httpCookieStorage?.cookies(for: casURL) ?? []).map { $0.name }.sorted().joined(separator: ",")
+                throw APIError(message: "Matric no. or password is wrong. [debug: HTTP \(status) \(page) | sent: \(sent) | user field: \(form.userField), pass field: \(form.passField) | cookies: \(cookies.isEmpty ? "none" : cookies) | page says: \(msg)]",
                                code: "invalidlogin")
             }
-            throw APIError(message: "IIUM sign-in needs another step (2FA or a confirmation). Use the browser sign-in instead.", code: "casstep")
+
+            if !registered, step.visible.allSatisfy({ ["text", "email"].contains($0.type) }) {
+                // a "trust this device" page: name the device so later sign-ins can skip the code
+                var f = step.hidden
+                f[step.visible[0].name] = "iTa'leem iPhone"
+                fillDefaults(&f)
+                (data, resp) = try await post(http, to: step.action, referer: base, fields: f)
+                registered = true
+                continue
+            }
+
+            throw APIError(message: "IIUM sign-in needs a step I don't know yet. Use the browser sign-in instead. [debug: \(base.path) | inputs: \(inputSummary(t)) | page says: \(msg)]",
+                           code: "casstep")
         }
+        guard resp.url?.host != casURL.host else {
+            throw APIError(message: "IIUM sign-in didn't finish. Use the browser sign-in instead.", code: "casstep")
+        }
+        // keep the "trusted device" cookie, if CAS gave one, so the next sign-in can skip the code
+        CASTrust.save((cfg.httpCookieStorage?.cookies(for: casURL) ?? []).filter { $0.name.uppercased().contains("TRUST") })
 
         // 3. + 4. we are signed in to iTa'leem: ask for the app token
         let passport = UUID().uuidString
@@ -119,6 +173,36 @@ enum CASLogin {
         let noTags = s.replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
         return noTags.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func post(_ http: URLSession, to url: URL, referer: URL, fields: [String: String]) async throws -> (Data, URLResponse) {
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        req.setValue(referer.absoluteString, forHTTPHeaderField: "Referer")
+        req.httpBody = fields.map { "\(enc($0.key))=\(enc($0.value))" }.joined(separator: "&").data(using: .utf8)
+        return try await http.data(for: req)
+    }
+
+    private static func fillDefaults(_ f: inout [String: String]) {
+        if f["_eventId"] == nil { f["_eventId"] = "submit" }
+        // The real page fills this in with JavaScript; a plain request would send it empty
+        if let fp = f["deviceFingerprint"], fp.isEmpty { f["deviceFingerprint"] = deviceFingerprint() }
+    }
+
+    /// name:type of every <input> on a page (no values), for working out what a CAS step asks for
+    private static func inputSummary(_ html: String) -> String {
+        guard let rx = try? NSRegularExpression(pattern: "<input\\b[^>]*>", options: .caseInsensitive) else { return "" }
+        let ns = html as NSString
+        func attr(_ tag: String, _ n: String) -> String? {
+            guard let r = try? NSRegularExpression(pattern: "(?<![\\w-])\(n)\\s*=\\s*[\"']([^\"']*)[\"']", options: .caseInsensitive),
+                  let m = r.firstMatch(in: tag, range: NSRange(location: 0, length: (tag as NSString).length)) else { return nil }
+            return (tag as NSString).substring(with: m.range(at: 1))
+        }
+        return rx.matches(in: html, range: NSRange(location: 0, length: ns.length)).map { m -> String in
+            let tag = ns.substring(with: m.range)
+            return (attr(tag, "name") ?? "?") + ":" + (attr(tag, "type") ?? "text")
+        }.joined(separator: ",")
     }
 
     /// Stable random id standing in for the browser fingerprint the CAS page script would create
@@ -196,4 +280,87 @@ struct HTMLForm {
          .replacingOccurrences(of: "&#39;", with: "'").replacingOccurrences(of: "&#x3D;", with: "=")
          .replacingOccurrences(of: "&lt;", with: "<").replacingOccurrences(of: "&gt;", with: ">")
     }
+}
+
+/// One page of a CAS flow: hidden fields to send back, and the inputs the person would see
+struct StepForm {
+    var action: URL
+    var hidden: [String: String]
+    var visible: [(name: String, type: String)]
+}
+
+extension HTMLForm {
+    /// The first form that has a visible input (the sign-in form, the code form, a device-name form)
+    static func stepForm(in html: String, base: URL) -> StepForm? {
+        guard let formRx = try? NSRegularExpression(pattern: "<form\\b([^>]*)>(.*?)</form>",
+                                                    options: [.caseInsensitive, .dotMatchesLineSeparators]) else { return nil }
+        let ns = html as NSString
+        for m in formRx.matches(in: html, range: NSRange(location: 0, length: ns.length)) {
+            let attrs = ns.substring(with: m.range(at: 1))
+            let body = ns.substring(with: m.range(at: 2))
+            var hidden: [String: String] = [:]
+            var visible: [(name: String, type: String)] = []
+            for tag in tags("input", in: body) {
+                let a = attributes(of: tag)
+                guard let name = a["name"], !name.isEmpty else { continue }
+                let type = (a["type"] ?? "text").lowercased()
+                switch type {
+                case "hidden": hidden[name] = a["value"] ?? ""
+                case "submit", "button", "image", "reset", "checkbox", "radio", "file": break
+                default: visible.append((name: name, type: type))
+                }
+            }
+            guard !visible.isEmpty else { continue }
+            let act = attributes(of: "<form " + attrs + ">")["action"] ?? ""
+            let url = act.isEmpty ? base : (URL(string: act, relativeTo: base)?.absoluteURL ?? base)
+            return StepForm(action: url, hidden: hidden, visible: visible)
+        }
+        return nil
+    }
+}
+
+/// The CAS "trusted device" cookie, kept in the Keychain so a saved login can skip the authenticator code
+enum CASTrust {
+    private static func query() -> [String: Any] {
+        [kSecClass as String: kSecClassGenericPassword,
+         kSecAttrService as String: "italeem",
+         kSecAttrAccount as String: "cas-trust"]
+    }
+
+    static func save(_ cookies: [HTTPCookie]) {
+        guard !cookies.isEmpty else { return }
+        let list: [[String: Any]] = cookies.map { c in
+            var d: [String: Any] = ["name": c.name, "value": c.value, "domain": c.domain, "path": c.path, "secure": c.isSecure]
+            if let e = c.expiresDate { d["expires"] = e }
+            return d
+        }
+        guard let data = try? PropertyListSerialization.data(fromPropertyList: list, format: .binary, options: 0) else { return }
+        SecItemDelete(query() as CFDictionary)
+        var q = query()
+        q[kSecValueData as String] = data
+        q[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+        SecItemAdd(q as CFDictionary, nil)
+    }
+
+    static func restore(into storage: HTTPCookieStorage?) {
+        var q = query()
+        q[kSecReturnData as String] = true
+        q[kSecMatchLimit as String] = kSecMatchLimitOne
+        var out: AnyObject?
+        guard SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess, let d = out as? Data,
+              let list = (try? PropertyListSerialization.propertyList(from: d, options: [], format: nil)) as? [[String: Any]] else { return }
+        for item in list {
+            guard let name = item["name"] as? String, let value = item["value"] as? String,
+                  let domain = item["domain"] as? String, let path = item["path"] as? String else { continue }
+            var props: [HTTPCookiePropertyKey: Any] = [.name: name, .value: value, .domain: domain, .path: path]
+            if let e = item["expires"] as? Date {
+                if e < Date() { continue }
+                props[.expires] = e
+            }
+            if (item["secure"] as? Bool) == true { props[.secure] = "TRUE" }
+            if let c = HTTPCookie(properties: props) { storage?.setCookie(c) }
+        }
+    }
+
+    static func clear() { SecItemDelete(query() as CFDictionary) }
 }

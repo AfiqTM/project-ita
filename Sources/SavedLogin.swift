@@ -120,8 +120,8 @@ final class SavedLogin: @unchecked Sendable {
     }
 
     /// Checks the details with the site without touching the current session, then stores them
-    func verifyAndSave(user: String, pass: String) async throws {
-        _ = try await MoodleAPI.shared.passwordLogin(user, pass)
+    func verifyAndSave(user: String, pass: String, code: String? = nil) async throws {
+        _ = try await MoodleAPI.shared.passwordLogin(user, pass, code: code)
         SavedLoginStore.save(SavedCredentials(user: user, pass: pass))
         badCredentials = false
         enabled = true
@@ -129,6 +129,7 @@ final class SavedLogin: @unchecked Sendable {
 
     func remove() {
         SavedLoginStore.delete()
+        CASTrust.clear()
         badCredentials = false
     }
 }
@@ -143,6 +144,7 @@ struct SavedLoginView: View {
     @State private var busy = false
     @State private var message: String?
     @State private var failed = false
+    @State private var code = ""
 
     var body: some View {
         ScrollView {
@@ -164,6 +166,9 @@ struct SavedLoginView: View {
                         .textInputAutocapitalization(.never).autocorrectionDisabled()
                         .padding(10).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 10))
                     SecureField(saved ? "Password (saved · type to change)" : "Password", text: $pass)
+                        .padding(10).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 10))
+                    TextField("Authenticator code (only if asked)", text: $code)
+                        .keyboardType(.numberPad)
                         .padding(10).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 10))
 
                     HStack(spacing: 18) {
@@ -216,8 +221,8 @@ struct SavedLoginView: View {
         busy = true; message = nil; failed = false
         let u = user.trimmingCharacters(in: .whitespaces)
         do {
-            try await SavedLogin.shared.verifyAndSave(user: u, pass: pass)
-            saved = true; pass = ""
+            try await SavedLogin.shared.verifyAndSave(user: u, pass: pass, code: code)
+            saved = true; pass = ""; code = ""
             message = "Saved. The app will sign in for you when it's signed out."
         } catch {
             failed = true

@@ -8,6 +8,7 @@ struct LoginView: View {
     @State private var error: String?
     @State private var showPassword = true
     @State private var saveLogin = false
+    @State private var code = ""
     private let webAuth = WebAuth()
 
     var body: some View {
@@ -28,6 +29,8 @@ struct LoginView: View {
                         field { TextField("Matric no.", text: $user)
                                     .textInputAutocapitalization(.never).autocorrectionDisabled() }
                         field { SecureField("Password", text: $pass) }
+                        field { TextField("Authenticator code (if asked)", text: $code)
+                                    .keyboardType(.numberPad) }
                         Toggle("Save login info", isOn: $saveLogin).tint(Theme.accent).foregroundColor(Theme.txt)
                         Button { Task { await passwordLogin() } } label: {
                             Text("Sign in")
@@ -93,7 +96,7 @@ struct LoginView: View {
         busy = true; error = nil
         do {
             let u = user.trimmingCharacters(in: .whitespacesAndNewlines)
-            let s = try await MoodleAPI.shared.passwordLogin(u, pass)
+            let s = try await MoodleAPI.shared.passwordLogin(u, pass, code: code)
             try await app.signIn(s)
             if saveLogin {
                 SavedLoginStore.save(SavedCredentials(user: u, pass: pass))
