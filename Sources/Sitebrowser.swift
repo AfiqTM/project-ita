@@ -137,7 +137,7 @@ final class SiteBrowser: NSObject, ObservableObject, WKNavigationDelegate, WKUID
         if !webLoginTried, SavedLogin.shared.canRelogin {
             webLoginTried = true
             notice = "Signing in…"
-            let r = await WebCASLogin.shared.refresh(prompt: true)
+            let r = await WebCASLogin.shared.refresh(prompt: true, source: "Website tab")
             if r.result == .ok { await open(resumeURL); return }
             notice = nil
         }

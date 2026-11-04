@@ -229,7 +229,7 @@ extension MoodleAPI {
             return nil
         }
         // Saved login: sign in again through a hidden browser (no 6-minute limit, keeps the CAS trusted device)
-        if await WebCASLogin.shared.refresh().result == .ok {
+        if await WebCASLogin.shared.refresh(source: "Page load").result == .ok {
             await syncCookies()
             if let h = await get(url, "web-login") { return h }
         }

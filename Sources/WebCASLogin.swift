@@ -36,7 +36,10 @@ final class WebCASLogin: NSObject, ObservableObject, WKNavigationDelegate {
 
     /// Signs in with the saved details in a hidden web view. `code`: authenticator code, if CAS asks for one.
     /// `wantToken`: also fetch an app token. `prompt`: show the code sheet when a code is needed.
-    func refresh(code: String? = nil, wantToken: Bool = false, prompt: Bool = false)
+    /// `source` / `log`: how the attempt is recorded in the auto sign-in log (Save login info); callers that log
+    /// the outcome themselves pass `log: false`.
+    func refresh(code: String? = nil, wantToken: Bool = false, prompt: Bool = false,
+                 source: String = "Hidden browser", log: Bool = true)
         async -> (result: WebLoginResult, session: Session?) {
         if let t = task { return await t.value }
         guard let c = SavedLoginStore.load(), SavedLogin.shared.canRelogin else { return (.failed("No saved login"), nil) }
@@ -48,6 +51,7 @@ final class WebCASLogin: NSObject, ObservableObject, WKNavigationDelegate {
         task = t
         let r = await t.value
         task = nil
+        if log { LoginLog.add(source, ok: r.result == .ok, note: LoginLog.describe(r.result)) }
         switch r.result {
         case .ok: lastFail = .distantPast; needsCode = false
         case .needsCode: lastFail = Date(); if prompt { needsCode = true }
@@ -269,7 +273,7 @@ struct WebLoginCodeSheet: View {
                 Button {
                     Task {
                         busy = true; message = nil
-                        let r = await login.refresh(code: code)
+                        let r = await login.refresh(code: code, source: "Code sheet")
                         busy = false
                         switch r.result {
                         case .ok: login.needsCode = false; onDone()

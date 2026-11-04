@@ -41,6 +41,48 @@ enum SavedLoginStore {
 
 enum ReloginResult { case ok, unavailable, offline }
 
+// MARK: - Auto sign-in log (the last 6 automatic sign-ins, shown in Save login info)
+
+struct LoginLogEntry: Codable, Identifiable {
+    var id = UUID()
+    var date: Date
+    var source: String   // what triggered it: "Token expired", "Login screen", "Website tab", ...
+    var ok: Bool
+    var note: String
+}
+
+enum LoginLog {
+    static let keep = 6
+    private static let key = "savedlogin.log"
+    private static let lock = NSLock()
+
+    private static func read() -> [LoginLogEntry] {
+        guard let d = UserDefaults.standard.data(forKey: key),
+              let a = try? JSONDecoder().decode([LoginLogEntry].self, from: d) else { return [] }
+        return a
+    }
+    /// Newest first
+    static func load() -> [LoginLogEntry] { lock.lock(); defer { lock.unlock() }; return read() }
+
+    static func add(_ source: String, ok: Bool, note: String = "") {
+        lock.lock(); defer { lock.unlock() }
+        var all = read()
+        all.insert(LoginLogEntry(date: Date(), source: source, ok: ok, note: note), at: 0)
+        if all.count > keep { all = Array(all.prefix(keep)) }
+        if let d = try? JSONEncoder().encode(all) { UserDefaults.standard.set(d, forKey: key) }
+    }
+    static func clear() { lock.lock(); defer { lock.unlock() }; UserDefaults.standard.removeObject(forKey: key) }
+
+    static func describe(_ r: WebLoginResult) -> String {
+        switch r {
+        case .ok: return ""
+        case .needsCode: return "IIUM wants the authenticator code"
+        case .badCredentials: return "Password rejected"
+        case .failed(let m): return m
+        }
+    }
+}
+
 final class SavedLogin: @unchecked Sendable {
     static let shared = SavedLogin()
 
@@ -92,24 +134,34 @@ final class SavedLogin: @unchecked Sendable {
     }
 
     private func perform() async -> ReloginResult {
+        let src = "Token expired"
         guard let c = SavedLoginStore.load() else { return .unavailable }
         do {
             let s = try await MoodleAPI.shared.passwordLogin(c.user, c.pass)
             MoodleAPI.shared.token = s.token
             MoodleAPI.shared.privateToken = s.privateToken
             Keychain.save(s)
+            LoginLog.add(src, ok: true, note: "IIUM sign-in")
             return .ok
         } catch let e as APIError {
-            if e.code == "invalidlogin" { badCredentials = true }
+            if e.code == "invalidlogin" {
+                badCredentials = true
+                LoginLog.add(src, ok: false, note: "Password rejected")
+                return .unavailable
+            }
             if e.code == "casmfa" || e.code == "casstep" {   // the plain request flow got stuck: try a real (hidden) browser
-                let r = await WebCASLogin.shared.refresh(wantToken: true)
+                let r = await WebCASLogin.shared.refresh(wantToken: true, log: false)
                 if r.result == .ok, let s = r.session {
                     MoodleAPI.shared.token = s.token
                     MoodleAPI.shared.privateToken = s.privateToken
                     Keychain.save(s)
+                    LoginLog.add(src, ok: true, note: "Hidden browser")
                     return .ok
                 }
+                LoginLog.add(src, ok: false, note: "Hidden browser: " + LoginLog.describe(r.result))
+                return .unavailable
             }
+            LoginLog.add(src, ok: false, note: e.localizedDescription)
             return .unavailable
         } catch {
             return isOfflineError(error) ? .offline : .unavailable
@@ -119,15 +171,24 @@ final class SavedLogin: @unchecked Sendable {
     /// For the login screen: sign in with the saved details right now (no waiting period)
     @MainActor func signInFromSaved(_ app: AppState) async throws {
         guard let c = SavedLoginStore.load() else { return }
+        let src = "Login screen"
         do {
             let s = try await MoodleAPI.shared.passwordLogin(c.user, c.pass)
             try await app.signIn(s)
+            LoginLog.add(src, ok: true, note: "IIUM sign-in")
         } catch let e as APIError {
             if e.code == "invalidlogin" { badCredentials = true }
             if e.code == "casmfa" || e.code == "casstep" {
-                let r = await WebCASLogin.shared.refresh(wantToken: true)
-                if r.result == .ok, let s = r.session { try await app.signIn(s); return }
+                let r = await WebCASLogin.shared.refresh(wantToken: true, log: false)
+                if r.result == .ok, let s = r.session {
+                    try await app.signIn(s)
+                    LoginLog.add(src, ok: true, note: "Hidden browser")
+                    return
+                }
+                LoginLog.add(src, ok: false, note: "Hidden browser: " + LoginLog.describe(r.result))
+                throw e
             }
+            LoginLog.add(src, ok: false, note: e.code == "invalidlogin" ? "Password rejected" : e.localizedDescription)
             throw e
         }
     }
@@ -141,7 +202,7 @@ final class SavedLogin: @unchecked Sendable {
         badCredentials = false
         enabled = true
         manualSignOut = false   // WebCASLogin.refresh refuses to run while "signed out by hand" is set
-        let r = await WebCASLogin.shared.refresh(code: code, wantToken: false)
+        let r = await WebCASLogin.shared.refresh(code: code, wantToken: false, log: false)
         switch r.result {
         case .ok:
             break
@@ -175,6 +236,7 @@ struct SavedLoginView: View {
     @State private var message: String?
     @State private var failed = false
     @State private var code = ""
+    @State private var log = LoginLog.load()
 
     var body: some View {
         ScrollView {
@@ -229,6 +291,35 @@ struct SavedLoginView: View {
                         .font(Theme.font(.caption)).foregroundColor(Theme.muted)
                 }
                 .padding(16).frame(maxWidth: .infinity, alignment: .leading).glowCard()
+
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Text("AUTO SIGN-IN LOG").font(Theme.font(.caption)).foregroundColor(Theme.muted)
+                        Spacer()
+                        if !log.isEmpty {
+                            Button("Clear") { LoginLog.clear(); log = [] }
+                                .font(Theme.font(.caption)).foregroundColor(Theme.accent)
+                        }
+                    }
+                    if log.isEmpty {
+                        Text("No automatic sign-ins yet. The last \(LoginLog.keep) will show here.")
+                            .font(Theme.font(.caption)).foregroundColor(Theme.muted)
+                    } else {
+                        ForEach(log) { e in
+                            HStack(alignment: .top, spacing: 10) {
+                                Image(systemName: e.ok ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                    .foregroundColor(e.ok ? .green : .red.opacity(0.85))
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(e.date, format: .dateTime.day().month(.abbreviated).year().hour().minute().second())
+                                        .font(Theme.font(.subheadline)).foregroundColor(Theme.txt)
+                                    Text(e.note.isEmpty ? e.source : e.source + " · " + e.note)
+                                        .font(Theme.font(.caption)).foregroundColor(Theme.muted)
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(16).frame(maxWidth: .infinity, alignment: .leading).glowCard()
             }
             .padding(16)
         }
@@ -237,7 +328,7 @@ struct SavedLoginView: View {
         .navigationTitle("Save login info")
         .navigationBarTitleDisplayMode(.inline)
         .notebookBack()
-        .onAppear { if user.isEmpty { user = SavedLoginStore.load()?.user ?? "" } }
+        .onAppear { if user.isEmpty { user = SavedLoginStore.load()?.user ?? "" }; log = LoginLog.load() }
     }
 
     private var canSave: Bool {
