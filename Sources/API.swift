@@ -270,8 +270,8 @@ final class MoodleAPI {
 
     // Matric no. + password. IIUM students sign in through CAS (the "IIUM Student and Staff Login" button),
     // Moodle's own token.php has no password for them, so this goes through CASLogin (CASLogin.swift).
-    func passwordLogin(_ user: String, _ pass: String) async throws -> Session {
-        try await CASLogin.login(user, pass)
+    func passwordLogin(_ user: String, _ pass: String, code: String? = nil) async throws -> Session {
+        try await CASLogin.login(user, pass, code: code)
     }
 }
 
