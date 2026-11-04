@@ -101,6 +101,15 @@ final class SavedLogin: @unchecked Sendable {
             return .ok
         } catch let e as APIError {
             if e.code == "invalidlogin" { badCredentials = true }
+            if e.code == "casmfa" || e.code == "casstep" {   // the plain request flow got stuck: try a real (hidden) browser
+                let r = await WebCASLogin.shared.refresh(wantToken: true)
+                if r.result == .ok, let s = r.session {
+                    MoodleAPI.shared.token = s.token
+                    MoodleAPI.shared.privateToken = s.privateToken
+                    Keychain.save(s)
+                    return .ok
+                }
+            }
             return .unavailable
         } catch {
             return isOfflineError(error) ? .offline : .unavailable
@@ -115,6 +124,10 @@ final class SavedLogin: @unchecked Sendable {
             try await app.signIn(s)
         } catch let e as APIError {
             if e.code == "invalidlogin" { badCredentials = true }
+            if e.code == "casmfa" || e.code == "casstep" {
+                let r = await WebCASLogin.shared.refresh(wantToken: true)
+                if r.result == .ok, let s = r.session { try await app.signIn(s); return }
+            }
             throw e
         }
     }

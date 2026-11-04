@@ -21,6 +21,7 @@ final class SiteBrowser: NSObject, ObservableObject, WKNavigationDelegate, WKUID
     private var observers: [NSKeyValueObservation] = []
     private var started = false
     private var loginRetried = false
+    private var webLoginTried = false
     private var wantedURL: URL?              // last good page, where to resume after a re-login
     private var retryTask: Task<Void, Never>?
     private var userid = 0
@@ -97,6 +98,9 @@ final class SiteBrowser: NSObject, ObservableObject, WKNavigationDelegate, WKUID
 
     func goHome() { Task { await open(home) } }
 
+    /// After the code sheet signed in: go back to the page that was wanted
+    func reopenAfterLogin() { Task { await open(resumeURL) } }
+
     func reload() {
         if webView.url == nil { goHome() } else { webView.reload() }
     }
@@ -115,6 +119,7 @@ final class SiteBrowser: NSObject, ObservableObject, WKNavigationDelegate, WKUID
             }
         } else {
             loginRetried = false
+            webLoginTried = false
             needsSignIn = false
             retryTask?.cancel(); retryTask = nil
             if u.host == Site.url.host { wantedURL = u }
@@ -128,6 +133,14 @@ final class SiteBrowser: NSObject, ObservableObject, WKNavigationDelegate, WKUID
     // The saved session is gone or expired: get a key if allowed, otherwise wait and retry on our own.
     private func recoverSession() async {
         let api = MoodleAPI.shared
+        // Saved login info: sign in through the hidden browser first (keeps Moodle's auto-login key for later)
+        if !webLoginTried, SavedLogin.shared.canRelogin {
+            webLoginTried = true
+            notice = "Signing in…"
+            let r = await WebCASLogin.shared.refresh(prompt: true)
+            if r.result == .ok { await open(resumeURL); return }
+            notice = nil
+        }
         guard api.privateToken != nil else {
             notice = "You're signed out. Tap Sign in to use Safari's saved password."
             needsSignIn = true
@@ -340,6 +353,7 @@ struct SiteWebHost: UIViewRepresentable {
 struct SiteBrowserView: View {
     @ObservedObject var browser: SiteBrowser
     @EnvironmentObject var app: AppState
+    @ObservedObject private var webLogin = WebCASLogin.shared
 
     var body: some View {
         VStack(spacing: 0) {
@@ -374,6 +388,7 @@ struct SiteBrowserView: View {
         }
         .background(Theme.bg.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
+        .sheet(isPresented: $webLogin.needsCode) { WebLoginCodeSheet { browser.reopenAfterLogin() } }
         .task { await browser.startIfNeeded(userid: app.site?.userid ?? 0) }
     }
 

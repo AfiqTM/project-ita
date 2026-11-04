@@ -362,5 +362,26 @@ enum CASTrust {
         }
     }
 
+    /// The saved cookies as HTTPCookies (expired ones skipped), e.g. to load into a web view
+    static func load() -> [HTTPCookie] {
+        var q = query()
+        q[kSecReturnData as String] = true
+        q[kSecMatchLimit as String] = kSecMatchLimitOne
+        var out: AnyObject?
+        guard SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess, let d = out as? Data,
+              let list = (try? PropertyListSerialization.propertyList(from: d, options: [], format: nil)) as? [[String: Any]] else { return [] }
+        return list.compactMap { item in
+            guard let name = item["name"] as? String, let value = item["value"] as? String,
+                  let domain = item["domain"] as? String, let path = item["path"] as? String else { return nil }
+            var props: [HTTPCookiePropertyKey: Any] = [.name: name, .value: value, .domain: domain, .path: path]
+            if let e = item["expires"] as? Date {
+                if e < Date() { return nil }
+                props[.expires] = e
+            }
+            if (item["secure"] as? Bool) == true { props[.secure] = "TRUE" }
+            return HTTPCookie(properties: props)
+        }
+    }
+
     static func clear() { SecItemDelete(query() as CFDictionary) }
 }

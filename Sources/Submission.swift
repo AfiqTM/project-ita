@@ -228,6 +228,11 @@ extension MoodleAPI {
             await DebugLog.shared.add("no web session, auto-login not allowed here")
             return nil
         }
+        // Saved login: sign in again through a hidden browser (no 6-minute limit, keeps the CAS trusted device)
+        if await WebCASLogin.shared.refresh().result == .ok {
+            await syncCookies()
+            if let h = await get(url, "web-login") { return h }
+        }
         // Not forced: respects the 6-minute cooldown so we don't burn a request Moodle will reject
         let al = await autologin(url, userid: userid)
         await DebugLog.shared.add("autologin returned path \(al.path), same as input: \(al == url)")
