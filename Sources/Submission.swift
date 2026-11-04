@@ -56,6 +56,50 @@ struct AttRecord: Identifiable {
     var kind: AttKind
 }
 
+// MARK: - Own marks on sessions (cancelled / holiday / disputed)
+//
+// Kept only on this iPhone, never sent to iTa'leem. They are shown under the session's status and do not
+// change any of the numbers.
+
+enum AttMark: String, CaseIterable, Identifiable {
+    case cancelled = "Cancelled"
+    case holiday = "Holiday"
+    case disputed = "Disputed"
+
+    var id: String { rawValue }
+
+    var icon: String {
+        switch self {
+        case .cancelled: return "xmark.circle"
+        case .holiday: return "sun.max"
+        case .disputed: return "exclamationmark.bubble"
+        }
+    }
+    var color: Color {
+        switch self {
+        case .cancelled: return Theme.muted
+        case .holiday: return Theme.accent
+        case .disputed: return Tone.amber
+        }
+    }
+}
+
+enum AttMarkStore {
+    private static let key = "attendance.marks"
+
+    /// One session is told apart by its course, date, time and description
+    static func key(_ moduleId: Int, _ r: AttRecord) -> String { "\(moduleId)|\(r.date)|\(r.time)|\(r.desc)" }
+
+    static func load() -> [String: String] {
+        guard let d = UserDefaults.standard.data(forKey: key),
+              let m = try? JSONDecoder().decode([String: String].self, from: d) else { return [:] }
+        return m
+    }
+    static func save(_ m: [String: String]) {
+        if let d = try? JSONEncoder().encode(m) { UserDefaults.standard.set(d, forKey: key) }
+    }
+}
+
 struct AttSummary {
     var rows: [(String, String)] = []
     var points: String?
@@ -486,6 +530,7 @@ struct AttendanceView: View {
     @State private var retries = 0
     @State private var submitLinks: [AttSubmitLink] = []     // sessions open for the student's own submission
     @State private var submitting: AttSubmitLink?
+    @State private var marks: [String: String] = AttMarkStore.load()     // own marks, only on this iPhone
     @ObservedObject private var net = OfflineMonitor.shared
 
     private var uid: Int { app.site?.userid ?? 0 }
@@ -742,6 +787,48 @@ struct AttendanceView: View {
         .glowCard()
     }
 
+    private func setMark(_ m: AttMark?, for key: String) {
+        if let m { marks[key] = m.rawValue } else { marks.removeValue(forKey: key) }
+        AttMarkStore.save(marks)
+    }
+
+    /// Under the status: tap to mark the session yourself. Marked sessions get a dashed outline so they
+    /// can't be mistaken for the site's own status.
+    private func markMenu(_ r: AttRecord) -> some View {
+        let k = AttMarkStore.key(module.id, r)
+        let cur = marks[k].flatMap { AttMark(rawValue: $0) }
+        return Menu {
+            Section("Only saved on this iPhone") {
+                ForEach(AttMark.allCases) { m in
+                    Button { setMark(m, for: k) } label: {
+                        Label(m.rawValue, systemImage: cur == m ? "checkmark" : m.icon)
+                    }
+                }
+                if cur != nil {
+                    Button(role: .destructive) { setMark(nil, for: k) } label: { Label("Clear mark", systemImage: "trash") }
+                }
+            }
+        } label: {
+            if let c = cur {
+                HStack(spacing: 4) {
+                    Image(systemName: c.icon)
+                    Text(c.rawValue)
+                }
+                .font(Theme.font(.caption).weight(.semibold))
+                .foregroundColor(c.color)
+                .padding(.horizontal, 8).padding(.vertical, 3)
+                .overlay(Capsule().strokeBorder(c.color.opacity(0.7), style: StrokeStyle(lineWidth: 1, dash: [3, 2])))
+            } else {
+                HStack(spacing: 3) {
+                    Image(systemName: "tag")
+                    Text("Mark")
+                }
+                .font(Theme.font(.caption))
+                .foregroundColor(Theme.muted)
+            }
+        }
+    }
+
     private func recordRow(_ r: AttRecord) -> some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
@@ -756,6 +843,7 @@ struct AttendanceView: View {
             VStack(alignment: .trailing, spacing: 4) {
                 StatusPill(text: r.status.isEmpty || r.status == "?" ? AttKind.pending.rawValue : r.status,
                            color: r.kind.color)
+                markMenu(r)
                 if !r.points.isEmpty {
                     Text(r.points).font(Theme.font(.caption)).foregroundColor(Theme.muted)
                 }
