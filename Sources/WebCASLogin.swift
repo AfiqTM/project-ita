@@ -29,6 +29,8 @@ final class WebCASLogin: NSObject, ObservableObject, WKNavigationDelegate {
     private var caught: URL?
     private var trace: [String] = []        // what the last attempt did, for the developer log
     private var lastNavError: String?   // why the last page failed to load
+    private var visited: [String] = []  // every page address the hidden browser was sent to (exact URLs), for the log
+    private var loadingURL: URL?        // the page that is loading right now
 
     private static let tokenNames: Set<String> = ["token", "otp", "code", "totp", "verificationcode", "passcode"]
     private struct Input { let name: String; let type: String }
@@ -71,7 +73,7 @@ final class WebCASLogin: NSObject, ObservableObject, WKNavigationDelegate {
         func fail(_ m: String) -> (result: WebLoginResult, session: Session?) { (.failed(m), nil) }
         guard let ssoHost = CASLogin.casURL.host, let siteHost = Site.url.host else { return fail("Bad URLs") }
         let otp = (code ?? "").filter { $0.isNumber }
-        trace = []; lastNavError = nil
+        trace = []; lastNavError = nil; visited = []; loadingURL = nil
 
         let cfg = WKWebViewConfiguration()
         cfg.websiteDataStore = .nonPersistent()
@@ -89,7 +91,7 @@ final class WebCASLogin: NSObject, ObservableObject, WKNavigationDelegate {
 
         guard await navigate({ wv.load(URLRequest(url: CASLogin.casURL)) }) else {
             trace.append("sign-in page did not load")
-            return fail("The IIUM sign-in page didn't load" + (lastNavError.map { " (\($0))" } ?? ""))
+            return fail(await loadFailureDetail(wv))
         }
         trace.append("sign-in page loaded")
 
@@ -243,6 +245,54 @@ final class WebCASLogin: NSObject, ObservableObject, WKNavigationDelegate {
         w?.resume(returning: ok)
     }
 
+    // MARK: why a page didn't load
+
+    /// Runs a script but gives up after `seconds` (a page that is stuck loading may never answer).
+    private func evalWithTimeout(_ wv: WKWebView, _ js: String, seconds: Double = 3) async -> String? {
+        await withCheckedContinuation { (c: CheckedContinuation<String?, Never>) in
+            var resumed = false
+            func finish(_ v: String?) { if !resumed { resumed = true; c.resume(returning: v) } }
+            Task { @MainActor in finish(try? await wv.callAsyncJavaScript(js, arguments: [:], in: nil, contentWorld: .page) as? String) }
+            Task { @MainActor in try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000)); finish(nil) }
+        }
+    }
+
+    /// The text for the log when the sign-in page doesn't load: the exact address that was requested, the error
+    /// (with the address that failed), the redirects followed, and the files the page was still waiting for.
+    private func loadFailureDetail(_ wv: WKWebView) async -> String {
+        var parts = ["The IIUM sign-in page didn't load", "requested: " + DevLog.exact(CASLogin.casURL)]
+        parts.append(lastNavError ?? "no answer within 25 s")
+        if visited.count > 1 { parts.append("route: " + visited.joined(separator: " > ")) }
+        else if let last = visited.last, last != DevLog.exact(CASLogin.casURL) { parts.append("went to: " + last) }
+
+        // which files of the page never finished (a blocked host often hangs the page instead of failing it)
+        let js = """
+        const done = new Set(performance.getEntriesByType('resource').filter(r => r.responseEnd > 0).map(r => r.name));
+        const refs = [...new Set([...document.querySelectorAll('script[src],link[href],img[src],iframe[src]')]
+          .map(e => { try { return new URL(e.src || e.href, location.href).href; } catch (_) { return ''; } })
+          .filter(h => h))];
+        return JSON.stringify({url: location.href, state: document.readyState, pending: refs.filter(u => !done.has(u)).slice(0, 10)});
+        """
+        if let s = await evalWithTimeout(wv, js), let d = s.data(using: .utf8),
+           let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any] {
+            let state = o["state"] as? String ?? "?"
+            let pending = (o["pending"] as? [String] ?? []).compactMap { URL(string: $0) }
+            if let u = (o["url"] as? String).flatMap({ URL(string: $0) }), u.scheme != "about" {
+                parts.append("page reached: " + DevLog.exact(u) + " (\(state))")
+            } else {
+                parts.append("the page never started loading")
+            }
+            if !pending.isEmpty {
+                parts.append("still waiting for: " + pending.map { DevLog.exact($0) }.joined(separator: ", "))
+                for u in pending { DevLog.host(DevLog.label(u), .failed, "did not finish loading") }
+            }
+        } else {
+            parts.append("the page never started loading")
+        }
+        if let u = loadingURL { DevLog.host(DevLog.label(u), .failed, lastNavError == nil ? "no answer within 25 s" : "load failed") }
+        return parts.joined(separator: " | ")
+    }
+
     // MARK: WKNavigationDelegate
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -257,8 +307,15 @@ final class WebCASLogin: NSObject, ObservableObject, WKNavigationDelegate {
     private func failed(_ error: Error) {
         let e = error as NSError
         if e.domain == NSURLErrorDomain && e.code == NSURLErrorCancelled { return }   // replaced by a redirect
-        lastNavError = "\(e.domain) \(e.code): \(e.localizedDescription)"
-        DevLog.network(.login, error, "hidden browser page")
+        // the address that failed: the one in the error, else the page that was loading
+        let failedURL = (e.userInfo[NSURLErrorFailingURLErrorKey] as? URL)
+            ?? (e.userInfo[NSURLErrorFailingURLStringErrorKey] as? String).flatMap { URL(string: $0) }
+            ?? loadingURL
+        lastNavError = "\(e.domain) \(e.code): \(e.localizedDescription)" + (failedURL.map { " | failed URL: " + DevLog.exact($0) } ?? "")
+        DevLog.network(.login, error, "hidden browser page" + (failedURL.map { " " + DevLog.exact($0) } ?? ""))
+        if let u = failedURL, e.userInfo[NSURLErrorFailingURLErrorKey] == nil, e.userInfo[NSURLErrorFailingURLStringErrorKey] == nil {
+            DevLog.host(DevLog.label(u), .failed, "\(e.domain) \(e.code)")
+        }
         resolveWait(false)
     }
 
@@ -266,6 +323,10 @@ final class WebCASLogin: NSObject, ObservableObject, WKNavigationDelegate {
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         if let u = navigationAction.request.url, ["http", "https"].contains(u.scheme?.lowercased() ?? "") {
             DevLog.host(DevLog.label(u), .seen, "visited by the hidden browser")
+            if navigationAction.targetFrame?.isMainFrame ?? true {
+                loadingURL = u
+                visited.append(DevLog.exact(u))
+            }
         }
         if let u = navigationAction.request.url, u.scheme == "moodlemobile" {
             caught = u

@@ -104,6 +104,20 @@ enum DevLog {
 
     static func label(_ u: URL) -> String { (u.host ?? "") + (u.port.map { ":\($0)" } ?? "") }
 
+    /// The full URL for a log line (scheme, host, port, path, query). Only secrets are blanked out:
+    /// ticket / token / key / password / code values, session ids, and anything after a #.
+    static func exact(_ u: URL) -> String {
+        guard var c = URLComponents(url: u, resolvingAgainstBaseURL: false) else { return u.absoluteString }
+        let secret: Set<String> = ["ticket", "token", "wstoken", "privatetoken", "key", "passport", "password", "pass", "code",
+                                   "sesskey", "sid", "sessionid", "jsessionid", "auth", "secret", "otp"]
+        c.queryItems = c.queryItems?.map { secret.contains($0.name.lowercased()) ? URLQueryItem(name: $0.name, value: "***") : $0 }
+        c.fragment = nil
+        c.user = nil
+        c.password = nil
+        let s = c.string ?? u.absoluteString
+        return s.replacingOccurrences(of: ";jsessionid=[^?/#]*", with: ";jsessionid=***", options: [.regularExpression, .caseInsensitive])
+    }
+
     /// Logs a failed request with the host it was for, and remembers that host as failing
     /// (a DNS filter that blocks a host shows up as "cannot find host" / "DNS lookup failed" / timeout).
     static func network(_ c: DevChannel, _ error: Error, _ what: String) {
