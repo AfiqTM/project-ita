@@ -182,7 +182,10 @@ struct TimetableBlock: View {
     let scale: CGFloat
 
     /// dark text on the tan box
-    private let ink = Color(red: 0.10, green: 0.08, blue: 0.05)`r`n`r`n    var body: some View {
+    /// dark text on the tan box
+    private let ink = Color(red: 0.10, green: 0.08, blue: 0.05)
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 2 * scale) {
             Text(c.code).font(.system(size: 10.5 * scale, weight: .bold)).foregroundColor(ink)
             Text(c.title).font(.system(size: 9 * scale, weight: .medium)).foregroundColor(ink)
