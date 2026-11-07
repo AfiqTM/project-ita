@@ -224,7 +224,7 @@ struct TimetableLockProvider: TimelineProvider {
         let today = TimetableText.weekday(date), m = TimetableText.minutes(date)
         let c = data?.classes
             .filter { $0.day == today && m >= $0.startMin - Self.lead && m < $0.endMin }
-            .min { $0.startMin < $1.startMin }
+            .max { $0.startMin < $1.startMin }   // two in the window: the later one wins, so the next class takes over 15 min before it starts
         return TimetableLockEntry(date: date, current: c, ongoing: c.map { m >= $0.startMin } ?? false)
     }
 
