@@ -166,10 +166,18 @@ struct TimetableWidgetView: View {
 
     // MARK: large
 
+    /// The tall widget has room for every hour at full height
+    private var tall: Bool {
+        #if TALL_WIDGET
+        if #available(iOS 27.0, *) { return family == .systemExtraLargePortrait }
+        #endif
+        return false
+    }
+
     private func large(_ data: TimetableData) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             header("CLASS TIMETABLE", data.title)
-            TimetableGrid(data: data, compactGaps: true, scale: 1, text: T.txt, muted: T.muted, line: T.line, accent: T.accent)
+            TimetableGrid(data: data, compactGaps: !tall, scale: 1, text: T.txt, muted: T.muted, line: T.line, accent: T.accent)
         }
     }
 }
@@ -181,6 +189,15 @@ struct TimetableHomeWidget: Widget {
         }
         .configurationDisplayName("Class timetable")
         .description("Your next class, today's classes, or the whole week.")
-        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
+        .supportedFamilies(Self.families)
+    }
+
+    /// Small, medium, large, plus the tall one (like the Photos widget) when the app is built with the iOS 27 SDK
+    private static var families: [WidgetFamily] {
+        var f: [WidgetFamily] = [.systemSmall, .systemMedium, .systemLarge]
+        #if TALL_WIDGET
+        if #available(iOS 27.0, *) { f.append(.systemExtraLargePortrait) }
+        #endif
+        return f
     }
 }

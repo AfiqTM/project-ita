@@ -10,11 +10,17 @@ jobs:
       - uses: actions/checkout@v4
       - name: Generate Xcode project
         run: brew install xcodegen ldid && xcodegen
+      # The tall widget (systemExtraLargePortrait) only exists in the iOS 27 SDK; older Xcode builds skip it
+      - name: Detect SDK
+        run: |
+          V=$(xcrun --sdk iphoneos --show-sdk-version); echo "iphoneos SDK $V"
+          if [ "${V%%.*}" -ge 27 ]; then echo "TALL=TALL_WIDGET" >> $GITHUB_ENV; fi
       - name: Build (unsigned)
         run: |
           xcodebuild -project iTaleem.xcodeproj -scheme iTaleem -configuration Release \
             -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            SWIFT_ACTIVE_COMPILATION_CONDITIONS="\$(inherited) $TALL" build
       # An unsigned build carries no entitlements, so the App Group would be lost. ldid stamps them into
       # the binaries so Impactor can read them and register the group when it signs.
       - name: Embed entitlements
