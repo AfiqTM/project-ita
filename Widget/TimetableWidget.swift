@@ -296,8 +296,8 @@ struct TimetableLockWidget: Widget {
 
 // MARK: - Lock screen class timer (circular)
 
-// A ring with the minutes inside. From 15 minutes before a class: minutes until it starts (the ring empties as it
-// gets close). During the class: minutes left (the ring empties until it ends). With no class: nothing is drawn.
+// A ring with the minutes left until the CURRENT class ends (the ring empties as it runs out).
+// Nothing is drawn before a class starts or when there is no class.
 
 struct TimetableTimerEntry: TimelineEntry {
     let date: Date
@@ -310,15 +310,11 @@ struct TimetableTimerProvider: TimelineProvider {
 
     private func entry(_ date: Date, _ data: TimetableData?) -> TimetableTimerEntry {
         let today = TimetableText.weekday(date), m = TimetableText.minutes(date)
-        // same rule as the lock screen class widget: when two are in range the later one wins
+        // the class running now (if two overlap, the one that ends first)
         guard let c = data?.classes
-            .filter({ $0.day == today && m >= $0.startMin - Self.lead && m < $0.endMin })
-            .max(by: { $0.startMin < $1.startMin })
+            .filter({ $0.day == today && m >= $0.startMin && m < $0.endMin })
+            .min(by: { $0.endMin < $1.endMin })
         else { return TimetableTimerEntry(date: date, minutes: nil, fraction: 0) }
-        if m < c.startMin {
-            let left = c.startMin - m
-            return TimetableTimerEntry(date: date, minutes: left, fraction: Double(left) / Double(Self.lead))
-        }
         let left = c.endMin - m
         return TimetableTimerEntry(date: date, minutes: left, fraction: Double(left) / Double(max(c.endMin - c.startMin, 1)))
     }
