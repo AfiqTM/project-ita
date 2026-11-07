@@ -236,13 +236,17 @@ struct TimetableView: View {
     }
 
     @ViewBuilder private func content(_ t: TimetableData) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: "calendar").foregroundColor(Theme.accent)
-            Text(t.title).font(Theme.font(.subheadline).weight(.semibold)).foregroundColor(Theme.txt)
+        HStack(spacing: 10) {
+            Image(systemName: "calendar").font(.system(size: 14, weight: .semibold)).foregroundColor(Theme.accent)
+                .frame(width: 32, height: 32)
+                .background(Theme.accent.opacity(0.15), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            VStack(alignment: .leading, spacing: 1) {
+                Text(t.title).font(Theme.font(.subheadline).weight(.semibold)).foregroundColor(Theme.txt)
+                Text("\(t.codes.count) subjects · \(creditText(t.credits)) credits").font(Theme.font(.caption)).foregroundColor(Theme.muted)
+            }
             Spacer()
-            Text("\(t.codes.count) subjects · \(creditText(t.credits)) credits").font(Theme.font(.caption)).foregroundColor(Theme.muted)
         }
-
+        .padding(.horizontal, 2)
         TimetableGrid(data: t, hourHeight: 56, text: Theme.txt, muted: Theme.muted, line: Theme.line, accent: Theme.accent)
             .frame(height: TimetableGrid.height(for: t, hourHeight: 56))
             .padding(10)
@@ -269,7 +273,7 @@ struct TimetableView: View {
             else { slots.append(([c.day], c)) }
         }
         return HStack(alignment: .top, spacing: 12) {
-            RoundedRectangle(cornerRadius: 2).fill(Theme.accent).frame(width: 4)
+            Capsule().fill(Theme.accent).frame(width: 4)
             VStack(alignment: .leading, spacing: 3) {
                 Text(code).font(Theme.font(.subheadline).weight(.semibold)).foregroundColor(Theme.txt)
                 Text(mine[0].title).font(Theme.font(.footnote)).foregroundColor(Theme.txt).lineLimit(2)
@@ -277,8 +281,21 @@ struct TimetableView: View {
                     .font(Theme.font(.caption)).foregroundColor(Theme.muted)
                 ForEach(Array(slots.enumerated()), id: \.offset) { _, s in
                     let days = s.days.sorted().map { TimetableText.dayNames[$0 - 1] }.joined(separator: ", ")
-                    Text(days + " · " + s.c.range + (s.c.venue.isEmpty ? "" : " · " + s.c.venue))
-                        .font(Theme.font(.caption)).foregroundColor(Theme.muted)
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Image(systemName: "clock").font(.system(size: 10)).foregroundColor(Theme.accent).frame(width: 12)
+                            Text(days + " · " + s.c.range).font(Theme.font(.caption)).foregroundColor(Theme.txt)
+                        }
+                        // the venue is never cut: it wraps onto as many rows as it needs
+                        if !s.c.venue.isEmpty {
+                            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                Image(systemName: "mappin.and.ellipse").font(.system(size: 10)).foregroundColor(Theme.accent).frame(width: 12)
+                                Text(s.c.venue).font(Theme.font(.caption)).foregroundColor(Theme.muted)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                    }
+                    .padding(.top, 3)
                 }
             }
             Spacer(minLength: 0)

@@ -253,19 +253,28 @@ struct TimetableGrid: View {
                         let w = (colW - 2) / CGFloat(l.of)
                         let y0 = headerH + CGFloat(lay.y(c.startMin)) * unit + 0.5
                         let y1 = headerH + CGFloat(lay.y(c.endMin)) * unit - 0.5
-                        TimetableBlock(c: c, accent: accent, width: w - 1, height: max(y1 - y0, 4), scale: scale)
+                        TimetableBlock(c: c, accent: accent, text: text, muted: muted, width: w - 1, height: max(y1 - y0, 4), scale: scale)
                             .offset(x: labelW + CGFloat(i) * colW + 1 + CGFloat(l.lane) * w, y: y0)
                     }
                 }
-            }
+                // a line for the time right now, in today's column
+                if let ti = days.firstIndex(of: today), TimetableText.minutes(Date()) >= lay.startHour * 60, TimetableText.minutes(Date()) <= lay.endHour * 60 {
+                    let yy = headerH + CGFloat(lay.y(TimetableText.minutes(Date()))) * unit
+                    Rectangle().fill(accent).frame(width: colW, height: 1 * scale)
+                        .offset(x: labelW + CGFloat(ti) * colW, y: yy)
+                    Circle().fill(accent).frame(width: 5 * scale, height: 5 * scale)
+                        .offset(x: labelW + CGFloat(ti) * colW - 2.5 * scale, y: yy - 2 * scale)
+                }            }
         }
     }
 }
 
-/// One class in the week: as many lines as fit (code, title, time, venue)
+/// One class in the week: as many lines as fit (code, title, time, venue). The venue always gets two rows.
 struct TimetableBlock: View {
     let c: TimetableClass
     let accent: Color   // the app's accent colour (same for every subject)
+    let text: Color
+    let muted: Color
     let width: CGFloat
     let height: CGFloat
     let scale: CGFloat
@@ -273,25 +282,25 @@ struct TimetableBlock: View {
     var body: some View {
         let lh = 10.5 * scale
         let n = max(0, min(4, Int((height - 5 * scale) / lh)))
-        // the venue always gets two rows so a long location is shown in full
         let lines: [(String, Font, Color, Int)] = [
-            (c.code, .system(size: 9.5 * scale, weight: .bold), Color.white.opacity(0.95), 1),
-            (c.title, .system(size: 8.5 * scale), Color.white.opacity(0.78), 1),
-            (c.shortRange, .system(size: 8 * scale), Color.white.opacity(0.6), 1),
-            (c.venue, .system(size: 8 * scale), Color.white.opacity(0.6), 2)
+            (c.code, .system(size: 9.5 * scale, weight: .bold), text, 1),
+            (c.title, .system(size: 8.5 * scale, weight: .medium), text.opacity(0.85), 1),
+            (c.shortRange, .system(size: 8 * scale), muted, 1),
+            (c.venue, .system(size: 8 * scale), muted, 2)
         ]
         let shown = Array(lines.prefix(n)).filter { !$0.0.isEmpty }
+        let r = 6 * scale
         VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(shown.enumerated()), id: \.offset) { _, l in
                 Text(l.0).font(l.1).foregroundColor(l.2).lineLimit(l.3).minimumScaleFactor(l.3 > 1 ? 1 : 0.75)
                     .fixedSize(horizontal: false, vertical: l.3 > 1)
             }
         }
-        .padding(.leading, 6 * scale).padding(.top, 3 * scale)
+        .padding(.leading, 7 * scale).padding(.top, 3 * scale)
         .frame(width: width, height: height, alignment: .topLeading)
-        .background(accent.opacity(0.16))
-        .overlay(alignment: .leading) { Rectangle().fill(accent).frame(width: 2.5 * scale) }
-        .overlay(RoundedRectangle(cornerRadius: 5 * scale, style: .continuous).strokeBorder(accent.opacity(0.3), lineWidth: 0.5))
-        .clipShape(RoundedRectangle(cornerRadius: 5 * scale, style: .continuous))
+        .background(LinearGradient(colors: [accent.opacity(0.26), accent.opacity(0.10)], startPoint: .topLeading, endPoint: .bottomTrailing))
+        .overlay(alignment: .leading) { Capsule().fill(accent).frame(width: 2.5 * scale).padding(.vertical, 4 * scale).padding(.leading, 2.5 * scale) }
+        .overlay(RoundedRectangle(cornerRadius: r, style: .continuous).strokeBorder(accent.opacity(0.35), lineWidth: 0.5))
+        .clipShape(RoundedRectangle(cornerRadius: r, style: .continuous))
     }
 }

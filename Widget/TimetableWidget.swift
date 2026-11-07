@@ -106,7 +106,7 @@ struct TimetableWidgetView: View {
                 Text(c.code).font(.system(size: 18, weight: .bold)).foregroundColor(T.accent).lineLimit(1).minimumScaleFactor(0.7)
                 Text(c.title).font(.system(size: 12, weight: .medium)).foregroundColor(T.txt).lineLimit(2)
                 Text(c.range).font(.system(size: 11)).foregroundColor(T.muted).lineLimit(1).minimumScaleFactor(0.8)
-                if !c.venue.isEmpty { Text(c.venue).font(.system(size: 10)).foregroundColor(T.muted).lineLimit(1) }
+                if !c.venue.isEmpty { Text(c.venue).font(.system(size: 10)).foregroundColor(T.muted).lineLimit(2).fixedSize(horizontal: false, vertical: true) }
             }
         } else {
             VStack(alignment: .leading, spacing: 4) {
@@ -142,8 +142,8 @@ struct TimetableWidgetView: View {
     }
 
     private func row(_ data: TimetableData, _ c: TimetableClass, now: Bool) -> some View {
-        return HStack(spacing: 8) {
-            RoundedRectangle(cornerRadius: 1.5).fill(T.accent).frame(width: 3)
+        HStack(spacing: 8) {
+            Capsule().fill(T.accent).frame(width: 3)
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 5) {
                     Text(c.code).font(.system(size: 12, weight: .bold)).foregroundColor(T.txt)
@@ -153,16 +153,16 @@ struct TimetableWidgetView: View {
                     }
                     Text(c.title).font(.system(size: 11)).foregroundColor(T.muted).lineLimit(1)
                 }
-                Text(c.range + (c.venue.isEmpty ? "" : " · " + c.venue))
-                    .font(.system(size: 10)).foregroundColor(T.muted).lineLimit(1)
+                // time first, then the venue; the venue may use a second row instead of being cut
+                (Text(c.range).foregroundColor(T.accent) + Text(c.venue.isEmpty ? "" : "  " + c.venue).foregroundColor(T.muted))
+                    .font(.system(size: 10)).lineLimit(2).fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
         }
-        .padding(.vertical, 3).padding(.horizontal, 6)
-        .background(T.accent.opacity(0.16))
-        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .padding(.vertical, 4).padding(.horizontal, 7)
+        .background(LinearGradient(colors: [T.accent.opacity(0.22), T.accent.opacity(0.08)], startPoint: .leading, endPoint: .trailing))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
-
     // MARK: large
 
     /// The tall widget has room for every hour at full height
