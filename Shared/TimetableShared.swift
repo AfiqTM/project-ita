@@ -173,7 +173,7 @@ struct TimetableGrid: View {
     }
 }
 
-/// One class in the week: a dark card with a tan outline and edge, a time pill, then code, title and venue wrapped in full.
+/// One class in the week: a dark card with a tan outline, a time pill, then code, title and venue wrapped in full.
 struct TimetableBlock: View {
     let c: TimetableClass
     let accent: Color   // kept for the callers; the card itself uses the fixed tan below
@@ -188,6 +188,7 @@ struct TimetableBlock: View {
         VStack(alignment: .leading, spacing: 3 * scale) {
             Text(c.shortRange.replacingOccurrences(of: "–", with: " – "))
                 .font(.system(size: 9.5 * scale, weight: .medium)).foregroundColor(tan)
+                .lineLimit(1).minimumScaleFactor(0.6)   // the time always stays on one row
                 .padding(.horizontal, 6 * scale).padding(.vertical, 2 * scale)
                 .background(tan.opacity(0.18), in: RoundedRectangle(cornerRadius: 6 * scale, style: .continuous))
                 .padding(.bottom, 2 * scale)
@@ -203,9 +204,8 @@ struct TimetableBlock: View {
         .multilineTextAlignment(.leading)
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 7 * scale).padding(.leading, 9 * scale).padding(.trailing, 7 * scale)
+        .padding(.vertical, 7 * scale).padding(.horizontal, 7 * scale)
         .background(Color(white: 0.075), in: RoundedRectangle(cornerRadius: r, style: .continuous))
-        .overlay(alignment: .leading) { Rectangle().fill(tan).frame(width: 2.5 * scale) }
         .clipShape(RoundedRectangle(cornerRadius: r, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: r, style: .continuous).strokeBorder(tan.opacity(0.35), lineWidth: 1 * scale))
     }
