@@ -8,7 +8,7 @@ import PhotosUI
 // Touch and hold a tile to change or remove it.
 
 enum DailyTool: String, CaseIterable, Identifiable {
-    case todo, calculator, drive, attendance, studyPlan, resources
+    case todo, calculator, drive, attendance, timetable, studyPlan, resources
     var id: String { rawValue }
 
     var title: String {
@@ -17,6 +17,7 @@ enum DailyTool: String, CaseIterable, Identifiable {
         case .calculator: return "Final Exam"
         case .drive: return "My Drive"
         case .attendance: return "Auto Attendance"
+        case .timetable: return "Timetable"
         case .studyPlan: return "Study Plan"
         case .resources: return "Resources"
         }
@@ -27,6 +28,7 @@ enum DailyTool: String, CaseIterable, Identifiable {
         case .calculator: return "Final Exam Calculator"
         case .drive: return "My Drive"
         case .attendance: return "Auto Attendance"
+        case .timetable: return "Class Timetable"
         case .studyPlan: return "Study Plan Tracker"
         case .resources: return "Semester Resources"
         }
@@ -37,6 +39,7 @@ enum DailyTool: String, CaseIterable, Identifiable {
         case .calculator: return "function"
         case .drive: return "externaldrive"
         case .attendance: return "checkmark.circle"
+        case .timetable: return "calendar"
         case .studyPlan: return "calendar.badge.checkmark"
         case .resources: return "books.vertical"
         }
@@ -120,6 +123,7 @@ private struct DailyToolTile: View {
     @EnvironmentObject var driveAuth: DriveAuth
     @ObservedObject private var autoAtt = AutoAttendance.shared
     @ObservedObject private var plan = StudyPlanStore.shared
+    @ObservedObject private var timetable = TimetableManager.shared
 
     private var value: String {
         switch tool {
@@ -129,6 +133,7 @@ private struct DailyToolTile: View {
         case .calculator: return "Marks needed"
         case .drive: return driveAuth.isSignedIn ? "Connected" : "Connect"
         case .attendance: return autoAtt.state.master ? "On · \(autoAtt.enabledCount)" : "Off"
+        case .timetable: return timetable.data == nil ? "Add PDF" : "\(timetable.data?.codes.count ?? 0) subjects"
         case .studyPlan: return plan.plan == nil ? "Add plan" : "\(Int((plan.percent * 100).rounded()))% done"
         case .resources: return "Calendars"
         }

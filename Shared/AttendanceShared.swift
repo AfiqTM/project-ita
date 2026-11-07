@@ -48,14 +48,17 @@ enum AttendanceStore {
         return isWidget ? id.split(separator: ".").dropLast().joined(separator: ".") : id
     }
 
-    private static var fileURL: URL? {
+    /// A file inside the shared App Group folder (attendance.json, timetable.json)
+    static func groupFile(_ name: String) -> URL? {
         for g in ["group." + appBundleID, originalGroup] {
             if let dir = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: g) {
-                return dir.appendingPathComponent("attendance.json")
+                return dir.appendingPathComponent(name)
             }
         }
         return nil
     }
+
+    private static var fileURL: URL? { groupFile("attendance.json") }
 
     /// false = the app and widget were signed without a shared App Group, so no data can be passed
     static var isShared: Bool { fileURL != nil }

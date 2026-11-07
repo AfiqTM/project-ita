@@ -24,6 +24,7 @@ extension DailyTool {
         case .calculator: CAMSCalculatorScreen()
         case .drive: MyDriveView()
         case .attendance: AutoAttendanceView()
+        case .timetable: TimetableView()
         case .studyPlan: StudyPlanTrackerView()
         case .resources: SemesterResourcesView()
         }

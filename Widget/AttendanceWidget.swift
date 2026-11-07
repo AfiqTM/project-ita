@@ -135,5 +135,8 @@ struct AttendanceHomeWidget: Widget {
 
 @main
 struct AttendanceWidgetBundle: WidgetBundle {
-    var body: some Widget { AttendanceHomeWidget() }
+    var body: some Widget {
+        AttendanceHomeWidget()
+        TimetableHomeWidget()
+    }
 }

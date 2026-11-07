@@ -730,6 +730,7 @@ struct ProfileView: View {
     @ObservedObject private var themes = ThemeStore.shared
     @ObservedObject private var studyPlan = StudyPlanStore.shared
     @ObservedObject private var autoAtt = AutoAttendance.shared
+    @ObservedObject private var timetable = TimetableManager.shared
     /// "AFIQ TAUFIQ BIN MUHAMMAD 2412345" -> "Afiq Taufiq bin Muhammad 2412345" (full name and matric number under My Profile)
     private var shortName: String {
         let words = (app.site?.fullname ?? "").split(whereSeparator: \.isWhitespace).map(String.init)
@@ -795,6 +796,11 @@ struct ProfileView: View {
                     NavigationLink { AutoAttendanceView() } label: {
                         ProfileRow(icon: "checkmark.circle", title: "Auto Attendance",
                                    subtitle: autoAtt.state.master ? "On · \(autoAtt.enabledCount) subject\(autoAtt.enabledCount == 1 ? "" : "s")" : "Off",
+                                   showLine: true)
+                    }
+                    NavigationLink { TimetableView() } label: {
+                        ProfileRow(icon: "calendar", title: "Class Timetable",
+                                   subtitle: timetable.data.map { "\($0.title) · \($0.codes.count) subjects" } ?? "Upload your registration slip PDF",
                                    showLine: true)
                     }
                     NavigationLink { StudyPlanTrackerView() } label: {

@@ -1,0 +1,250 @@
+import SwiftUI
+import PDFKit
+import UniformTypeIdentifiers
+
+// MARK: - Class Timetable (Others > Academic Tools > Class Timetable)
+//
+// Reads the IIUM "Course Registration Confirmation Slip" PDF on the phone (nothing is sent anywhere):
+//   Course  Sec Sta Title                          Chr Day   Time             Venue
+//   BICS 1306  4  R Digital & Embedded Systems      3  M-W   10.00 - 11.20 AM ICT LT 1 LEVEL 4D
+// and draws the week. The same data feeds the Class Timetable widget (App Group file).
+
+enum TimetableParser {
+    private static let dayTok = "(?:MON|TUE|WED|THU|FRI|SAT|SUN|(?:TH|M|T|W|F|S)(?:-(?:TH|M|T|W|F|S))*)"
+    private static let timeTok = "\\d{1,2}(?:[.:]\\d{2})?"
+
+    static func parse(_ url: URL) -> TimetableData? {
+        guard let doc = PDFDocument(url: url), doc.pageCount > 0 else { return nil }
+        var text = ""
+        for i in 0..<doc.pageCount { text += (doc.page(at: i)?.string ?? "") + "\n" }
+        return parse(text: text)
+    }
+
+    static func parse(text raw: String) -> TimetableData? {
+        let text = raw.replacingOccurrences(of: "\r", with: "")
+        var session = "", semester = ""
+        if let m = match(#"Session\s*:\s*(\d{4})\s*/\s*(\d{4})\s+Semester\s*:\s*(\d+)"#, in: text, options: .caseInsensitive) {
+            session = group(m, 1, text) + "/" + group(m, 2, text)
+            semester = group(m, 3, text)
+        }
+
+        // One record per course: a line that starts with a course code, plus the lines after it (a second day
+        // for the same course comes on its own line) until the next code or the "Total" line.
+        var records: [String] = []
+        for l in text.split(separator: "\n").map({ $0.trimmingCharacters(in: .whitespaces) }) where !l.isEmpty {
+            if l.lowercased().hasPrefix("total"), !records.isEmpty { break }
+            if match(#"^[A-Z]{3,5}\s?\d{4}(\s|$)"#, in: l) != nil { records.append(l) }
+            else if !records.isEmpty { records[records.count - 1] += " " + l }
+        }
+
+        var out: [TimetableClass] = []
+        for var r in records {
+            r = r.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            let head = #"^([A-Z]{3,5})\s?(\d{4})\s+(\d+)\s+[A-Z]\s+(.+?)\s+(\.\d+|\d+(?:\.\d+)?)\s+(?="# + dayTok + #"\s+\d)"#
+            guard let h = match(head, in: r) else { continue }
+            let code = group(h, 1, r) + " " + group(h, 2, r)
+            let section = Int(group(h, 3, r)) ?? 0
+            let title = group(h, 4, r)
+            let credit = Double(group(h, 5, r)) ?? 0
+            let rest = String(r[Range(h.range, in: r)!.upperBound...])
+
+            let slot = #"(?<![A-Za-z])("# + dayTok + #")\s+("# + timeTok + #")\s*-\s*("# + timeTok + #")\s*(AM|PM)"#
+            guard let re = try? NSRegularExpression(pattern: slot) else { continue }
+            let ns = rest as NSString
+            let ms = re.matches(in: rest, range: NSRange(location: 0, length: ns.length))
+            for (i, m) in ms.enumerated() {
+                let days = dayNumbers(ns.substring(with: m.range(at: 1)))
+                guard let t = times(ns.substring(with: m.range(at: 2)), ns.substring(with: m.range(at: 3)), ns.substring(with: m.range(at: 4))) else { continue }
+                let from = m.range.location + m.range.length
+                let to = i + 1 < ms.count ? ms[i + 1].range.location : ns.length
+                let venue = ns.substring(with: NSRange(location: from, length: max(0, to - from))).trimmingCharacters(in: .whitespaces)
+                for d in days {
+                    let c = TimetableClass(code: code, section: section, title: title, credit: credit, day: d,
+                                           startMin: t.0, endMin: t.1, venue: venue)
+                    if !out.contains(where: { $0.id == c.id }) { out.append(c) }
+                }
+            }
+        }
+        guard !out.isEmpty else { return nil }
+        out.sort { ($0.day, $0.startMin) < ($1.day, $1.startMin) }
+        return TimetableData(session: session, semester: semester, classes: out, updated: Date())
+    }
+
+    /// "M-W" -> [1, 3], "T-TH" -> [2, 4], "WED" -> [3]
+    private static func dayNumbers(_ s: String) -> [Int] {
+        let names = ["MON": 1, "TUE": 2, "WED": 3, "THU": 4, "FRI": 5, "SAT": 6, "SUN": 7]
+        let letters = ["M": 1, "T": 2, "W": 3, "TH": 4, "F": 5, "S": 6]
+        if let n = names[s] { return [n] }
+        return s.split(separator: "-").compactMap { letters[String($0)] }
+    }
+
+    /// "10.00", "11.20", "AM" -> minutes. AM / PM is written once, after the end time; a start that would then fall after
+    /// the end ("11.30 - 12.50 PM") is in the morning.
+    private static func times(_ a: String, _ b: String, _ ap: String) -> (Int, Int)? {
+        func hm(_ s: String) -> (Int, Int)? {
+            let p = s.split(whereSeparator: { $0 == "." || $0 == ":" })
+            guard let h = Int(p[0]) else { return nil }
+            return (h, p.count > 1 ? Int(p[1]) ?? 0 : 0)
+        }
+        guard let s = hm(a), let e = hm(b) else { return nil }
+        let pm = ap.uppercased() == "PM"
+        func mins(_ x: (Int, Int), _ pm: Bool) -> Int { ((x.0 % 12) + (pm ? 12 : 0)) * 60 + x.1 }
+        let end = mins(e, pm)
+        var start = mins(s, pm)
+        if start >= end { start = mins(s, !pm) }
+        guard start < end else { return nil }
+        return (start, end)
+    }
+
+    private static func match(_ pattern: String, in s: String, options: NSRegularExpression.Options = []) -> NSTextCheckingResult? {
+        guard let re = try? NSRegularExpression(pattern: pattern, options: options) else { return nil }
+        return re.firstMatch(in: s, range: NSRange(s.startIndex..., in: s))
+    }
+    private static func group(_ m: NSTextCheckingResult, _ i: Int, _ s: String) -> String {
+        Range(m.range(at: i), in: s).map { String(s[$0]) } ?? ""
+    }
+}
+
+@MainActor
+final class TimetableManager: ObservableObject {
+    static let shared = TimetableManager()
+    private static let key = "timetable.v1"
+
+    @Published private(set) var data: TimetableData?
+
+    private init() {
+        if let d = UserDefaults.standard.data(forKey: Self.key), let t = try? JSONDecoder().decode(TimetableData.self, from: d) { data = t }
+        else { data = TimetableStore.load() }
+    }
+
+    func replace(with t: TimetableData) {
+        data = t
+        if let d = try? JSONEncoder().encode(t) { UserDefaults.standard.set(d, forKey: Self.key) }
+        TimetableStore.save(t)
+    }
+
+    func remove() {
+        data = nil
+        UserDefaults.standard.removeObject(forKey: Self.key)
+        TimetableStore.clear()
+    }
+}
+
+// MARK: - Screen
+
+struct TimetableView: View {
+    @ObservedObject private var store = TimetableManager.shared
+    @State private var importing = false
+    @State private var failed = false
+    @State private var confirmRemove = false
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                if let t = store.data { content(t) } else { emptyState }
+            }
+            .padding(16)
+        }
+        .background(Theme.bg.ignoresSafeArea())
+        .navigationTitle("Class Timetable")
+        .navigationBarTitleDisplayMode(.inline)
+        .notebookBack()
+        .toolbar {
+            if store.data != nil {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Menu {
+                        Button { importing = true } label: { Label("Upload a new PDF", systemImage: "arrow.up.doc") }
+                        Button(role: .destructive) { confirmRemove = true } label: { Label("Remove timetable", systemImage: "trash") }
+                    } label: { Image(systemName: "ellipsis.circle") }
+                }
+            }
+        }
+        .fileImporter(isPresented: $importing, allowedContentTypes: [.pdf]) { result in
+            guard case .success(let url) = result else { return }
+            load(url)
+        }
+        .alert("Couldn't read this PDF", isPresented: $failed) {
+            Button("OK", role: .cancel) {}
+        } message: { Text("It should be the Course Registration Confirmation Slip, with the table of courses, days, times and venues.") }
+        .confirmationDialog("Remove the timetable?", isPresented: $confirmRemove, titleVisibility: .visible) {
+            Button("Remove", role: .destructive) { store.remove() }
+        }
+    }
+
+    private func load(_ url: URL) {
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        if let t = TimetableParser.parse(url) { store.replace(with: t) } else { failed = true }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "calendar").font(.system(size: 44)).foregroundStyle(Theme.accent)
+            Text("Your classes, one glance").font(Theme.font(.title3.weight(.semibold))).foregroundStyle(Theme.txt)
+            Text("Upload your Course Registration Confirmation Slip (PDF). It is read on your phone, nothing is sent anywhere. Then add the Class Timetable widget to your home screen.")
+                .font(Theme.read(.subheadline)).foregroundStyle(Theme.muted).multilineTextAlignment(.center)
+            Button { importing = true } label: {
+                Label("Choose PDF", systemImage: "arrow.up.doc").font(Theme.font(.subheadline.weight(.semibold)))
+                    .padding(.horizontal, 20).padding(.vertical, 12)
+                    .background(Theme.accent, in: Capsule()).foregroundStyle(Theme.onAccent)
+            }
+        }
+        .frame(maxWidth: .infinity).padding(.vertical, 40).padding(.horizontal, 8)
+    }
+
+    @ViewBuilder private func content(_ t: TimetableData) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "calendar").foregroundColor(Theme.accent)
+            Text(t.title).font(Theme.font(.subheadline).weight(.semibold)).foregroundColor(Theme.txt)
+            Spacer()
+            Text("\(t.codes.count) subjects · \(creditText(t.credits)) credits").font(Theme.font(.caption)).foregroundColor(Theme.muted)
+        }
+
+        TimetableGrid(data: t, hourHeight: 56, text: Theme.txt, muted: Theme.muted, line: Theme.line, accent: Theme.accent)
+            .frame(height: TimetableGrid.height(for: t, hourHeight: 56))
+            .padding(10)
+            .glowCard()
+
+        VStack(spacing: 0) {
+            let codes = t.codes
+            ForEach(Array(codes.enumerated()), id: \.offset) { i, code in
+                subjectRow(t, code, last: i == codes.count - 1)
+            }
+        }
+        .glowCard()
+
+        Text("To add the widget: touch and hold the home screen, tap +, search iTa'leem and pick Class Timetable.")
+            .font(Theme.font(.caption)).foregroundColor(Theme.muted).padding(.horizontal, 4)
+    }
+
+    private func subjectRow(_ t: TimetableData, _ code: String, last: Bool) -> some View {
+        let mine = t.classes.filter { $0.code == code }
+        let pal = t.palette(code)
+        // the same time and venue on several days is one line: "Mon, Wed · 10:00–11:20 AM"
+        var slots: [(days: [Int], c: TimetableClass)] = []
+        for c in mine {
+            if let i = slots.firstIndex(where: { $0.c.startMin == c.startMin && $0.c.endMin == c.endMin && $0.c.venue == c.venue }) { slots[i].days.append(c.day) }
+            else { slots.append(([c.day], c)) }
+        }
+        return HStack(alignment: .top, spacing: 12) {
+            RoundedRectangle(cornerRadius: 2).fill(pal.accent).frame(width: 4)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(code).font(Theme.font(.subheadline).weight(.semibold)).foregroundColor(Theme.txt)
+                Text(mine[0].title).font(Theme.font(.footnote)).foregroundColor(Theme.txt).lineLimit(2)
+                Text("Section \(mine[0].section) · \(creditText(mine[0].credit)) credit\(mine[0].credit == 1 ? "" : "s")")
+                    .font(Theme.font(.caption)).foregroundColor(Theme.muted)
+                ForEach(Array(slots.enumerated()), id: \.offset) { _, s in
+                    let days = s.days.sorted().map { TimetableText.dayNames[$0 - 1] }.joined(separator: ", ")
+                    Text(days + " · " + s.c.range + (s.c.venue.isEmpty ? "" : " · " + s.c.venue))
+                        .font(Theme.font(.caption)).foregroundColor(Theme.muted)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(Rectangle().fill(Theme.line).frame(height: last ? 0 : 1), alignment: .bottom)
+    }
+
+    private func creditText(_ c: Double) -> String { c == c.rounded() ? "\(Int(c))" : String(format: "%.1f", c) }
+}
