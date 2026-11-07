@@ -195,8 +195,8 @@ struct TimetableBlock: View {
             Text(c.code).font(.system(size: 11 * scale, weight: .bold)).foregroundColor(text)
             Text(c.title).font(.system(size: 10 * scale, weight: .medium)).foregroundColor(text)
             if !c.venue.isEmpty {
-                HStack(alignment: .firstTextBaseline, spacing: 3 * scale) {
-                    Image(systemName: "mappin").font(.system(size: 8 * scale)).foregroundColor(muted)
+                HStack(alignment: .top, spacing: 3 * scale) {
+                    VenuePin(color: muted, size: 7 * scale).padding(.top, 1.5 * scale)
                     Text(c.venue).font(.system(size: 9 * scale)).foregroundColor(muted)
                 }
             }
@@ -207,5 +207,41 @@ struct TimetableBlock: View {
         .padding(.vertical, 7 * scale).padding(.horizontal, 7 * scale)
         .background(tan.opacity(0.15), in: RoundedRectangle(cornerRadius: r, style: .continuous))   // soft tan tint over whatever is behind
         .clipShape(RoundedRectangle(cornerRadius: r, style: .continuous))
+    }
+}
+
+/// The map pin used for venues: a filled teardrop with a round hole (the same one in the design photo)
+private struct PinTriangle: Shape {
+    func path(in r: CGRect) -> Path {
+        let w = r.width
+        var p = Path()
+        p.move(to: CGPoint(x: r.minX + 0.067 * w, y: r.minY + 0.75 * w))
+        p.addLine(to: CGPoint(x: r.minX + 0.933 * w, y: r.minY + 0.75 * w))
+        p.addLine(to: CGPoint(x: r.midX, y: r.minY + 1.3 * w))
+        p.closeSubpath()
+        return p
+    }
+}
+
+struct VenuePin: View {
+    let color: Color
+    let size: CGFloat
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            Circle().frame(width: size, height: size)
+            PinTriangle().frame(width: size, height: size * 1.3)
+        }
+        .frame(width: size, height: size * 1.3)
+        .foregroundColor(color)
+        .mask(
+            ZStack {
+                Rectangle().fill(Color.white)
+                Circle().frame(width: size * 0.36, height: size * 0.36)
+                    .offset(y: -size * 0.15)
+                    .blendMode(.destinationOut)
+            }
+            .compositingGroup()
+        )
     }
 }
