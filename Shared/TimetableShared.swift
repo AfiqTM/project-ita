@@ -173,27 +173,40 @@ struct TimetableGrid: View {
     }
 }
 
-/// One class in the week: code, title, time and venue, all wrapped in full. Same padding on every side.
+/// One class in the week: a dark card with a tan outline and edge, a time pill, then code, title and venue wrapped in full.
 struct TimetableBlock: View {
     let c: TimetableClass
-    let accent: Color   // the app's accent colour (same for every subject)
+    let accent: Color   // kept for the callers; the card itself uses the fixed tan below
     let text: Color
     let muted: Color
     let scale: CGFloat
 
+    private let tan = Color(red: 0xD2 / 255, green: 0xB4 / 255, blue: 0x8C / 255)
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 2 * scale) {
-            Text(c.code).font(.system(size: 10.5 * scale, weight: .bold)).foregroundColor(text)
-            Text(c.title).font(.system(size: 9 * scale, weight: .medium)).foregroundColor(text)
-            Text(c.shortRange).font(.system(size: 9 * scale, weight: .medium)).foregroundColor(text)
+        let r = 10 * scale
+        VStack(alignment: .leading, spacing: 3 * scale) {
+            Text(c.shortRange.replacingOccurrences(of: "–", with: " – "))
+                .font(.system(size: 9.5 * scale, weight: .medium)).foregroundColor(tan)
+                .padding(.horizontal, 6 * scale).padding(.vertical, 2 * scale)
+                .background(tan.opacity(0.18), in: RoundedRectangle(cornerRadius: 6 * scale, style: .continuous))
+                .padding(.bottom, 2 * scale)
+            Text(c.code).font(.system(size: 11 * scale, weight: .bold)).foregroundColor(text)
+            Text(c.title).font(.system(size: 10 * scale, weight: .medium)).foregroundColor(text)
             if !c.venue.isEmpty {
-                Text(c.venue).font(.system(size: 9 * scale)).foregroundColor(muted)
+                HStack(alignment: .firstTextBaseline, spacing: 3 * scale) {
+                    Image(systemName: "mappin").font(.system(size: 8 * scale)).foregroundColor(muted)
+                    Text(c.venue).font(.system(size: 9 * scale)).foregroundColor(muted)
+                }
             }
         }
         .multilineTextAlignment(.leading)
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(7 * scale)
-        .background(accent.opacity(0.15), in: RoundedRectangle(cornerRadius: 8 * scale, style: .continuous))
+        .padding(.vertical, 7 * scale).padding(.leading, 9 * scale).padding(.trailing, 7 * scale)
+        .background(Color(white: 0.075), in: RoundedRectangle(cornerRadius: r, style: .continuous))
+        .overlay(alignment: .leading) { Rectangle().fill(tan).frame(width: 2.5 * scale) }
+        .clipShape(RoundedRectangle(cornerRadius: r, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: r, style: .continuous).strokeBorder(tan.opacity(0.35), lineWidth: 1 * scale))
     }
 }
