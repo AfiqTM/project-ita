@@ -146,7 +146,7 @@ private struct TimetableLayout {
         var w: [Double] = []
         for h in startHour..<endHour {
             let busy = data.classes.contains { $0.startMin < (h + 1) * 60 && $0.endMin > h * 60 }
-            w.append(busy || !compactGaps ? 1 : 0.4)
+            w.append(busy || !compactGaps ? 1 : 0.3)
         }
         weights = w
         var cum: [Double] = [0]

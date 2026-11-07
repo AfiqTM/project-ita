@@ -28,15 +28,21 @@ enum TimetableParser {
             semester = group(m, 3, text)
         }
 
-        // One record per course: a line that starts with a course code, plus the lines after it (a second day
-        // for the same course comes on its own line) until the next code or the "Total" line.
+        // One record per course. PDFKit does not always put a table row on its own line (one row can run into the
+        // next), so the text is flattened and cut at every "<code> <section> <status>" ("BICS 1306 4 R") instead,
+        // from the table header to the "Total" line. A second day for the same course stays inside its record.
+        var flat = text.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+        if let h = flat.range(of: "Venue", options: .caseInsensitive) { flat = String(flat[h.upperBound...]) }
+        if let t = flat.range(of: #"\bTotal\b"#, options: [.regularExpression, .caseInsensitive]) { flat = String(flat[..<t.lowerBound]) }
         var records: [String] = []
-        for l in text.split(separator: "\n").map({ $0.trimmingCharacters(in: .whitespaces) }) where !l.isEmpty {
-            if l.lowercased().hasPrefix("total"), !records.isEmpty { break }
-            if match(#"^[A-Z]{3,5}\s?\d{4}(\s|$)"#, in: l) != nil { records.append(l) }
-            else if !records.isEmpty { records[records.count - 1] += " " + l }
+        if let re = try? NSRegularExpression(pattern: #"(?<![A-Za-z0-9])[A-Z]{3,5}\s?\d{4}\s+\d+\s+[A-Z]\s"#) {
+            let ns = flat as NSString
+            let starts = re.matches(in: flat, range: NSRange(location: 0, length: ns.length)).map { $0.range.location }
+            for (i, s) in starts.enumerated() {
+                let e = i + 1 < starts.count ? starts[i + 1] : ns.length
+                records.append(ns.substring(with: NSRange(location: s, length: e - s)).trimmingCharacters(in: .whitespaces))
+            }
         }
-
         var out: [TimetableClass] = []
         for var r in records {
             r = r.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
