@@ -182,7 +182,6 @@ struct TimetableBlock: View {
     let scale: CGFloat
 
     /// dark text on the tan box
-    /// dark text on the tan box
     private let ink = Color(red: 0.10, green: 0.08, blue: 0.05)
 
     var body: some View {
