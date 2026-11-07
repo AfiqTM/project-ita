@@ -215,7 +215,7 @@ struct TimetableGrid: View {
             ZStack(alignment: .topLeading) {
                 // today's column
                 if let ti = days.firstIndex(of: today) {
-                    Rectangle().fill(accent.opacity(0.06))
+                    Rectangle().fill(accent.opacity(0.05))
                         .frame(width: colW, height: bodyH)
                         .offset(x: labelW + CGFloat(ti) * colW, y: headerH)
                 }
@@ -223,9 +223,12 @@ struct TimetableGrid: View {
                 ForEach(Array(days.enumerated()), id: \.offset) { i, d in
                     Text(TimetableText.dayNames[d - 1])
                         .font(.system(size: 10 * scale, weight: .semibold))
-                        .foregroundColor(d == today ? accent : muted)
+                        .foregroundColor(d == today ? Color.black : muted)
+                        .padding(.horizontal, 6 * scale)
+                        .frame(height: 15 * scale)
+                        .background(d == today ? accent : Color.clear, in: Capsule())
                         .frame(width: colW, height: headerH, alignment: .leading)
-                        .padding(.leading, 4 * scale)
+                        .padding(.leading, 3 * scale)
                         .offset(x: labelW + CGFloat(i) * colW)
                 }
                 // hour lines and labels
@@ -238,11 +241,6 @@ struct TimetableGrid: View {
                             .frame(width: labelW - 4 * scale, alignment: .trailing)
                             .offset(y: yy - 5 * scale)
                     }
-                }
-                // day separators
-                ForEach(0..<days.count, id: \.self) { i in
-                    Rectangle().fill(line).frame(width: 0.5, height: bodyH)
-                        .offset(x: labelW + CGFloat(i) * colW, y: headerH)
                 }
                 // classes
                 ForEach(Array(days.enumerated()), id: \.offset) { i, d in
@@ -289,18 +287,17 @@ struct TimetableBlock: View {
             (c.venue, .system(size: 8 * scale), muted, 2)
         ]
         let shown = Array(lines.prefix(n)).filter { !$0.0.isEmpty }
-        let r = 6 * scale
+        let r = 5 * scale
         VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(shown.enumerated()), id: \.offset) { _, l in
                 Text(l.0).font(l.1).foregroundColor(l.2).lineLimit(l.3).minimumScaleFactor(l.3 > 1 ? 1 : 0.75)
                     .fixedSize(horizontal: false, vertical: l.3 > 1)
             }
         }
-        .padding(.leading, 7 * scale).padding(.top, 3 * scale)
+        .padding(.leading, 6 * scale).padding(.trailing, 2 * scale).padding(.top, 3 * scale)
         .frame(width: width, height: height, alignment: .topLeading)
-        .background(LinearGradient(colors: [accent.opacity(0.26), accent.opacity(0.10)], startPoint: .topLeading, endPoint: .bottomTrailing))
-        .overlay(alignment: .leading) { Capsule().fill(accent).frame(width: 2.5 * scale).padding(.vertical, 4 * scale).padding(.leading, 2.5 * scale) }
-        .overlay(RoundedRectangle(cornerRadius: r, style: .continuous).strokeBorder(accent.opacity(0.35), lineWidth: 0.5))
+        .background(accent.opacity(0.15))
+        .overlay(alignment: .leading) { Rectangle().fill(accent).frame(width: 2 * scale) }
         .clipShape(RoundedRectangle(cornerRadius: r, style: .continuous))
     }
 }
