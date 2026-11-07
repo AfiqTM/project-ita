@@ -181,19 +181,20 @@ struct TimetableBlock: View {
     let muted: Color
     let scale: CGFloat
 
-    var body: some View {
+    /// dark text on the tan box
+    private let ink = Color(red: 0.10, green: 0.08, blue: 0.05)`r`n`r`n    var body: some View {
         VStack(alignment: .leading, spacing: 2 * scale) {
-            Text(c.code).font(.system(size: 10.5 * scale, weight: .bold)).foregroundColor(text)
-            Text(c.title).font(.system(size: 9 * scale, weight: .medium)).foregroundColor(text)
-            Text(c.shortRange).font(.system(size: 9 * scale, weight: .medium)).foregroundColor(text)
+            Text(c.code).font(.system(size: 10.5 * scale, weight: .bold)).foregroundColor(ink)
+            Text(c.title).font(.system(size: 9 * scale, weight: .medium)).foregroundColor(ink)
+            Text(c.shortRange).font(.system(size: 9 * scale, weight: .medium)).foregroundColor(ink)
             if !c.venue.isEmpty {
-                Text(c.venue).font(.system(size: 9 * scale)).foregroundColor(muted)
+                Text(c.venue).font(.system(size: 9 * scale)).foregroundColor(ink.opacity(0.65))
             }
         }
         .multilineTextAlignment(.leading)
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(7 * scale)
-        .background(accent.opacity(0.15), in: RoundedRectangle(cornerRadius: 8 * scale, style: .continuous))
+        .background(Color(red: 0xD2 / 255, green: 0xB4 / 255, blue: 0x8C / 255), in: RoundedRectangle(cornerRadius: 8 * scale, style: .continuous))
     }
 }
