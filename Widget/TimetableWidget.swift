@@ -275,7 +275,7 @@ struct TimetableLockView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
             } else {
-                EmptyView()   // nothing to show: the widget stays blank
+                Color.clear   // nothing to show; needs a real view so containerBackground is applied (EmptyView gives the "Please adopt containerBackground" error)
             }
         }
         .widgetURL(URL(string: "italeem://timetable"))
@@ -360,7 +360,7 @@ struct TimetableTimerView: View {
                 }
                 .gaugeStyle(.accessoryCircularCapacity)
             } else {
-                EmptyView()
+                Color.clear   // blank, but a real view so containerBackground is applied
             }
         }
         .widgetURL(URL(string: "italeem://timetable"))
