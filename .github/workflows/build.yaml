@@ -10,7 +10,14 @@ jobs:
       - uses: actions/checkout@v4
       - name: Generate Xcode project
         run: brew install xcodegen ldid && xcodegen
-      # The tall widget (systemExtraLargePortrait) only exists in the iOS 27 SDK; older Xcode builds skip it
+      # macos-latest defaults to an older Xcode; use the newest one installed so the iOS 27 SDK is picked up when it exists
+      - name: Select newest Xcode
+        run: |
+          ls -d /Applications/Xcode*.app
+          NEWEST=$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)
+          echo "using $NEWEST"
+          sudo xcode-select -s "$NEWEST/Contents/Developer"
+          xcodebuild -version      # The tall widget (systemExtraLargePortrait) only exists in the iOS 27 SDK; older Xcode builds skip it
       - name: Detect SDK
         run: |
           V=$(xcrun --sdk iphoneos --show-sdk-version); echo "iphoneos SDK $V"
