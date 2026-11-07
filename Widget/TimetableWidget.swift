@@ -100,13 +100,25 @@ struct TimetableWidgetView: View {
 
     @ViewBuilder private func small(_ data: TimetableData) -> some View {
         if let up = data.upcoming(from: entry.date), let c = up.classes.first {
-            VStack(alignment: .leading, spacing: 4) {
-                header(isNow(c, up.offset) ? "NOW" : "NEXT", dayLabel(up.offset))
-                Spacer(minLength: 0)
-                Text(c.code).font(.system(size: 18, weight: .bold)).foregroundColor(T.accent).lineLimit(1).minimumScaleFactor(0.7)
-                Text(c.title).font(.system(size: 12, weight: .medium)).foregroundColor(T.txt).lineLimit(2)
-                Text(c.range).font(.system(size: 11)).foregroundColor(T.muted).lineLimit(1).minimumScaleFactor(0.8)
-                if !c.venue.isEmpty { Text(c.venue).font(.system(size: 10)).foregroundColor(T.muted).lineLimit(2).fixedSize(horizontal: false, vertical: true) }
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 5) {
+                    Circle().fill(T.accent).frame(width: 6, height: 6)
+                    Text(isNow(c, up.offset) ? "NOW" : "NEXT").font(.system(size: 10, weight: .bold)).tracking(0.8)
+                        .foregroundColor(T.accent)
+                    Spacer(minLength: 0)
+                    Text(dayLabel(up.offset)).font(.system(size: 10, weight: .medium)).foregroundColor(T.muted).lineLimit(1)
+                }
+                Spacer(minLength: 4)
+                Text(TimetableText.clock(c.startMin))
+                    .font(.system(size: 24, weight: .semibold, design: .rounded)).foregroundColor(T.txt)
+                    .lineLimit(1).minimumScaleFactor(0.6)
+                Text("until " + TimetableText.clock(c.endMin)).font(.system(size: 10)).foregroundColor(T.muted).lineLimit(1)
+                Spacer(minLength: 8)
+                Text(c.title).font(.system(size: 12, weight: .semibold)).foregroundColor(T.txt).lineLimit(2)
+                Text(c.code).font(.system(size: 10, weight: .medium)).foregroundColor(T.accent).lineLimit(1).padding(.top, 2)
+                if !c.venue.isEmpty {
+                    Text(c.venue).font(.system(size: 10)).foregroundColor(T.muted).lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                }
             }
         } else {
             VStack(alignment: .leading, spacing: 4) {
@@ -123,11 +135,17 @@ struct TimetableWidgetView: View {
     @ViewBuilder private func medium(_ data: TimetableData) -> some View {
         if let up = data.upcoming(from: entry.date) {
             let shown = Array(up.classes.prefix(3))
-            VStack(alignment: .leading, spacing: 7) {
-                header(dayLabel(up.offset).uppercased(), data.title)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(dayLabel(up.offset)).font(.system(size: 15, weight: .semibold, design: .rounded)).foregroundColor(T.txt)
+                    Text("\(up.classes.count) class\(up.classes.count == 1 ? "" : "es")").font(.system(size: 10)).foregroundColor(T.muted)
+                    Spacer(minLength: 0)
+                    Text(data.title).font(.system(size: 9)).foregroundColor(T.muted).lineLimit(1)
+                }
+                .padding(.bottom, 2)
                 ForEach(shown) { c in row(data, c, now: isNow(c, up.offset)) }
                 if up.classes.count > shown.count {
-                    Text("+\(up.classes.count - shown.count) more").font(.system(size: 10)).foregroundColor(T.muted)
+                    Text("+\(up.classes.count - shown.count) more").font(.system(size: 10)).foregroundColor(T.muted).padding(.leading, 6)
                 }
                 Spacer(minLength: 0)
             }
@@ -143,24 +161,28 @@ struct TimetableWidgetView: View {
 
     private func row(_ data: TimetableData, _ c: TimetableClass, now: Bool) -> some View {
         HStack(spacing: 8) {
-            Capsule().fill(T.accent).frame(width: 3)
+            VStack(alignment: .trailing, spacing: 1) {
+                Text(TimetableText.clockShort(c.startMin)).font(.system(size: 11, weight: .semibold)).foregroundColor(T.txt)
+                Text(TimetableText.clockShort(c.endMin)).font(.system(size: 9)).foregroundColor(T.muted)
+            }
+            .lineLimit(1).frame(width: 36, alignment: .trailing)
+            Capsule().fill(T.accent.opacity(now ? 1 : 0.5)).frame(width: 3)
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 5) {
-                    Text(c.code).font(.system(size: 12, weight: .bold)).foregroundColor(T.txt)
+                    Text(c.title).font(.system(size: 12, weight: .semibold)).foregroundColor(T.txt).lineLimit(1)
                     if now {
                         Text("NOW").font(.system(size: 8, weight: .bold)).foregroundColor(.black)
                             .padding(.horizontal, 4).padding(.vertical, 1).background(T.accent).clipShape(Capsule())
                     }
-                    Text(c.title).font(.system(size: 11)).foregroundColor(T.muted).lineLimit(1)
                 }
-                // time first, then the venue; the venue may use a second row instead of being cut
-                (Text(c.range).foregroundColor(T.accent) + Text(c.venue.isEmpty ? "" : "  " + c.venue).foregroundColor(T.muted))
-                    .font(.system(size: 10)).lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                // the venue may use a second row instead of being cut
+                Text(c.venue.isEmpty ? c.code : c.code + " · " + c.venue)
+                    .font(.system(size: 10)).foregroundColor(T.muted).lineLimit(2).fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
         }
-        .padding(.vertical, 4).padding(.horizontal, 7)
-        .background(LinearGradient(colors: [T.accent.opacity(0.22), T.accent.opacity(0.08)], startPoint: .leading, endPoint: .trailing))
+        .padding(.vertical, 3).padding(.horizontal, 6)
+        .background(now ? T.accent.opacity(0.16) : Color.clear)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
     // MARK: large

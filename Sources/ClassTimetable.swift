@@ -236,22 +236,31 @@ struct TimetableView: View {
     }
 
     @ViewBuilder private func content(_ t: TimetableData) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: "calendar").font(.system(size: 14, weight: .semibold)).foregroundColor(Theme.accent)
-                .frame(width: 32, height: 32)
-                .background(Theme.accent.opacity(0.15), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            VStack(alignment: .leading, spacing: 1) {
-                Text(t.title).font(Theme.font(.subheadline).weight(.semibold)).foregroundColor(Theme.txt)
-                Text("\(t.codes.count) subjects · \(creditText(t.credits)) credits").font(Theme.font(.caption)).foregroundColor(Theme.muted)
+        VStack(alignment: .leading, spacing: 3) {
+            Text(t.semester.isEmpty ? "Timetable" : "Semester \(t.semester)")
+                .font(Theme.font(.title.weight(.bold))).foregroundColor(Theme.txt)
+            if !t.session.isEmpty {
+                Text("Session \(t.session)").font(Theme.font(.subheadline)).foregroundColor(Theme.muted)
             }
-            Spacer()
         }
-        .padding(.horizontal, 2)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 4)
+
+        HStack(spacing: 10) {
+            stat("\(t.codes.count)", "Subjects")
+            stat(creditText(t.credits), "Credits")
+            stat("\(t.days.count)", "Class days")
+        }
+
+        upNext(t)
+
+        sectionLabel("Week")
         TimetableGrid(data: t, hourHeight: 56, text: Theme.txt, muted: Theme.muted, line: Theme.line, accent: Theme.accent)
             .frame(height: TimetableGrid.height(for: t, hourHeight: 56))
             .padding(10)
             .glowCard()
 
+        sectionLabel("Subjects")
         VStack(spacing: 0) {
             let codes = t.codes
             ForEach(Array(codes.enumerated()), id: \.offset) { i, code in
@@ -264,6 +273,46 @@ struct TimetableView: View {
             .font(Theme.font(.caption)).foregroundColor(Theme.muted).padding(.horizontal, 4)
     }
 
+    private func sectionLabel(_ s: String) -> some View {
+        Text(s.uppercased()).font(Theme.font(.caption.weight(.semibold))).tracking(1)
+            .foregroundColor(Theme.muted)
+            .padding(.horizontal, 4).padding(.top, 4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func stat(_ value: String, _ label: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(value).font(Theme.font(.title2.weight(.semibold))).foregroundColor(Theme.txt)
+            Text(label).font(Theme.font(.caption)).foregroundColor(Theme.muted)
+        }
+        .padding(.horizontal, 14).padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glowCard()
+    }
+
+    /// The class that is on now, or the next one, as one card
+    @ViewBuilder private func upNext(_ t: TimetableData) -> some View {
+        if let up = t.upcoming(from: Date()), let c = up.classes.first {
+            let live = up.offset == 0 && c.startMin <= TimetableText.minutes(Date())
+            HStack(alignment: .top, spacing: 12) {
+                Capsule().fill(Theme.accent).frame(width: 4)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(live ? "HAPPENING NOW" : "UP NEXT · " + TimetableText.dayWord(up.offset).uppercased())
+                        .font(Theme.font(.caption2.weight(.bold))).tracking(0.8).foregroundColor(Theme.accent)
+                    Text(c.title).font(Theme.font(.headline)).foregroundColor(Theme.txt).lineLimit(2)
+                    Text(c.code + " · " + c.range).font(Theme.font(.subheadline)).foregroundColor(Theme.txt.opacity(0.8))
+                    if !c.venue.isEmpty {
+                        Label(c.venue, systemImage: "mappin.and.ellipse").font(Theme.font(.caption)).foregroundColor(Theme.muted)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Theme.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+    }
+
     private func subjectRow(_ t: TimetableData, _ code: String, last: Bool) -> some View {
         let mine = t.classes.filter { $0.code == code }
         // the same time and venue on several days is one line: "Mon, Wed · 10:00–11:20 AM"
@@ -272,33 +321,32 @@ struct TimetableView: View {
             if let i = slots.firstIndex(where: { $0.c.startMin == c.startMin && $0.c.endMin == c.endMin && $0.c.venue == c.venue }) { slots[i].days.append(c.day) }
             else { slots.append(([c.day], c)) }
         }
-        return HStack(alignment: .top, spacing: 12) {
-            Capsule().fill(Theme.accent).frame(width: 4)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(code).font(Theme.font(.subheadline).weight(.semibold)).foregroundColor(Theme.txt)
-                Text(mine[0].title).font(Theme.font(.footnote)).foregroundColor(Theme.txt).lineLimit(2)
-                Text("Section \(mine[0].section) · \(creditText(mine[0].credit)) credit\(mine[0].credit == 1 ? "" : "s")")
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(code).font(Theme.font(.subheadline).weight(.semibold)).foregroundColor(Theme.accent)
+                Spacer(minLength: 8)
+                Text("Sec \(mine[0].section) · \(creditText(mine[0].credit)) cr")
                     .font(Theme.font(.caption)).foregroundColor(Theme.muted)
-                ForEach(Array(slots.enumerated()), id: \.offset) { _, s in
-                    let days = s.days.sorted().map { TimetableText.dayNames[$0 - 1] }.joined(separator: ", ")
-                    VStack(alignment: .leading, spacing: 2) {
+            }
+            Text(mine[0].title).font(Theme.font(.subheadline)).foregroundColor(Theme.txt).lineLimit(2)
+            ForEach(Array(slots.enumerated()), id: \.offset) { _, s in
+                let days = s.days.sorted().map { TimetableText.dayNames[$0 - 1] }.joined(separator: ", ")
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Image(systemName: "clock").font(.system(size: 10)).foregroundColor(Theme.accent).frame(width: 12)
+                        Text(days + " · " + s.c.range).font(Theme.font(.caption)).foregroundColor(Theme.txt)
+                    }
+                    // the venue is never cut: it wraps onto as many rows as it needs
+                    if !s.c.venue.isEmpty {
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
-                            Image(systemName: "clock").font(.system(size: 10)).foregroundColor(Theme.accent).frame(width: 12)
-                            Text(days + " · " + s.c.range).font(Theme.font(.caption)).foregroundColor(Theme.txt)
-                        }
-                        // the venue is never cut: it wraps onto as many rows as it needs
-                        if !s.c.venue.isEmpty {
-                            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                                Image(systemName: "mappin.and.ellipse").font(.system(size: 10)).foregroundColor(Theme.accent).frame(width: 12)
-                                Text(s.c.venue).font(Theme.font(.caption)).foregroundColor(Theme.muted)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
+                            Image(systemName: "mappin.and.ellipse").font(.system(size: 10)).foregroundColor(Theme.accent).frame(width: 12)
+                            Text(s.c.venue).font(Theme.font(.caption)).foregroundColor(Theme.muted)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                     }
-                    .padding(.top, 3)
                 }
+                .padding(.top, 3)
             }
-            Spacer(minLength: 0)
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)

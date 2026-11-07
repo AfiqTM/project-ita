@@ -74,6 +74,16 @@ enum TimetableText {
         return (mm == 0 ? "\(h12):00" : String(format: "%d:%02d", h12, mm), h < 12)
     }
     static func shortRange(_ a: Int, _ b: Int) -> String { "\(parts(a).0)–\(parts(b).0)" }
+    /// "10:00" and "10:00 AM"
+    static func clockShort(_ m: Int) -> String { parts(m).0 }
+    static func clock(_ m: Int) -> String { let p = parts(m); return p.0 + (p.1 ? " AM" : " PM") }
+    /// "Today", "Tomorrow" or the weekday name, for a day `offset` days from now
+    static func dayWord(_ offset: Int, from date: Date = Date()) -> String {
+        if offset == 0 { return "Today" }
+        if offset == 1 { return "Tomorrow" }
+        let d = Calendar.current.date(byAdding: .day, value: offset, to: date) ?? date
+        return dayNames[weekday(d) - 1]
+    }
     /// "8:30–10:00 AM" or "11:30 AM–12:50 PM"
     static func range(_ a: Int, _ b: Int) -> String {
         let (s, sAM) = parts(a), (e, eAM) = parts(b)
