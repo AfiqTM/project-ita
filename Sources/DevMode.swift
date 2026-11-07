@@ -359,23 +359,60 @@ struct DevAttendanceCard: View {
 
 // MARK: - Rows for Others > App Preferences
 
+// MARK: - Screen with all of them (opened with the > on the Dev mode row)
+
+struct DevLogsView: View {
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                Text("Everything here is stored on this phone only. Tap and hold a log to select text, or use Copy. The same logs also show inside each tool.")
+                    .font(Theme.font(.caption)).foregroundColor(Theme.muted)
+                DevHostsCard()
+                DevLogCard(channel: .login)
+                DevAttendanceCard()
+                DevLogCard(channel: .ai)
+            }
+            .padding(16)
+        }
+        .background(Theme.bg.ignoresSafeArea())
+        .navigationTitle("Dev tools")
+        .navigationBarTitleDisplayMode(.inline)
+        .notebookBack()
+    }
+}
+
+// MARK: - Row for Others > App Preferences: the switch, and a > that opens all the logs
+
 struct DevModeRow: View {
     @AppStorage(DevMode.key) private var on = false
+    @State private var open = false
 
     var body: some View {
         HStack(spacing: 14) {
-            RowIcon { Image(systemName: "hammer") }
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Dev mode").foregroundColor(Theme.txt).rocks(15, normal: .subheadline.weight(.semibold))
-                Text(on ? "On · copyable logs" : "Off").font(Theme.font(.caption)).foregroundColor(Theme.muted)
+            Button { open = true } label: {
+                HStack(spacing: 14) {
+                    RowIcon { Image(systemName: "hammer") }
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Dev mode").foregroundColor(Theme.txt).rocks(15, normal: .subheadline.weight(.semibold))
+                        Text(on ? "On · copyable logs" : "Off").font(Theme.font(.caption)).foregroundColor(Theme.muted)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
             }
-            Spacer(minLength: 0)
+            .buttonStyle(.plain)
+
             Toggle("", isOn: $on).labelsHidden().tint(Theme.accent)
-            // same (invisible) chevron as the rows that open a screen, so the switch lines up with theirs
-            Image(systemName: "chevron.right").font(Theme.font(.caption).weight(.semibold)).padding(.vertical, 6).padding(.leading, 2).hidden()
+
+            Button { open = true } label: {
+                Image(systemName: "chevron.right").font(Theme.font(.caption).weight(.semibold)).foregroundColor(Theme.muted)
+                    .padding(.vertical, 6).padding(.leading, 2)
+            }
+            .buttonStyle(.plain)
         }
-        .padding(ThemeStore.shared.theme.isNotebook ? 16 : 14)
+        .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay(RowDivider().frame(height: 1), alignment: .bottom)
+        .overlay(RowDivider(), alignment: .bottom)
+        .navigationDestination(isPresented: $open) { DevLogsView() }
     }
 }
