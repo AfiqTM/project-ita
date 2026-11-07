@@ -38,7 +38,7 @@ final class WebCASLogin: NSObject, ObservableObject, WKNavigationDelegate {
 
     /// Signs in with the saved details in a hidden web view. `code`: authenticator code, if CAS asks for one.
     /// `wantToken`: also fetch an app token. `prompt`: show the code sheet when a code is needed.
-    /// `source` / `log`: how the attempt is recorded in the auto sign-in log (Save login info); callers that log
+    /// `source` / `log`: how the attempt is recorded in the auto sign-in log (Saved login); callers that log
     /// the outcome themselves pass `log: false`.
     func refresh(code: String? = nil, wantToken: Bool = false, prompt: Bool = false,
                  source: String = "Hidden browser", log: Bool = true)

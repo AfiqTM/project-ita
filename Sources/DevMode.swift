@@ -4,10 +4,10 @@ import Combine
 // MARK: - Dev mode (Others > App Preferences > Dev mode)
 //
 // A switch that shows copyable logs for the things that are hard to debug from the outside:
-//   - Save login info: every automatic sign-in and every host the sign-in talked to (for a DNS allowlist)
+//   - Saved login: every automatic sign-in and every host the sign-in talked to (for a DNS allowlist)
 //   - Auto Attendance: the last attempts the server made, and every call the app made to the server
 //   - Noticeboard AI: what was sent to the AI server and what came back, item by item
-// Each log is shown inside its own tool's screen (Save login info, Auto Attendance, Noticeboard).
+// Each log is shown inside its own tool's screen (Saved login, Auto Attendance, Noticeboard).
 // The logs are always kept (a few dozen short lines each, on this phone only); the switch only shows them.
 // Passwords, tokens, access keys and authenticator codes are never written to a log.
 
@@ -26,7 +26,7 @@ enum DevChannel: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .login: return "Save login info"
+        case .login: return "Saved login"
         case .attendance: return "Auto Attendance (app and server)"
         case .ai: return "Noticeboard AI"
         }

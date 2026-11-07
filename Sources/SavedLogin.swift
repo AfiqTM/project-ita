@@ -1,6 +1,6 @@
 import SwiftUI
 
-// MARK: - Save login info (Others > App Preferences > Save login info)
+// MARK: - Saved login (Others > App Preferences > Saved login)
 //
 // Matric no. + password are kept in the iPhone Keychain. When the site token stops working (or the app
 // is signed out without you pressing "Sign out"), the app signs in again by itself with them.
@@ -41,7 +41,7 @@ enum SavedLoginStore {
 
 enum ReloginResult { case ok, unavailable, offline }
 
-// MARK: - Auto sign-in log (the last 6 automatic sign-ins, shown in Save login info)
+// MARK: - Auto sign-in log (the last 6 automatic sign-ins, shown in Saved login)
 
 struct LoginLogEntry: Codable, Identifiable {
     var id = UUID()
@@ -333,7 +333,7 @@ struct SavedLoginView: View {
         }
         .scrollDismissesKeyboard(.interactively)
         .background(Theme.bg.ignoresSafeArea())
-        .navigationTitle("Save login info")
+        .navigationTitle("Saved login")
         .navigationBarTitleDisplayMode(.inline)
         .notebookBack()
         .onAppear { if user.isEmpty { user = SavedLoginStore.load()?.user ?? "" }; log = LoginLog.load() }

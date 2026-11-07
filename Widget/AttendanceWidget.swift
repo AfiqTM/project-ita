@@ -9,6 +9,8 @@ private enum W {
     static let txt    = Color(red: 230 / 255, green: 230 / 255, blue: 230 / 255)
     static let muted  = Color(red: 154 / 255, green: 154 / 255, blue: 154 / 255)
     static let line   = Color(red: 28 / 255, green: 28 / 255, blue: 28 / 255)
+    static let track  = Color(red: 38 / 255, green: 38 / 255, blue: 38 / 255)
+    static let warn   = Color(red: 224 / 255, green: 108 / 255, blue: 98 / 255)
 }
 
 struct AttendanceEntry: TimelineEntry {
@@ -44,38 +46,29 @@ struct AttendanceWidgetView: View {
 
     private var limit: Int {
         switch family {
-        case .systemSmall: return 4
-        case .systemMedium: return 5
-        default: return 10
+        case .systemSmall: return 3
+        case .systemMedium: return 4
+        default: return 9
         }
     }
     private var compact: Bool { family == .systemSmall }
+    private var rowFont: CGFloat { compact ? 11 : 12.5 }
 
-    /// One font size for every row (name and percentage), depending only on widget size.
-    private var rowFontSize: CGFloat { compact ? 11 : 13 }
-
-    /// Fixed width for the percentage column, wide enough for "100%" and "93.3%",
-    /// so every percentage sits in the same spot regardless of the name length.
-    private var percentWidth: CGFloat { compact ? 40 : 48 }
+    /// 80% is the usual attendance minimum, so anything under it is tinted red
+    private func tint(_ p: Double) -> Color { p >= 80 ? W.accent : W.warn }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: compact ? 5 : 7) {
-            Text("MAX ATTENDANCE")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundColor(W.muted)
+        VStack(alignment: .leading, spacing: compact ? 7 : 9) {
+            header
 
             if let s = entry.snapshot, !s.items.isEmpty {
-                ForEach(s.items.prefix(limit)) { row($0) }
+                VStack(alignment: .leading, spacing: compact ? 7 : 9) {
+                    ForEach(s.items.prefix(limit)) { row($0) }
+                }
                 if s.items.count > limit {
                     Text("+\(s.items.count - limit) more").font(.system(size: 10)).foregroundColor(W.muted)
                 }
                 Spacer(minLength: 0)
-                if !compact {
-                    HStack(spacing: 4) {
-                        Text("Updated").font(.system(size: 9)).foregroundColor(W.muted)
-                        Text(s.updated, style: .time).font(.system(size: 9)).foregroundColor(W.muted)
-                    }
-                }
             } else {
                 Spacer(minLength: 0)
                 Text(!entry.shared ? "Can't reach the app's data. The app and widget need the same App Group when signing."
@@ -89,24 +82,46 @@ struct AttendanceWidgetView: View {
         .widgetBackground(W.bg)
     }
 
+    private var header: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "checkmark.circle")
+                .font(.system(size: 11, weight: .semibold)).foregroundColor(W.accent)
+            Text("ATTENDANCE")
+                .font(.system(size: 10, weight: .semibold)).tracking(0.6).foregroundColor(W.accent)
+            Spacer(minLength: 0)
+            if !compact, let s = entry.snapshot {
+                Text(s.updated, style: .time).font(.system(size: 9)).foregroundColor(W.muted)
+            }
+        }
+    }
+
+    /// Subject name and its maximum possible attendance, with a thin bar under them
     private func row(_ i: AttendanceItem) -> some View {
-        HStack(spacing: 6) {
-            Text(i.displayName)   // "SEM1 BICS 1306 Section 04 ..." prefix removed
-                .font(.system(size: rowFontSize))
-                .foregroundColor(W.txt)
-                .lineLimit(1)
-                .truncationMode(.tail)
-            Spacer(minLength: 4)
-            Text(formatPercent(i.percent))
-                .font(.system(size: rowFontSize, weight: .bold))
-                .monospacedDigit()
-                .foregroundColor(W.accent)
-                .lineLimit(1)
-                .frame(width: percentWidth, alignment: .trailing)   // same column for every row
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 6) {
+                Text(i.displayName)   // "SEM1 BICS 1306 Section 04 ..." prefix removed
+                    .font(.system(size: rowFont))
+                    .foregroundColor(W.txt)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer(minLength: 4)
+                Text(formatPercent(i.percent))
+                    .font(.system(size: rowFont, weight: .bold))
+                    .monospacedDigit()
+                    .foregroundColor(tint(i.percent))
+                    .lineLimit(1)
+            }
+            ZStack(alignment: .leading) {
+                Capsule().fill(W.track)
+                GeometryReader { g in
+                    Capsule().fill(tint(i.percent))
+                        .frame(width: g.size.width * CGFloat(min(max(i.percent, 0), 100) / 100))
+                }
+            }
+            .frame(height: 3)
         }
     }
 }
-
 struct AttendanceHomeWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "AttendanceWidget", provider: AttendanceProvider()) { entry in

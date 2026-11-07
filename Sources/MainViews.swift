@@ -819,7 +819,7 @@ struct ProfileView: View {
                                    subtitle: themes.theme.name, showLine: true)
                     }
                     NavigationLink { SavedLoginView() } label: {
-                        ProfileRow(icon: "key", title: "Save login info",
+                        ProfileRow(icon: "key", title: "Saved login",
                                    subtitle: savedLoginSubtitle, showLine: true)
                     }
                     if DevMode.allowed(app.site?.fullname) { DevModeRow() }

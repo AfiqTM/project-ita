@@ -138,11 +138,8 @@ enum AttendanceSync {
             if (perCourse[c.id] ?? 1) > 1 { name += " · " + m.name }
             entries.append((currentIDs.contains(c.id), AttendanceItem(id: m.id, name: name, percent: p)))
         }
-        // Current subjects first, then past ones, so past subjects never push current ones off the widget
-        entries.sort {
-            if $0.isCurrent != $1.isCurrent { return $0.isCurrent }
-            return $0.item.name.localizedCaseInsensitiveCompare($1.item.name) == .orderedAscending
-        }
+        // Current and past subjects are listed together, A to Z
+        entries.sort { $0.item.name.localizedCaseInsensitiveCompare($1.item.name) == .orderedAscending }
         let items = entries.map { $0.item }
 
         // Offline support: also keep each subject's full attendance page for use with no internet

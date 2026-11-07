@@ -85,7 +85,7 @@ final class MoodleAPI {
     }
 
     /// Every call goes through here: if the site says the token is no longer valid and login info is saved
-    /// (Others > Save login info), it signs in again and repeats the call once.
+    /// (Others > Saved login), it signs in again and repeats the call once.
     func raw(_ fn: String, _ params: [String: Any] = [:]) async throws -> Data {
         let used = token
         do {
