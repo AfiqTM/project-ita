@@ -287,8 +287,13 @@ final class AutoAttendance: ObservableObject {
         req.timeoutInterval = 20
         req.setValue(state.key, forHTTPHeaderField: "x-key")
         if let body { req.httpBody = body; req.setValue("application/json", forHTTPHeaderField: "content-type") }
-        let (d, r) = try await URLSession.shared.data(for: req)
+        let result: (Data, URLResponse)
+        do { result = try await URLSession.shared.data(for: req) }
+        catch { DevLog.network(.attendance, error, "\(method) /\(path)"); throw error }
+        let (d, r) = result
         let code = (r as? HTTPURLResponse)?.statusCode ?? -1
+        if let h = b.host, !h.isEmpty { DevLog.host(DevLog.label(b), .ok, "answered \(code)") }
+        if code >= 400 || method != "GET" { DevLog.add(.attendance, "\(method) /\(path) -> \(code)", ok: code < 400) }
         if code == 401 { throw APIError(message: "The server rejected the access key") }
         if code >= 400 { throw APIError(message: "The server answered \(code)") }
         return d
@@ -350,9 +355,11 @@ final class AutoAttendance: ObservableObject {
     func fetchStatus() async {
         guard userid > 0, serverReady, state.master else { return }
         struct R: Decodable { var jobs: [AutoJobStatus]; var lastLogin: Double? }
-        if let d = try? await request("status", query: [URLQueryItem(name: "userid", value: String(userid))]),
-           let r = try? JSONDecoder().decode(R.self, from: d) {
+        do {
+            let d = try await request("status", query: [URLQueryItem(name: "userid", value: String(userid))])
+            let r = try JSONDecoder().decode(R.self, from: d)
             jobs = r.jobs.sorted { $0.from < $1.from }
+            recordAttempts()
             // The server's sign-in used this account's one-key-per-6-minutes allowance: remember it so the app
             // shows the right wait instead of trying and failing
             if let l = r.lastLogin, l > 0 {
@@ -361,7 +368,29 @@ final class AutoAttendance: ObservableObject {
                     UserDefaults.standard.set(t, forKey: k)
                 }
             }
+        } catch let e as DecodingError {
+            DevLog.add(.attendance, "status: the server's reply couldn't be read (\(e.localizedDescription))", ok: false)
+        } catch {
+            // network and HTTP errors were already logged by request()
         }
+    }
+
+    /// Keeps the server's latest attempts (done, failed, or tried and waiting to retry) for the developer log
+    private func recordAttempts() {
+        let tried = jobs.filter { $0.state != "pending" || !($0.msg ?? "").isEmpty }
+            .sorted { $0.fireAt > $1.fireAt }.prefix(8)
+        var lines: [String] = tried.map { j in
+            let name = config(j.cmid)?.name ?? "cmid \(j.cmid)"
+            let mark = j.state == "done" ? "OK" : (j.state == "failed" ? "FAIL" : "RETRY")
+            let win = DevLog.stamp(Date(timeIntervalSince1970: j.from / 1000)) + " to "
+                + DevLog.stamp(Date(timeIntervalSince1970: j.to / 1000))
+            return "[\(DevLog.stamp(Date(timeIntervalSince1970: j.fireAt / 1000)))] \(mark) \(name) | window \(win) | \(j.msg ?? j.state)"
+        }
+        if lines.isEmpty { lines = ["No attempt yet: nothing has fired."] }
+        if let next = jobs.filter({ $0.state == "pending" }).min(by: { $0.fireAt < $1.fireAt }) {
+            lines.append("Next: \(DevLog.stamp(Date(timeIntervalSince1970: next.fireAt / 1000))) \(config(next.cmid)?.name ?? "cmid \(next.cmid)")")
+        }
+        DevLog.setSnapshot(.attendance, lines)
     }
 
     /// App opened: keep the sessions up to date and tell the server
@@ -380,6 +409,7 @@ struct AutoAttendanceView: View {
     @EnvironmentObject var catalog: CourseCatalog
     @ObservedObject private var m = AutoAttendance.shared
     @State private var open: Int?
+    @AppStorage(DevMode.key) private var devOn = false
 
     private var uid: Int { app.site?.userid ?? 0 }
 
@@ -391,6 +421,7 @@ struct AutoAttendanceView: View {
                     serverCard
                     subjectsCard
                 }
+                if devOn { DevAttendanceCard() }
                 if let msg = m.message {
                     Text(msg).font(Theme.font(.caption)).foregroundColor(Theme.muted)
                 }

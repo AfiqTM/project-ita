@@ -27,10 +27,12 @@ final class WebCASLogin: NSObject, ObservableObject, WKNavigationDelegate {
     private var waiter: CheckedContinuation<Bool, Never>?
     private var waitID = 0
     private var caught: URL?
+    private var trace: [String] = []        // what the last attempt did, for the developer log
+    private var lastNavError: String?   // why the last page failed to load
 
     private static let tokenNames: Set<String> = ["token", "otp", "code", "totp", "verificationcode", "passcode"]
     private struct Input { let name: String; let type: String }
-    private struct Probe { let host: String; let path: String; let inputs: [Input]; let msg: String }
+    private struct Probe { let host: String; let path: String; let inputs: [Input]; let msg: String; let hosts: [String] }
 
     // MARK: entry point
 
@@ -52,6 +54,8 @@ final class WebCASLogin: NSObject, ObservableObject, WKNavigationDelegate {
         let r = await t.value
         task = nil
         if log { LoginLog.add(source, ok: r.result == .ok, note: LoginLog.describe(r.result)) }
+        DevLog.add(.login, "Hidden browser [\(source)] " + (r.result == .ok ? "signed in" : LoginLog.describe(r.result))
+                   + (trace.isEmpty ? "" : " | " + trace.joined(separator: " > ")), ok: r.result == .ok)
         switch r.result {
         case .ok: lastFail = .distantPast; needsCode = false
         case .needsCode: lastFail = Date(); if prompt { needsCode = true }
@@ -67,6 +71,7 @@ final class WebCASLogin: NSObject, ObservableObject, WKNavigationDelegate {
         func fail(_ m: String) -> (result: WebLoginResult, session: Session?) { (.failed(m), nil) }
         guard let ssoHost = CASLogin.casURL.host, let siteHost = Site.url.host else { return fail("Bad URLs") }
         let otp = (code ?? "").filter { $0.isNumber }
+        trace = []; lastNavError = nil
 
         let cfg = WKWebViewConfiguration()
         cfg.websiteDataStore = .nonPersistent()
@@ -82,11 +87,17 @@ final class WebCASLogin: NSObject, ObservableObject, WKNavigationDelegate {
         let store = cfg.websiteDataStore.httpCookieStore
         for ck in CASTrust.load() { await store.setCookie(ck) }   // "trusted device" cookie from an earlier sign-in
 
-        guard await navigate({ wv.load(URLRequest(url: CASLogin.casURL)) }) else { return fail("The IIUM sign-in page didn't load") }
+        guard await navigate({ wv.load(URLRequest(url: CASLogin.casURL)) }) else {
+            trace.append("sign-in page did not load")
+            return fail("The IIUM sign-in page didn't load" + (lastNavError.map { " (\($0))" } ?? ""))
+        }
+        trace.append("sign-in page loaded")
 
         var sentCreds = false, sentCode = false, sentDevice = false, idle = 0, done = false
         for _ in 0..<8 {
             guard let p = await probe(wv) else { return fail("Couldn't read the sign-in page") }
+            trace.append("\(p.host)\(p.path)")
+            for h in p.hosts { DevLog.host(h, .seen, "referenced by the sign-in page") }
             if p.host == siteHost {
                 if p.path.contains("/login/") { return fail("iTa'leem didn't accept the IIUM sign-in") }
                 done = true; break
@@ -106,6 +117,7 @@ final class WebCASLogin: NSObject, ObservableObject, WKNavigationDelegate {
                 var f = [tf: otp]
                 if loginAgain, let u = userIn, let pw = passIn { f[u.name] = c.user; f[pw.name] = c.pass }
                 guard await submit(wv, f, host: ssoHost) else { return fail("Couldn't send the code") }
+                trace.append("sent code")
                 sentCode = true; continue
             }
             if loginAgain, let u = userIn, let pw = passIn {
@@ -115,11 +127,13 @@ final class WebCASLogin: NSObject, ObservableObject, WKNavigationDelegate {
                     return (.badCredentials, nil)
                 }
                 guard await submit(wv, [u.name: c.user, pw.name: c.pass], host: ssoHost) else { return fail("Couldn't fill in the sign-in form") }
+                trace.append("sent details")
                 sentCreds = true; continue
             }
             if !sentDevice, let first = p.inputs.first, p.inputs.allSatisfy({ ["text", "email"].contains($0.type) }) {
                 // "trust this device" page: name the device so later sign-ins can skip the code
                 guard await submit(wv, [first.name: "iTa'leem iPhone"], host: ssoHost) else { return fail("Couldn't finish the device step") }
+                trace.append("named device")
                 sentDevice = true; continue
             }
             if p.inputs.isEmpty, idle < 2 { idle += 1; _ = await navigate(timeout: 4) {}; continue }
@@ -163,7 +177,10 @@ final class WebCASLogin: NSObject, ObservableObject, WKNavigationDelegate {
           .map(i => ({name: i.name, type: (i.type || 'text').toLowerCase()}));
         const msg = [...document.querySelectorAll('#msg,.alert,.alert-danger,.error,.text-danger')]
           .map(e => (e.innerText || '').trim()).filter(t => t && !/caps/i.test(t)).join(' / ').slice(0, 300);
-        return JSON.stringify({host: location.hostname, path: location.pathname, inputs: inputs, msg: msg});
+        const hosts = [...new Set([...document.querySelectorAll('script[src],link[href],img[src],iframe[src]')]
+          .map(e => { try { return new URL(e.src || e.href, location.href).host; } catch (_) { return ''; } })
+          .filter(h => h))];
+        return JSON.stringify({host: location.hostname, path: location.pathname, inputs: inputs, msg: msg, hosts: hosts});
         """
         guard let s = try? await wv.callAsyncJavaScript(js, arguments: [:], in: nil, contentWorld: .page) as? String,
               let d = s.data(using: .utf8),
@@ -172,7 +189,8 @@ final class WebCASLogin: NSObject, ObservableObject, WKNavigationDelegate {
             guard let n = i["name"], let t = i["type"] else { return nil }
             return Input(name: n, type: t)
         }
-        return Probe(host: o["host"] as? String ?? "", path: o["path"] as? String ?? "", inputs: ins, msg: o["msg"] as? String ?? "")
+        return Probe(host: o["host"] as? String ?? "", path: o["path"] as? String ?? "", inputs: ins, msg: o["msg"] as? String ?? "",
+                     hosts: o["hosts"] as? [String] ?? [])
     }
 
     /// Types the values into the page's fields and submits the form, then waits for the next page.
@@ -227,7 +245,10 @@ final class WebCASLogin: NSObject, ObservableObject, WKNavigationDelegate {
 
     // MARK: WKNavigationDelegate
 
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { resolveWait(true) }
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        if let u = webView.url, ["http", "https"].contains(u.scheme?.lowercased() ?? "") { DevLog.host(DevLog.label(u), .ok, "page loaded") }
+        resolveWait(true)
+    }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { failed(error) }
 
@@ -236,11 +257,16 @@ final class WebCASLogin: NSObject, ObservableObject, WKNavigationDelegate {
     private func failed(_ error: Error) {
         let e = error as NSError
         if e.domain == NSURLErrorDomain && e.code == NSURLErrorCancelled { return }   // replaced by a redirect
+        lastNavError = "\(e.domain) \(e.code): \(e.localizedDescription)"
+        DevLog.network(.login, error, "hidden browser page")
         resolveWait(false)
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        if let u = navigationAction.request.url, ["http", "https"].contains(u.scheme?.lowercased() ?? "") {
+            DevLog.host(DevLog.label(u), .seen, "visited by the hidden browser")
+        }
         if let u = navigationAction.request.url, u.scheme == "moodlemobile" {
             caught = u
             decisionHandler(.cancel)

@@ -730,6 +730,7 @@ struct ProfileView: View {
     @ObservedObject private var themes = ThemeStore.shared
     @ObservedObject private var studyPlan = StudyPlanStore.shared
     @ObservedObject private var autoAtt = AutoAttendance.shared
+    @AppStorage(DevMode.key) private var devOn = false
 
     /// "AFIQ TAUFIQ BIN MUHAMMAD 2412345" -> "Afiq Taufiq bin Muhammad 2412345" (full name and matric number under My Profile)
     private var shortName: String {
@@ -822,6 +823,13 @@ struct ProfileView: View {
                     NavigationLink { SavedLoginView() } label: {
                         ProfileRow(icon: "key", title: "Save login info",
                                    subtitle: savedLoginSubtitle, showLine: true)
+                    }
+                    DevModeRow()
+                    if devOn {
+                        NavigationLink { DevLogsView() } label: {
+                            ProfileRow(icon: "doc.text.magnifyingglass", title: "Developer logs",
+                                       subtitle: "Save login, Auto Attendance, Noticeboard AI", showLine: true)
+                        }
                     }
                     OfflineSupportRow()
                     if !ThemeStore.shared.theme.isNotebook { Rectangle().fill(Theme.line).frame(height: 1) }   // Offline support has its own line

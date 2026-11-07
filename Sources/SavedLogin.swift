@@ -70,6 +70,7 @@ enum LoginLog {
         all.insert(LoginLogEntry(date: Date(), source: source, ok: ok, note: note), at: 0)
         if all.count > keep { all = Array(all.prefix(keep)) }
         if let d = try? JSONEncoder().encode(all) { UserDefaults.standard.set(d, forKey: key) }
+        DevLog.add(.login, note.isEmpty ? source : source + " · " + note, ok: ok)
     }
     static func clear() { lock.lock(); defer { lock.unlock() }; UserDefaults.standard.removeObject(forKey: key) }
 
@@ -237,6 +238,7 @@ struct SavedLoginView: View {
     @State private var failed = false
     @State private var code = ""
     @State private var log = LoginLog.load()
+    @AppStorage(DevMode.key) private var devOn = false
 
     var body: some View {
         ScrollView {
@@ -320,6 +322,11 @@ struct SavedLoginView: View {
                     }
                 }
                 .padding(16).frame(maxWidth: .infinity, alignment: .leading).glowCard()
+
+                if devOn {
+                    DevHostsCard()
+                    DevLogCard(channel: .login)
+                }
             }
             .padding(16)
         }

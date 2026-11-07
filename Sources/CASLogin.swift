@@ -49,7 +49,11 @@ enum CASLogin {
         defer { http.finishTasksAndInvalidate() }
 
         // 1. the CAS page
-        let (pageData, pageResp) = try await http.data(from: casURL)
+        let pageResult: (Data, URLResponse)
+        do { pageResult = try await http.data(from: casURL) }
+        catch { DevLog.network(.login, error, "IIUM sign-in page"); throw error }
+        let (pageData, pageResp) = pageResult
+        DevLog.host(DevLog.label(casURL), .ok, "sign-in page answered")
         let pageURL = pageResp.url ?? casURL
         let html = String(decoding: pageData, as: UTF8.self)
         guard let form = HTMLForm.loginForm(in: html, base: pageURL) else {
@@ -193,7 +197,8 @@ enum CASLogin {
         req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         req.setValue(referer.absoluteString, forHTTPHeaderField: "Referer")
         req.httpBody = fields.map { "\(enc($0.key))=\(enc($0.value))" }.joined(separator: "&").data(using: .utf8)
-        return try await http.data(for: req)
+        do { return try await http.data(for: req) }
+        catch { DevLog.network(.login, error, "sign-in request"); throw error }
     }
 
     private static func fillDefaults(_ f: inout [String: String]) {

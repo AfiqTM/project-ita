@@ -382,6 +382,10 @@ final class DailyInfoStore: ObservableObject {
 
         // 3. AI first (when the server is set up), the built-in reader for anything the AI didn't answer
         var ai: [String: [DailyDraft]] = [:]
+        if !cands.isEmpty {
+            DevLog.add(.ai, "Scan: \(cands.count) new or edited announcement(s), AI "
+                       + (aiReady ? "on" : "off (server address/key not set), built-in keyword reader used"), ok: aiReady)
+        }
         if aiReady && !cands.isEmpty {
             ai = await DailyInfoAI.classify(cands.map {
                 DailyInfoAI.Item(id: "d\($0.disc.discussion)", course: $0.course.subjectName, posted: $0.posted,
@@ -539,10 +543,20 @@ enum DailyInfoAI {
         while i < items.count {
             let chunk = Array(items[i..<min(i + 4, items.count)])   // a few at a time: keeps each request short
             i += 4
-            guard let reply = await request(base: base, key: key, items: chunk) else { continue }
+            guard let reply = await request(base: base, key: key, items: chunk) else {
+                DevLog.add(.ai, "\(chunk.count) announcement(s) not answered -> built-in keyword reader used", ok: false)
+                continue
+            }
             for it in chunk {
-                guard let outs = reply.results?[it.id] else { continue }
-                all[it.id] = outs.compactMap { draft($0, posted: it.posted) }
+                let tag = "\(it.id) [\(it.course)] \"\(it.title.prefix(50))\""
+                guard let outs = reply.results?[it.id] else {
+                    DevLog.add(.ai, "\(tag): no AI answer -> built-in keyword reader used", ok: false)
+                    continue
+                }
+                let drafts = outs.compactMap { draft($0, posted: it.posted) }
+                all[it.id] = drafts
+                DevLog.add(.ai, "\(tag): " + (drafts.isEmpty ? "AI found no schedule change"
+                    : "AI found " + drafts.map { $0.kind.rawValue + ($0.classDate.map { " " + formatter("yyyy-MM-dd").string(from: $0) } ?? "") }.joined(separator: ", ")), ok: true)
             }
         }
         return all
@@ -564,9 +578,27 @@ enum DailyInfoAI {
             },
         ]
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        guard let (data, resp) = try? await URLSession.shared.data(for: req),
-              (resp as? HTTPURLResponse)?.statusCode == 200 else { return nil }
-        return try? JSONDecoder().decode(Reply.self, from: data)
+        let sent = items.map { "\($0.id) (\($0.text.count) chars)" }.joined(separator: ", ")
+        DevLog.add(.ai, "POST \(DevLog.label(base))/classify: \(sent)")
+        let result: (Data, URLResponse)
+        do { result = try await URLSession.shared.data(for: req) }
+        catch { DevLog.network(.ai, error, "classify"); return nil }
+        let (data, resp) = result
+        let code = (resp as? HTTPURLResponse)?.statusCode ?? -1
+        DevLog.host(DevLog.label(base), .ok, "answered \(code)")
+        let raw = String(data: data, encoding: .utf8) ?? "(not text)"
+        guard code == 200 else {
+            DevLog.add(.ai, "server answered HTTP \(code): \(raw.prefix(300))", ok: false)
+            return nil
+        }
+        guard let reply = try? JSONDecoder().decode(Reply.self, from: data) else {
+            DevLog.add(.ai, "server reply couldn't be read: \(raw.prefix(300))", ok: false)
+            return nil
+        }
+        DevLog.add(.ai, "reply: answered \(reply.results?.count ?? 0) of \(items.count)"
+                   + ((reply.failed ?? []).isEmpty ? "" : ", server failed on \((reply.failed ?? []).joined(separator: ", "))")
+                   + " | \(raw.prefix(400))", ok: true)
+        return reply
     }
 
     private static func draft(_ o: Out, posted: Date) -> DailyDraft? {
