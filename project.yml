@@ -25,6 +25,10 @@ targets:
       properties:
         UIBackgroundModes:
           - fetch
+        CFBundleURLTypes:
+          - CFBundleURLName: com.afiq.italeem
+            CFBundleURLSchemes:
+              - italeem
         BGTaskSchedulerPermittedIdentifiers:
           - italeem.refresh
     settings:

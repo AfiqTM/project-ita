@@ -71,6 +71,7 @@ struct TimetableWidgetView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .widgetURL(URL(string: "italeem://timetable"))   // a tap opens Class Timetable in the app
         .widgetBackground(T.bg)
     }
 

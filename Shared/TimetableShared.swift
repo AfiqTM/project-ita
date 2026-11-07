@@ -19,6 +19,8 @@ struct TimetableClass: Codable, Identifiable, Hashable {
 
     var id: String { "\(code)-\(section)-\(day)-\(startMin)" }
     var range: String { TimetableText.range(startMin, endMin) }
+    /// "8:30–10:00" without AM / PM (the hour labels on the side say which), so it fits a narrow block
+    var shortRange: String { TimetableText.shortRange(startMin, endMin) }
 }
 
 struct TimetableData: Codable {
@@ -38,8 +40,11 @@ struct TimetableData: Codable {
         for c in classes where seen.insert(c.code).inserted { sum += c.credit }
         return sum
     }
-    /// Mon-Fri always, plus Saturday / Sunday when a class is on them
-    var days: [Int] { Array(1...max(5, classes.map { $0.day }.max() ?? 5)) }
+    /// Only the days that have a class, so the columns that are left get wider (empty days are not drawn)
+    var days: [Int] {
+        let used = Array(Set(classes.map { $0.day })).sorted()
+        return used.isEmpty ? [1, 2, 3, 4, 5] : used
+    }
     func palette(_ code: String) -> TimetablePalette { TimetablePalette.all[(codes.firstIndex(of: code) ?? 0) % TimetablePalette.all.count] }
 
     static let sample = TimetableData(session: "2026/2027", semester: "1", classes: [
@@ -68,6 +73,7 @@ enum TimetableText {
         let h12 = h % 12 == 0 ? 12 : h % 12
         return (mm == 0 ? "\(h12):00" : String(format: "%d:%02d", h12, mm), h < 12)
     }
+    static func shortRange(_ a: Int, _ b: Int) -> String { "\(parts(a).0)–\(parts(b).0)" }
     /// "8:30–10:00 AM" or "11:30 AM–12:50 PM"
     static func range(_ a: Int, _ b: Int) -> String {
         let (s, sAM) = parts(a), (e, eAM) = parts(b)
@@ -267,16 +273,18 @@ struct TimetableBlock: View {
     var body: some View {
         let lh = 10.5 * scale
         let n = max(0, min(4, Int((height - 5 * scale) / lh)))
-        let lines: [(String, Font, Color)] = [
-            (c.code, .system(size: 9.5 * scale, weight: .bold), Color.white.opacity(0.95)),
-            (c.title, .system(size: 8.5 * scale), Color.white.opacity(0.78)),
-            (c.range, .system(size: 8 * scale), Color.white.opacity(0.6)),
-            (c.venue, .system(size: 8 * scale), Color.white.opacity(0.6))
+        // room left under the four lines: let the venue wrap onto a second line instead of being cut off
+        let spare = height - 5 * scale - 4 * lh >= lh
+        let lines: [(String, Font, Color, Int)] = [
+            (c.code, .system(size: 9.5 * scale, weight: .bold), Color.white.opacity(0.95), 1),
+            (c.title, .system(size: 8.5 * scale), Color.white.opacity(0.78), 1),
+            (c.shortRange, .system(size: 8 * scale), Color.white.opacity(0.6), 1),
+            (c.venue, .system(size: 8 * scale), Color.white.opacity(0.6), spare ? 2 : 1)
         ]
         let shown = Array(lines.prefix(n)).filter { !$0.0.isEmpty }
         VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(shown.enumerated()), id: \.offset) { _, l in
-                Text(l.0).font(l.1).foregroundColor(l.2).lineLimit(1)
+                Text(l.0).font(l.1).foregroundColor(l.2).lineLimit(l.3).minimumScaleFactor(0.75)
             }
         }
         .padding(.leading, 6 * scale).padding(.top, 3 * scale)
