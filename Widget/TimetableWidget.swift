@@ -205,7 +205,7 @@ struct TimetableHomeWidget: Widget {
 // MARK: - Lock screen widget
 
 // Shows the class from 15 minutes before it starts until it ends: subject name and venue.
-// Outside that window it shows a quiet "No class now" (a lock screen widget can't hide itself).
+// Outside that window it draws nothing (iOS keeps the empty slot, there is just nothing in it).
 
 struct TimetableLockEntry: TimelineEntry {
     let date: Date
@@ -275,7 +275,7 @@ struct TimetableLockView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
             } else {
-                Text("No class now").font(.system(size: 12)).opacity(0.6)
+                EmptyView()   // nothing to show: the widget stays blank
             }
         }
         .widgetURL(URL(string: "italeem://timetable"))
@@ -291,5 +291,96 @@ struct TimetableLockWidget: Widget {
         .configurationDisplayName("Class now (lock screen)")
         .description("The subject and venue, from 15 minutes before a class until it ends.")
         .supportedFamilies([.accessoryRectangular, .accessoryInline])
+    }
+}
+
+// MARK: - Lock screen class timer (circular)
+
+// A ring with the minutes inside. From 15 minutes before a class: minutes until it starts (the ring empties as it
+// gets close). During the class: minutes left (the ring empties until it ends). With no class: nothing is drawn.
+
+struct TimetableTimerEntry: TimelineEntry {
+    let date: Date
+    let minutes: Int?        // nil = nothing to show
+    let fraction: Double     // 1 = full ring
+}
+
+struct TimetableTimerProvider: TimelineProvider {
+    private static let lead = 15
+
+    func placeholder(in context: Context) -> TimetableTimerEntry { TimetableTimerEntry(date: Date(), minutes: 12, fraction: 0.8) }
+
+    private func entry(_ date: Date, _ data: TimetableData?) -> TimetableTimerEntry {
+        let today = TimetableText.weekday(date), m = TimetableText.minutes(date)
+        // same rule as the lock screen class widget: when two are in range the later one wins
+        guard let c = data?.classes
+            .filter({ $0.day == today && m >= $0.startMin - Self.lead && m < $0.endMin })
+            .max(by: { $0.startMin < $1.startMin })
+        else { return TimetableTimerEntry(date: date, minutes: nil, fraction: 0) }
+        if m < c.startMin {
+            let left = c.startMin - m
+            return TimetableTimerEntry(date: date, minutes: left, fraction: Double(left) / Double(Self.lead))
+        }
+        let left = c.endMin - m
+        return TimetableTimerEntry(date: date, minutes: left, fraction: Double(left) / Double(max(c.endMin - c.startMin, 1)))
+    }
+
+    func getSnapshot(in context: Context, completion: @escaping (TimetableTimerEntry) -> Void) {
+        completion(context.isPreview ? placeholder(in: context) : entry(Date(), TimetableStore.load()))
+    }
+
+    func getTimeline(in context: Context, completion: @escaping (Timeline<TimetableTimerEntry>) -> Void) {
+        let now = Date()
+        let cal = Calendar.current
+        let data = TimetableStore.load()
+        var dates = [now]
+        // one entry per minute while a class is near or running, so the number counts down
+        if let data {
+            let today = TimetableText.weekday(now)
+            let start = cal.startOfDay(for: now)
+            for c in data.classes where c.day == today {
+                for m in (c.startMin - Self.lead)...c.endMin {
+                    if let d = cal.date(byAdding: .minute, value: m, to: start), d > now { dates.append(d) }
+                }
+            }
+        }
+        let midnight = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: now)) ?? now.addingTimeInterval(3600 * 6)
+        dates.append(midnight)
+        completion(Timeline(entries: dates.sorted().map { entry($0, data) }, policy: .after(midnight.addingTimeInterval(60))))
+    }
+}
+
+struct TimetableTimerView: View {
+    let entry: TimetableTimerEntry
+
+    var body: some View {
+        Group {
+            if let n = entry.minutes {
+                Gauge(value: max(0, min(entry.fraction, 1))) {
+                    EmptyView()
+                } currentValueLabel: {
+                    VStack(spacing: -1) {
+                        Text("\(n)").font(.system(size: 17, weight: .bold)).minimumScaleFactor(0.6)
+                        Text("min").font(.system(size: 8))
+                    }
+                }
+                .gaugeStyle(.accessoryCircularCapacity)
+            } else {
+                EmptyView()
+            }
+        }
+        .widgetURL(URL(string: "italeem://timetable"))
+        .widgetBackground(Color.clear)
+    }
+}
+
+struct TimetableTimerWidget: Widget {
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: "TimetableTimerWidget", provider: TimetableTimerProvider()) { entry in
+            TimetableTimerView(entry: entry)
+        }
+        .configurationDisplayName("Class timer (lock screen)")
+        .description("A ring with the minutes until the next class starts, or left in the current one. Blank when there is no class.")
+        .supportedFamilies([.accessoryCircular])
     }
 }

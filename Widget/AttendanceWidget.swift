@@ -139,5 +139,6 @@ struct AttendanceWidgetBundle: WidgetBundle {
         AttendanceHomeWidget()
         TimetableHomeWidget()
         TimetableLockWidget()
+        TimetableTimerWidget()
     }
 }
