@@ -252,7 +252,7 @@ struct TimetableView: View {
         }
         .padding(.horizontal, 2)
         TimetableGrid(data: t, text: Theme.txt, muted: Theme.muted, line: Theme.line, accent: Theme.accent, onSelect: { selected = $0 })
-            .padding(10)
+            .padding(5)
             .glowCard()
 
         Text("To add the widget: touch and hold the home screen, tap +, search iTa'leem and pick Class Timetable.")

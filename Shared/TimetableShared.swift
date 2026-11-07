@@ -150,9 +150,9 @@ struct TimetableGrid: View {
 
     var body: some View {
         let today = TimetableText.weekday(Date())
-        HStack(alignment: .top, spacing: 6 * scale) {
+        HStack(alignment: .top, spacing: 3 * scale) {
             ForEach(data.days, id: \.self) { d in
-                VStack(spacing: 6 * scale) {
+                VStack(spacing: 5 * scale) {
                     Text(TimetableText.dayNames[d - 1])
                         .font(.system(size: 11 * scale, weight: .semibold))
                         .foregroundColor(d == today ? Color.black : muted)
