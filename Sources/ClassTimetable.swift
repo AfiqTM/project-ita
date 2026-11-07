@@ -171,9 +171,13 @@ final class TimetableManager: ObservableObject {
 
 struct TimetableView: View {
     @ObservedObject private var store = TimetableManager.shared
+    @EnvironmentObject var app: AppState
+    @AppStorage(DevMode.key) private var devOn = false
     @State private var importing = false
     @State private var failed = false
     @State private var confirmRemove = false
+
+    private var dev: Bool { devOn && DevMode.allowed(app.site?.fullname) }
 
     var body: some View {
         ScrollView {
@@ -191,7 +195,7 @@ struct TimetableView: View {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
                         Button { importing = true } label: { Label("Upload a new PDF", systemImage: "arrow.up.doc") }
-                        Button { UIPasteboard.general.string = store.lastText } label: { Label("Copy text read from PDF", systemImage: "doc.on.doc") }
+                        if dev { Button { UIPasteboard.general.string = store.lastText } label: { Label("Copy text read from PDF", systemImage: "doc.on.doc") } }
                         Button(role: .destructive) { confirmRemove = true } label: { Label("Remove timetable", systemImage: "trash") }
                     } label: { Image(systemName: "ellipsis.circle") }
                 }
@@ -203,7 +207,7 @@ struct TimetableView: View {
         }
         .alert("Couldn't read this PDF", isPresented: $failed) {
             Button("OK", role: .cancel) {}
-        } message: { Text("It should be the Course Registration Confirmation Slip, with the table of courses, days, times and venues. The text that was read has been copied, so you can send it to me.") }
+        } message: { Text("It should be the Course Registration Confirmation Slip, with the table of courses, days, times and venues." + (dev ? " The text that was read has been copied." : "")) }
         .confirmationDialog("Remove the timetable?", isPresented: $confirmRemove, titleVisibility: .visible) {
             Button("Remove", role: .destructive) { store.remove() }
         }
@@ -213,7 +217,7 @@ struct TimetableView: View {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         let r = TimetableParser.read(url)
-        if let t = r.data { store.replace(with: t, text: r.text) } else { UIPasteboard.general.string = r.text; failed = true }
+        if let t = r.data { store.replace(with: t, text: r.text) } else { if dev { UIPasteboard.general.string = r.text }; failed = true }
     }
 
     private var emptyState: some View {
