@@ -5,7 +5,7 @@ on:
     branches: [main]
 jobs:
   build:
-    runs-on: macos-latest
+    runs-on: xcode-27   # GitHub's Xcode 27 image (preview): needed for the tall widget; use macos-latest to go back to Xcode 26
     steps:
       - uses: actions/checkout@v4
       - name: Generate Xcode project
