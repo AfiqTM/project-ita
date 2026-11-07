@@ -255,14 +255,6 @@ struct TimetableView: View {
             .padding(10)
             .glowCard()
 
-        VStack(spacing: 0) {
-            let codes = t.codes
-            ForEach(Array(codes.enumerated()), id: \.offset) { i, code in
-                subjectRow(t, code, last: i == codes.count - 1)
-            }
-        }
-        .glowCard()
-
         Text("To add the widget: touch and hold the home screen, tap +, search iTa'leem and pick Class Timetable.")
             .font(Theme.font(.caption)).foregroundColor(Theme.muted).padding(.horizontal, 4)
     }
