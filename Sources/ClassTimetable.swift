@@ -13,11 +13,38 @@ enum TimetableParser {
     private static let dayTok = "(?:MON|TUE|WED|THU|FRI|SAT|SUN|(?:TH|M|T|W|F|S)(?:-(?:TH|M|T|W|F|S))*)"
     private static let timeTok = "\\d{1,2}(?:[.:]\\d{2})?"
 
-    static func parse(_ url: URL) -> TimetableData? {
-        guard let doc = PDFDocument(url: url), doc.pageCount > 0 else { return nil }
-        var text = ""
-        for i in 0..<doc.pageCount { text += (doc.page(at: i)?.string ?? "") + "\n" }
-        return parse(text: text)
+    /// Reads the PDF two ways and keeps the one that finds more subjects: rows rebuilt from where each piece of text sits
+    /// on the page (reliable for tables), and PDFKit's plain text. `text` is both, so it can be copied when something is off.
+    static func read(_ url: URL) -> (data: TimetableData?, text: String) {
+        guard let doc = PDFDocument(url: url), doc.pageCount > 0 else { return (nil, "") }
+        var plain = ""
+        for i in 0..<doc.pageCount { plain += (doc.page(at: i)?.string ?? "") + "\n" }
+        let rows = rowsText(doc)
+        let text = "ROWS BY POSITION\n" + rows + "\n\nPLAIN TEXT\n" + plain
+        let candidates = [parse(text: rows), parse(text: plain)].compactMap { $0 }
+        let best = candidates.max { Set($0.classes.map { $0.code }).count < Set($1.classes.map { $0.code }).count }
+        return (best, text)
+    }
+
+    /// Text pieces grouped into table rows by their height on the page, left to right inside a row
+    private static func rowsText(_ doc: PDFDocument) -> String {
+        var out = ""
+        for i in 0..<doc.pageCount {
+            guard let page = doc.page(at: i), let sel = page.selection(for: page.bounds(for: .cropBox)) else { continue }
+            var pieces: [(s: String, r: CGRect)] = []
+            for l in sel.selectionsByLine() {
+                let s = (l.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                if !s.isEmpty { pieces.append((s, l.bounds(for: page))) }
+            }
+            pieces.sort { $0.r.midY > $1.r.midY }   // PDF coordinates start at the bottom, so the top row has the biggest y
+            var rows: [[(s: String, r: CGRect)]] = []
+            for p in pieces {
+                if let first = rows.last?.first, abs(first.r.midY - p.r.midY) < 4 { rows[rows.count - 1].append(p) }
+                else { rows.append([p]) }
+            }
+            for r in rows { out += r.sorted { $0.r.minX < $1.r.minX }.map { $0.s }.joined(separator: " ") + "\n" }
+        }
+        return out
     }
 
     static func parse(text raw: String) -> TimetableData? {
@@ -117,14 +144,18 @@ final class TimetableManager: ObservableObject {
     private static let key = "timetable.v1"
 
     @Published private(set) var data: TimetableData?
+    /// What was read from the last PDF, so it can be copied when a class comes out wrong
+    @Published private(set) var lastText = UserDefaults.standard.string(forKey: "timetable.text") ?? ""
 
     private init() {
         if let d = UserDefaults.standard.data(forKey: Self.key), let t = try? JSONDecoder().decode(TimetableData.self, from: d) { data = t }
         else { data = TimetableStore.load() }
     }
 
-    func replace(with t: TimetableData) {
+    func replace(with t: TimetableData, text: String = "") {
         data = t
+        lastText = text
+        UserDefaults.standard.set(text, forKey: "timetable.text")
         if let d = try? JSONEncoder().encode(t) { UserDefaults.standard.set(d, forKey: Self.key) }
         TimetableStore.save(t)
     }
@@ -160,6 +191,7 @@ struct TimetableView: View {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
                         Button { importing = true } label: { Label("Upload a new PDF", systemImage: "arrow.up.doc") }
+                        Button { UIPasteboard.general.string = store.lastText } label: { Label("Copy text read from PDF", systemImage: "doc.on.doc") }
                         Button(role: .destructive) { confirmRemove = true } label: { Label("Remove timetable", systemImage: "trash") }
                     } label: { Image(systemName: "ellipsis.circle") }
                 }
@@ -171,7 +203,7 @@ struct TimetableView: View {
         }
         .alert("Couldn't read this PDF", isPresented: $failed) {
             Button("OK", role: .cancel) {}
-        } message: { Text("It should be the Course Registration Confirmation Slip, with the table of courses, days, times and venues.") }
+        } message: { Text("It should be the Course Registration Confirmation Slip, with the table of courses, days, times and venues. The text that was read has been copied, so you can send it to me.") }
         .confirmationDialog("Remove the timetable?", isPresented: $confirmRemove, titleVisibility: .visible) {
             Button("Remove", role: .destructive) { store.remove() }
         }
@@ -180,7 +212,8 @@ struct TimetableView: View {
     private func load(_ url: URL) {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-        if let t = TimetableParser.parse(url) { store.replace(with: t) } else { failed = true }
+        let r = TimetableParser.read(url)
+        if let t = r.data { store.replace(with: t, text: r.text) } else { UIPasteboard.general.string = r.text; failed = true }
     }
 
     private var emptyState: some View {
