@@ -181,23 +181,19 @@ struct TimetableBlock: View {
     let muted: Color
     let scale: CGFloat
 
-    /// white text and a tan outline; the box itself is clear, so it shows the background behind it
-    private let ink = Color.white
-    private let outline = Color(red: 0xD2 / 255, green: 0xB4 / 255, blue: 0x8C / 255)
-
     var body: some View {
         VStack(alignment: .leading, spacing: 2 * scale) {
-            Text(c.code).font(.system(size: 10.5 * scale, weight: .bold)).foregroundColor(ink)
-            Text(c.title).font(.system(size: 9 * scale, weight: .medium)).foregroundColor(ink)
-            Text(c.shortRange).font(.system(size: 9 * scale, weight: .medium)).foregroundColor(ink)
+            Text(c.code).font(.system(size: 10.5 * scale, weight: .bold)).foregroundColor(text)
+            Text(c.title).font(.system(size: 9 * scale, weight: .medium)).foregroundColor(text)
+            Text(c.shortRange).font(.system(size: 9 * scale, weight: .medium)).foregroundColor(text)
             if !c.venue.isEmpty {
-                Text(c.venue).font(.system(size: 9 * scale)).foregroundColor(ink.opacity(0.65))
+                Text(c.venue).font(.system(size: 9 * scale)).foregroundColor(muted)
             }
         }
         .multilineTextAlignment(.leading)
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(7 * scale)
-                .overlay(RoundedRectangle(cornerRadius: 8 * scale, style: .continuous).strokeBorder(outline, lineWidth: 1.2 * scale))
+        .background(accent.opacity(0.15), in: RoundedRectangle(cornerRadius: 8 * scale, style: .continuous))
     }
 }
