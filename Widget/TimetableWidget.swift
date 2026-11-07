@@ -100,11 +100,10 @@ struct TimetableWidgetView: View {
 
     @ViewBuilder private func small(_ data: TimetableData) -> some View {
         if let up = data.upcoming(from: entry.date), let c = up.classes.first {
-            let pal = data.palette(c.code)
             VStack(alignment: .leading, spacing: 4) {
                 header(isNow(c, up.offset) ? "NOW" : "NEXT", dayLabel(up.offset))
                 Spacer(minLength: 0)
-                Text(c.code).font(.system(size: 18, weight: .bold)).foregroundColor(pal.accent).lineLimit(1).minimumScaleFactor(0.7)
+                Text(c.code).font(.system(size: 18, weight: .bold)).foregroundColor(T.accent).lineLimit(1).minimumScaleFactor(0.7)
                 Text(c.title).font(.system(size: 12, weight: .medium)).foregroundColor(T.txt).lineLimit(2)
                 Text(c.range).font(.system(size: 11)).foregroundColor(T.muted).lineLimit(1).minimumScaleFactor(0.8)
                 if !c.venue.isEmpty { Text(c.venue).font(.system(size: 10)).foregroundColor(T.muted).lineLimit(1) }
@@ -143,15 +142,14 @@ struct TimetableWidgetView: View {
     }
 
     private func row(_ data: TimetableData, _ c: TimetableClass, now: Bool) -> some View {
-        let pal = data.palette(c.code)
         return HStack(spacing: 8) {
-            RoundedRectangle(cornerRadius: 1.5).fill(pal.accent).frame(width: 3)
+            RoundedRectangle(cornerRadius: 1.5).fill(T.accent).frame(width: 3)
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 5) {
                     Text(c.code).font(.system(size: 12, weight: .bold)).foregroundColor(T.txt)
                     if now {
                         Text("NOW").font(.system(size: 8, weight: .bold)).foregroundColor(.black)
-                            .padding(.horizontal, 4).padding(.vertical, 1).background(pal.accent).clipShape(Capsule())
+                            .padding(.horizontal, 4).padding(.vertical, 1).background(T.accent).clipShape(Capsule())
                     }
                     Text(c.title).font(.system(size: 11)).foregroundColor(T.muted).lineLimit(1)
                 }
@@ -161,7 +159,7 @@ struct TimetableWidgetView: View {
             Spacer(minLength: 0)
         }
         .padding(.vertical, 3).padding(.horizontal, 6)
-        .background(pal.fill)
+        .background(T.accent.opacity(0.16))
         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
 

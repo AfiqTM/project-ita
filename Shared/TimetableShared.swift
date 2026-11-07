@@ -253,7 +253,7 @@ struct TimetableGrid: View {
                         let w = (colW - 2) / CGFloat(l.of)
                         let y0 = headerH + CGFloat(lay.y(c.startMin)) * unit + 0.5
                         let y1 = headerH + CGFloat(lay.y(c.endMin)) * unit - 0.5
-                        TimetableBlock(c: c, pal: data.palette(c.code), width: w - 1, height: max(y1 - y0, 4), scale: scale)
+                        TimetableBlock(c: c, accent: accent, width: w - 1, height: max(y1 - y0, 4), scale: scale)
                             .offset(x: labelW + CGFloat(i) * colW + 1 + CGFloat(l.lane) * w, y: y0)
                     }
                 }
@@ -265,7 +265,7 @@ struct TimetableGrid: View {
 /// One class in the week: as many lines as fit (code, title, time, venue)
 struct TimetableBlock: View {
     let c: TimetableClass
-    let pal: TimetablePalette
+    let accent: Color   // the app's accent colour (same for every subject)
     let width: CGFloat
     let height: CGFloat
     let scale: CGFloat
@@ -273,25 +273,25 @@ struct TimetableBlock: View {
     var body: some View {
         let lh = 10.5 * scale
         let n = max(0, min(4, Int((height - 5 * scale) / lh)))
-        // room left under the four lines: let the venue wrap onto a second line instead of being cut off
-        let spare = height - 5 * scale - 4 * lh >= lh
+        // the venue always gets two rows so a long location is shown in full
         let lines: [(String, Font, Color, Int)] = [
             (c.code, .system(size: 9.5 * scale, weight: .bold), Color.white.opacity(0.95), 1),
             (c.title, .system(size: 8.5 * scale), Color.white.opacity(0.78), 1),
             (c.shortRange, .system(size: 8 * scale), Color.white.opacity(0.6), 1),
-            (c.venue, .system(size: 8 * scale), Color.white.opacity(0.6), spare ? 2 : 1)
+            (c.venue, .system(size: 8 * scale), Color.white.opacity(0.6), 2)
         ]
         let shown = Array(lines.prefix(n)).filter { !$0.0.isEmpty }
         VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(shown.enumerated()), id: \.offset) { _, l in
-                Text(l.0).font(l.1).foregroundColor(l.2).lineLimit(l.3).minimumScaleFactor(0.75)
+                Text(l.0).font(l.1).foregroundColor(l.2).lineLimit(l.3).minimumScaleFactor(l.3 > 1 ? 1 : 0.75)
+                    .fixedSize(horizontal: false, vertical: l.3 > 1)
             }
         }
         .padding(.leading, 6 * scale).padding(.top, 3 * scale)
         .frame(width: width, height: height, alignment: .topLeading)
-        .background(pal.fill)
-        .overlay(alignment: .leading) { Rectangle().fill(pal.accent).frame(width: 2.5 * scale) }
-        .overlay(RoundedRectangle(cornerRadius: 5 * scale, style: .continuous).strokeBorder(pal.accent.opacity(0.3), lineWidth: 0.5))
+        .background(accent.opacity(0.16))
+        .overlay(alignment: .leading) { Rectangle().fill(accent).frame(width: 2.5 * scale) }
+        .overlay(RoundedRectangle(cornerRadius: 5 * scale, style: .continuous).strokeBorder(accent.opacity(0.3), lineWidth: 0.5))
         .clipShape(RoundedRectangle(cornerRadius: 5 * scale, style: .continuous))
     }
 }

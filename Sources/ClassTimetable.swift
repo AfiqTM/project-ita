@@ -262,7 +262,6 @@ struct TimetableView: View {
 
     private func subjectRow(_ t: TimetableData, _ code: String, last: Bool) -> some View {
         let mine = t.classes.filter { $0.code == code }
-        let pal = t.palette(code)
         // the same time and venue on several days is one line: "Mon, Wed · 10:00–11:20 AM"
         var slots: [(days: [Int], c: TimetableClass)] = []
         for c in mine {
@@ -270,7 +269,7 @@ struct TimetableView: View {
             else { slots.append(([c.day], c)) }
         }
         return HStack(alignment: .top, spacing: 12) {
-            RoundedRectangle(cornerRadius: 2).fill(pal.accent).frame(width: 4)
+            RoundedRectangle(cornerRadius: 2).fill(Theme.accent).frame(width: 4)
             VStack(alignment: .leading, spacing: 3) {
                 Text(code).font(Theme.font(.subheadline).weight(.semibold)).foregroundColor(Theme.txt)
                 Text(mine[0].title).font(Theme.font(.footnote)).foregroundColor(Theme.txt).lineLimit(2)
