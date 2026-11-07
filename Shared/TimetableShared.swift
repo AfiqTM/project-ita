@@ -173,7 +173,7 @@ struct TimetableGrid: View {
     }
 }
 
-/// One class in the week: a dark card with a tan outline, a time pill, then code, title and venue wrapped in full.
+/// One class in the week: a dark card with a time pill, then code, title and venue wrapped in full.
 struct TimetableBlock: View {
     let c: TimetableClass
     let accent: Color   // kept for the callers; the card itself uses the fixed tan below
@@ -207,6 +207,5 @@ struct TimetableBlock: View {
         .padding(.vertical, 7 * scale).padding(.horizontal, 7 * scale)
         .background(Color(white: 0.075), in: RoundedRectangle(cornerRadius: r, style: .continuous))
         .clipShape(RoundedRectangle(cornerRadius: r, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: r, style: .continuous).strokeBorder(tan.opacity(0.35), lineWidth: 1 * scale))
     }
 }
