@@ -205,7 +205,7 @@ struct TimetableBlock: View {
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 7 * scale).padding(.horizontal, 7 * scale)
-        .background(tan.opacity(0.15), in: RoundedRectangle(cornerRadius: r, style: .continuous))   // soft tan tint over whatever is behind
+        .background(tan.opacity(0.08), in: RoundedRectangle(cornerRadius: r, style: .continuous))   // soft tan tint over whatever is behind
         .clipShape(RoundedRectangle(cornerRadius: r, style: .continuous))
     }
 }
