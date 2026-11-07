@@ -181,8 +181,9 @@ struct TimetableBlock: View {
     let muted: Color
     let scale: CGFloat
 
-    /// tan text; the box itself is clear, so it shows the background behind it
-    private let ink = Color(red: 0xD2 / 255, green: 0xB4 / 255, blue: 0x8C / 255)
+    /// white text and a tan outline; the box itself is clear, so it shows the background behind it
+    private let ink = Color.white
+    private let outline = Color(red: 0xD2 / 255, green: 0xB4 / 255, blue: 0x8C / 255)
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2 * scale) {
@@ -197,6 +198,6 @@ struct TimetableBlock: View {
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(7 * scale)
-                .overlay(RoundedRectangle(cornerRadius: 8 * scale, style: .continuous).strokeBorder(ink, lineWidth: 1.2 * scale))
+                .overlay(RoundedRectangle(cornerRadius: 8 * scale, style: .continuous).strokeBorder(outline, lineWidth: 1.2 * scale))
     }
 }
