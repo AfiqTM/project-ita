@@ -138,5 +138,6 @@ struct AttendanceWidgetBundle: WidgetBundle {
     var body: some Widget {
         AttendanceHomeWidget()
         TimetableHomeWidget()
+        TimetableLockWidget()
     }
 }

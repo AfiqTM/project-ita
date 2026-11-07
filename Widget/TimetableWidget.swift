@@ -200,3 +200,96 @@ struct TimetableHomeWidget: Widget {
         return f
     }
 }
+
+
+// MARK: - Lock screen widget
+
+// Shows the class from 15 minutes before it starts until it ends: subject name and venue.
+// Outside that window it shows a quiet "No class now" (a lock screen widget can't hide itself).
+
+struct TimetableLockEntry: TimelineEntry {
+    let date: Date
+    let current: TimetableClass?
+    let ongoing: Bool
+}
+
+struct TimetableLockProvider: TimelineProvider {
+    private static let lead = 15   // minutes before the class
+
+    func placeholder(in context: Context) -> TimetableLockEntry {
+        TimetableLockEntry(date: Date(), current: TimetableData.sample.classes[2], ongoing: true)
+    }
+
+    private func entry(_ date: Date, _ data: TimetableData?) -> TimetableLockEntry {
+        let today = TimetableText.weekday(date), m = TimetableText.minutes(date)
+        let c = data?.classes
+            .filter { $0.day == today && m >= $0.startMin - Self.lead && m < $0.endMin }
+            .min { $0.startMin < $1.startMin }
+        return TimetableLockEntry(date: date, current: c, ongoing: c.map { m >= $0.startMin } ?? false)
+    }
+
+    func getSnapshot(in context: Context, completion: @escaping (TimetableLockEntry) -> Void) {
+        completion(context.isPreview ? placeholder(in: context) : entry(Date(), TimetableStore.load()))
+    }
+
+    func getTimeline(in context: Context, completion: @escaping (Timeline<TimetableLockEntry>) -> Void) {
+        let now = Date()
+        let cal = Calendar.current
+        let data = TimetableStore.load()
+        var dates = [now]
+        // refresh 15 min before each class, when it starts and when it ends
+        if let data {
+            let today = TimetableText.weekday(now)
+            let start = cal.startOfDay(for: now)
+            for c in data.classes where c.day == today {
+                for m in [c.startMin - Self.lead, c.startMin, c.endMin] {
+                    if let d = cal.date(byAdding: .minute, value: m, to: start), d > now { dates.append(d) }
+                }
+            }
+        }
+        let midnight = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: now)) ?? now.addingTimeInterval(3600 * 6)
+        dates.append(midnight)
+        completion(Timeline(entries: dates.sorted().map { entry($0, data) }, policy: .after(midnight.addingTimeInterval(60))))
+    }
+}
+
+struct TimetableLockView: View {
+    @Environment(\.widgetFamily) private var family
+    let entry: TimetableLockEntry
+
+    var body: some View {
+        Group {
+            if let c = entry.current {
+                switch family {
+                case .accessoryInline:
+                    Text("\(c.title)\(c.venue.isEmpty ? "" : " · " + c.venue)")
+                default:
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text((entry.ongoing ? "NOW" : "SOON") + " · " + c.range)
+                            .font(.system(size: 10, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.7).opacity(0.7)
+                        Text(c.title).font(.system(size: 14, weight: .bold)).lineLimit(1).minimumScaleFactor(0.7)
+                        if !c.venue.isEmpty {
+                            Text(c.venue).font(.system(size: 11)).lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            } else {
+                Text("No class now").font(.system(size: 12)).opacity(0.6)
+            }
+        }
+        .widgetURL(URL(string: "italeem://timetable"))
+        .widgetBackground(Color.clear)
+    }
+}
+
+struct TimetableLockWidget: Widget {
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: "TimetableLockWidget", provider: TimetableLockProvider()) { entry in
+            TimetableLockView(entry: entry)
+        }
+        .configurationDisplayName("Class now (lock screen)")
+        .description("The subject and venue, from 15 minutes before a class until it ends.")
+        .supportedFamilies([.accessoryRectangular, .accessoryInline])
+    }
+}
