@@ -197,6 +197,6 @@ struct TimetableBlock: View {
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(7 * scale)
-                .overlay(RoundedRectangle(cornerRadius: 8 * scale, style: .continuous).strokeBorder(Color(red: 0.36, green: 0.26, blue: 0.14), lineWidth: 1.2 * scale))
+                .overlay(RoundedRectangle(cornerRadius: 8 * scale, style: .continuous).strokeBorder(ink, lineWidth: 1.2 * scale))
     }
 }
