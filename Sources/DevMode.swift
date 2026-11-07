@@ -1,18 +1,24 @@
 import SwiftUI
 import Combine
 
-// MARK: - Developer mode (Others > App Preferences > Developer mode)
+// MARK: - Dev mode (Others > App Preferences > Dev mode)
 //
 // A switch that shows copyable logs for the things that are hard to debug from the outside:
 //   - Save login info: every automatic sign-in and every host the sign-in talked to (for a DNS allowlist)
 //   - Auto Attendance: the last attempts the server made, and every call the app made to the server
 //   - Noticeboard AI: what was sent to the AI server and what came back, item by item
+// Each log is shown inside its own tool's screen (Save login info, Auto Attendance, Noticeboard).
 // The logs are always kept (a few dozen short lines each, on this phone only); the switch only shows them.
 // Passwords, tokens, access keys and authenticator codes are never written to a log.
 
 enum DevMode {
     static let key = "dev.enabled"
     static var on: Bool { UserDefaults.standard.bool(forKey: key) }
+
+    /// Dev mode is only offered to the account named Muhammad Afiq
+    static func allowed(_ fullname: String?) -> Bool {
+        (fullname ?? "").lowercased().contains("muhammad afiq")
+    }
 }
 
 enum DevChannel: String, CaseIterable, Identifiable {
@@ -351,28 +357,6 @@ struct DevAttendanceCard: View {
     }
 }
 
-// MARK: - Screen with all of them
-
-struct DevLogsView: View {
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                Text("Everything here is stored on this phone only. Tap and hold a log to select text, or use Copy.")
-                    .font(Theme.font(.caption)).foregroundColor(Theme.muted)
-                DevHostsCard()
-                DevLogCard(channel: .login)
-                DevAttendanceCard()
-                DevLogCard(channel: .ai)
-            }
-            .padding(16)
-        }
-        .background(Theme.bg.ignoresSafeArea())
-        .navigationTitle("Developer logs")
-        .navigationBarTitleDisplayMode(.inline)
-        .notebookBack()
-    }
-}
-
 // MARK: - Rows for Others > App Preferences
 
 struct DevModeRow: View {
@@ -382,11 +366,13 @@ struct DevModeRow: View {
         HStack(spacing: 14) {
             RowIcon { Image(systemName: "hammer") }
             VStack(alignment: .leading, spacing: 3) {
-                Text("Developer mode").foregroundColor(Theme.txt).rocks(15, normal: .subheadline.weight(.semibold))
+                Text("Dev mode").foregroundColor(Theme.txt).rocks(15, normal: .subheadline.weight(.semibold))
                 Text(on ? "On · copyable logs" : "Off").font(Theme.font(.caption)).foregroundColor(Theme.muted)
             }
             Spacer(minLength: 0)
             Toggle("", isOn: $on).labelsHidden().tint(Theme.accent)
+            // same (invisible) chevron as the rows that open a screen, so the switch lines up with theirs
+            Image(systemName: "chevron.right").font(Theme.font(.caption).weight(.semibold)).padding(.vertical, 6).padding(.leading, 2).hidden()
         }
         .padding(ThemeStore.shared.theme.isNotebook ? 16 : 14)
         .frame(maxWidth: .infinity, alignment: .leading)

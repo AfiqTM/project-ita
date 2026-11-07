@@ -421,7 +421,7 @@ struct AutoAttendanceView: View {
                     serverCard
                     subjectsCard
                 }
-                if devOn { DevAttendanceCard() }
+                if devOn && DevMode.allowed(app.site?.fullname) { DevAttendanceCard() }
                 if let msg = m.message {
                     Text(msg).font(Theme.font(.caption)).foregroundColor(Theme.muted)
                 }

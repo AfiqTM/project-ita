@@ -138,6 +138,8 @@ extension View {
 
 struct DailyInfoView: View {
     @EnvironmentObject var catalog: CourseCatalog
+    @EnvironmentObject var app: AppState
+    @AppStorage(DevMode.key) private var devOn = false
     @ObservedObject private var store = DailyInfoStore.shared
     @State private var kindFilter: DailyKind?
     @State private var courseFilter: Int?
@@ -217,6 +219,7 @@ struct DailyInfoView: View {
                         .transition(.asymmetric(insertion: .opacity, removal: .identity))
                     }
                 }
+                if devOn && DevMode.allowed(app.site?.fullname) { DevLogCard(channel: .ai) }
                 if visible.isEmpty { emptyState.padding(.top, -16).transition(.opacity) }   // -16: the empty block above still has its gap
                 Spacer(minLength: 110)
             }

@@ -238,6 +238,7 @@ struct SavedLoginView: View {
     @State private var failed = false
     @State private var code = ""
     @State private var log = LoginLog.load()
+    @EnvironmentObject var app: AppState
     @AppStorage(DevMode.key) private var devOn = false
 
     var body: some View {
@@ -323,7 +324,7 @@ struct SavedLoginView: View {
                 }
                 .padding(16).frame(maxWidth: .infinity, alignment: .leading).glowCard()
 
-                if devOn {
+                if devOn && DevMode.allowed(app.site?.fullname) {
                     DevHostsCard()
                     DevLogCard(channel: .login)
                 }
