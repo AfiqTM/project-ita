@@ -211,9 +211,16 @@ struct CoursesView: View {
         guard !cleanQuery.isEmpty else { return [] }
         var seen = Set<Int>()
         let pool = (allCourses + courses).filter { seen.insert($0.id).inserted }
-        return pool.compactMap { c in rank(c, cleanQuery).map { (c, $0) } }
-            .sorted { $0.1 != $1.1 ? $0.1 < $1.1 : $0.0.fullname < $1.0.fullname }
-            .prefix(5).map { $0.0 }
+        // split into steps: Xcode 27's type checker gave up on the one-line version
+        var ranked: [(course: Course, rank: Int)] = []
+        for c in pool {
+            if let r = rank(c, cleanQuery) { ranked.append((c, r)) }
+        }
+        ranked.sort { (a: (course: Course, rank: Int), b: (course: Course, rank: Int)) -> Bool in
+            if a.rank != b.rank { return a.rank < b.rank }
+            return a.course.fullname < b.course.fullname
+        }
+        return ranked.prefix(5).map { $0.course }
     }
 
     private var visibleCourses: [Course] {
