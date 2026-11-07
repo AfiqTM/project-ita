@@ -306,8 +306,6 @@ struct TimetableTimerEntry: TimelineEntry {
 }
 
 struct TimetableTimerProvider: TimelineProvider {
-    private static let lead = 15
-
     func placeholder(in context: Context) -> TimetableTimerEntry { TimetableTimerEntry(date: Date(), minutes: 12, fraction: 0.8) }
 
     private func entry(_ date: Date, _ data: TimetableData?) -> TimetableTimerEntry {
@@ -334,12 +332,12 @@ struct TimetableTimerProvider: TimelineProvider {
         let cal = Calendar.current
         let data = TimetableStore.load()
         var dates = [now]
-        // one entry per minute while a class is near or running, so the number counts down
+        // one entry per minute while a class is running, so the number counts down
         if let data {
             let today = TimetableText.weekday(now)
             let start = cal.startOfDay(for: now)
             for c in data.classes where c.day == today {
-                for m in (c.startMin - Self.lead)...c.endMin {
+                for m in c.startMin...c.endMin {
                     if let d = cal.date(byAdding: .minute, value: m, to: start), d > now { dates.append(d) }
                 }
             }
@@ -380,7 +378,7 @@ struct TimetableTimerWidget: Widget {
             TimetableTimerView(entry: entry)
         }
         .configurationDisplayName("Class timer (lock screen)")
-        .description("A ring with the minutes until the next class starts, or left in the current one. Blank when there is no class.")
+        .description("A ring with the minutes left until the current class ends. Blank when there is no class.")
         .supportedFamilies([.accessoryCircular])
     }
 }
