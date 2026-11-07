@@ -210,7 +210,7 @@ struct TimetableView: View {
             Button("OK", role: .cancel) {}
         } message: { Text("It should be the Course Registration Confirmation Slip, with the table of courses, days, times and venues." + (dev ? " The text that was read has been copied." : "")) }
         .sheet(item: $selected) { c in
-            TimetableDetail(c: c).presentationDetents([.medium])
+            TimetableDetail(c: c)
         }
         .confirmationDialog("Remove the timetable?", isPresented: $confirmRemove, titleVisibility: .visible) {
             Button("Remove", role: .destructive) { store.remove() }
@@ -314,6 +314,7 @@ struct TimetableView: View {
 /// A subject from the week, enlarged
 private struct TimetableDetail: View {
     let c: TimetableClass
+    @State private var height: CGFloat = 320
     private let days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
     private func row(_ icon: String, _ s: String) -> some View {
@@ -334,10 +335,18 @@ private struct TimetableDetail: View {
             row("clock", c.range)
             if !c.venue.isEmpty { row("mappin.and.ellipse", c.venue) }
             row("person.2", "Section \(c.section) · \(c.credit == c.credit.rounded() ? "\(Int(c.credit))" : String(format: "%.1f", c.credit)) credit\(c.credit == 1 ? "" : "s")")
-            Spacer(minLength: 0)
         }
-        .padding(24)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(.horizontal, 24).padding(.top, 28).padding(.bottom, 12)
+        .background(GeometryReader { g in Color.clear.preference(key: TimetableSheetHeight.self, value: g.size.height) })
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .frame(maxHeight: .infinity, alignment: .top)
         .background(Theme.bg.ignoresSafeArea())
+        .onPreferenceChange(TimetableSheetHeight.self) { height = $0 }
+        .presentationDetents([.height(height)])   // the sheet is as tall as its content, no empty space under it
     }
+}
+
+private struct TimetableSheetHeight: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
