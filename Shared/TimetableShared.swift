@@ -136,168 +136,64 @@ enum TimetableStore {
 
 // MARK: - The week
 
-/// Hours shown and how tall each one is. With `compactGaps` an hour with no class is squeezed (for the widget).
-private struct TimetableLayout {
-    let startHour: Int
-    let endHour: Int
-    let weights: [Double]
-    let cumulative: [Double]
-    var total: Double { cumulative.last ?? 1 }
-
-    init(_ data: TimetableData, compactGaps: Bool) {
-        let lo = (data.classes.map { $0.startMin }.min() ?? 480) / 60
-        let hi = Int((Double(data.classes.map { $0.endMin }.max() ?? 1020) / 60).rounded(.up))
-        startHour = lo
-        endHour = max(hi, lo + 1)
-        var w: [Double] = []
-        for h in startHour..<endHour {
-            let busy = data.classes.contains { $0.startMin < (h + 1) * 60 && $0.endMin > h * 60 }
-            w.append(busy || !compactGaps ? 1 : 0.3)
-        }
-        weights = w
-        var cum: [Double] = [0]
-        for x in w { cum.append(cum.last! + x) }
-        cumulative = cum
-    }
-
-    /// Position in hour units from the top of the grid
-    func y(_ minute: Int) -> Double {
-        let h = min(max(minute / 60, startHour), endHour)
-        if h >= endHour { return total }
-        return cumulative[h - startHour] + Double(minute - h * 60) / 60 * weights[h - startHour]
-    }
-}
-
+/// One column per day that has a class, the classes of that day stacked in time order.
+/// Every box grows to fit its text (nothing is cut), so the grid is as tall as the longest column.
 struct TimetableGrid: View {
     let data: TimetableData
-    /// nil = fit the height the grid is given (widget)
-    var hourHeight: CGFloat? = nil
-    var compactGaps = false
     var scale: CGFloat = 1
     var text: Color = Color(white: 0.9)
     var muted: Color = Color(white: 0.6)
     var line: Color = Color(white: 0.13)
     var accent: Color = Color(red: 210 / 255, green: 180 / 255, blue: 140 / 255)
-
-    private var headerH: CGFloat { 20 * scale }
-
-    static func height(for data: TimetableData, hourHeight: CGFloat, scale: CGFloat = 1) -> CGFloat {
-        20 * scale + CGFloat(TimetableLayout(data, compactGaps: false).total) * hourHeight
-    }
-
-    /// Side by side lanes for classes that overlap in time
-    private func lanes(_ list: [TimetableClass]) -> [String: (lane: Int, of: Int)] {
-        let sorted = list.sorted { $0.startMin < $1.startMin }
-        var laneOf: [String: Int] = [:]
-        var ends: [Int] = []
-        for c in sorted {
-            if let i = ends.firstIndex(where: { $0 <= c.startMin }) { ends[i] = c.endMin; laneOf[c.id] = i }
-            else { ends.append(c.endMin); laneOf[c.id] = ends.count - 1 }
-        }
-        var out: [String: (Int, Int)] = [:]
-        for c in sorted {
-            let group = sorted.filter { $0.startMin < c.endMin && $0.endMin > c.startMin }
-            out[c.id] = (laneOf[c.id] ?? 0, (group.compactMap { laneOf[$0.id] }.max() ?? 0) + 1)
-        }
-        return out
-    }
+    /// set in the app: a tap on a subject calls this (the widget leaves it nil)
+    var onSelect: ((TimetableClass) -> Void)? = nil
 
     var body: some View {
-        GeometryReader { g in
-            let lay = TimetableLayout(data, compactGaps: compactGaps)
-            let labelW = 30 * scale
-            let days = data.days
-            let colW = (g.size.width - labelW) / CGFloat(days.count)
-            let bodyH = hourHeight.map { $0 * CGFloat(lay.total) } ?? max(g.size.height - headerH, 1)
-            let unit = bodyH / CGFloat(lay.total)
-            let today = TimetableText.weekday(Date())
-
-            ZStack(alignment: .topLeading) {
-                // today's column
-                if let ti = days.firstIndex(of: today) {
-                    Rectangle().fill(accent.opacity(0.05))
-                        .frame(width: colW, height: bodyH)
-                        .offset(x: labelW + CGFloat(ti) * colW, y: headerH)
-                }
-                // day names
-                ForEach(Array(days.enumerated()), id: \.offset) { i, d in
+        let today = TimetableText.weekday(Date())
+        HStack(alignment: .top, spacing: 6 * scale) {
+            ForEach(data.days, id: \.self) { d in
+                VStack(spacing: 6 * scale) {
                     Text(TimetableText.dayNames[d - 1])
-                        .font(.system(size: 10 * scale, weight: .semibold))
+                        .font(.system(size: 11 * scale, weight: .semibold))
                         .foregroundColor(d == today ? Color.black : muted)
-                        .padding(.horizontal, 6 * scale)
-                        .frame(height: 15 * scale)
+                        .padding(.horizontal, 10 * scale)
+                        .frame(height: 18 * scale)
                         .background(d == today ? accent : Color.clear, in: Capsule())
-                        .frame(width: colW, height: headerH, alignment: .leading)
-                        .padding(.leading, 3 * scale)
-                        .offset(x: labelW + CGFloat(i) * colW)
-                }
-                // hour lines and labels
-                ForEach(lay.startHour...lay.endHour, id: \.self) { h in
-                    let yy = headerH + CGFloat(lay.y(h * 60)) * unit
-                    Rectangle().fill(line).frame(width: g.size.width - labelW, height: 0.5)
-                        .offset(x: labelW, y: yy)
-                    if h < lay.endHour, lay.weights[h - lay.startHour] >= 1 {
-                        Text(TimetableText.hour(h)).font(.system(size: 8 * scale)).foregroundColor(muted)
-                            .frame(width: labelW - 4 * scale, alignment: .trailing)
-                            .offset(y: yy - 5 * scale)
+                        .padding(.bottom, 2 * scale)
+                    ForEach(data.classes.filter { $0.day == d }.sorted { $0.startMin < $1.startMin }) { c in
+                        TimetableBlock(c: c, accent: accent, text: text, muted: muted, scale: scale)
+                            .contentShape(Rectangle())
+                            .onTapGesture { onSelect?(c) }
                     }
                 }
-                // classes
-                ForEach(Array(days.enumerated()), id: \.offset) { i, d in
-                    let list = data.classes.filter { $0.day == d }
-                    let ln = lanes(list)
-                    ForEach(list) { c in
-                        let l = ln[c.id] ?? (0, 1)
-                        let w = (colW - 2) / CGFloat(l.of)
-                        let y0 = headerH + CGFloat(lay.y(c.startMin)) * unit + 0.5
-                        let y1 = headerH + CGFloat(lay.y(c.endMin)) * unit - 0.5
-                        TimetableBlock(c: c, accent: accent, text: text, muted: muted, width: w - 1, height: max(y1 - y0, 4), scale: scale)
-                            .offset(x: labelW + CGFloat(i) * colW + 1 + CGFloat(l.lane) * w, y: y0)
-                    }
-                }
-                // a line for the time right now, in today's column
-                if let ti = days.firstIndex(of: today), TimetableText.minutes(Date()) >= lay.startHour * 60, TimetableText.minutes(Date()) <= lay.endHour * 60 {
-                    let yy = headerH + CGFloat(lay.y(TimetableText.minutes(Date()))) * unit
-                    Rectangle().fill(accent).frame(width: colW, height: 1 * scale)
-                        .offset(x: labelW + CGFloat(ti) * colW, y: yy)
-                    Circle().fill(accent).frame(width: 5 * scale, height: 5 * scale)
-                        .offset(x: labelW + CGFloat(ti) * colW - 2.5 * scale, y: yy - 2 * scale)
-                }            }
+                .frame(maxWidth: .infinity, alignment: .top)
+            }
         }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 }
 
-/// One class in the week: as many lines as fit (code, title, time, venue). The venue always gets two rows.
+/// One class in the week: code, title, time and venue, all wrapped in full. Same padding on every side.
 struct TimetableBlock: View {
     let c: TimetableClass
     let accent: Color   // the app's accent colour (same for every subject)
     let text: Color
     let muted: Color
-    let width: CGFloat
-    let height: CGFloat
     let scale: CGFloat
 
     var body: some View {
-        let lh = 10.5 * scale
-        let n = max(0, min(4, Int((height - 5 * scale) / lh)))
-        let lines: [(String, Font, Color, Int)] = [
-            (c.code, .system(size: 9.5 * scale, weight: .bold), text, 1),
-            (c.title, .system(size: 8.5 * scale, weight: .medium), text.opacity(0.85), 1),
-            (c.shortRange, .system(size: 8 * scale), muted, 1),
-            (c.venue, .system(size: 8 * scale), muted, 2)
-        ]
-        let shown = Array(lines.prefix(n)).filter { !$0.0.isEmpty }
-        let r = 5 * scale
-        VStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(shown.enumerated()), id: \.offset) { _, l in
-                Text(l.0).font(l.1).foregroundColor(l.2).lineLimit(l.3).minimumScaleFactor(l.3 > 1 ? 1 : 0.75)
-                    .fixedSize(horizontal: false, vertical: l.3 > 1)
+        VStack(alignment: .leading, spacing: 2 * scale) {
+            Text(c.code).font(.system(size: 10.5 * scale, weight: .bold)).foregroundColor(text)
+            Text(c.title).font(.system(size: 9 * scale, weight: .medium)).foregroundColor(text)
+            Text(c.shortRange).font(.system(size: 9 * scale, weight: .medium)).foregroundColor(text)
+            if !c.venue.isEmpty {
+                Text(c.venue).font(.system(size: 9 * scale)).foregroundColor(muted)
             }
         }
-        .padding(.leading, 6 * scale).padding(.trailing, 2 * scale).padding(.top, 3 * scale)
-        .frame(width: width, height: height, alignment: .topLeading)
-        .background(accent.opacity(0.15))
-        .overlay(alignment: .leading) { Rectangle().fill(accent).frame(width: 2 * scale) }
-        .clipShape(RoundedRectangle(cornerRadius: r, style: .continuous))
+        .multilineTextAlignment(.leading)
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(7 * scale)
+        .background(accent.opacity(0.15), in: RoundedRectangle(cornerRadius: 8 * scale, style: .continuous))
     }
 }

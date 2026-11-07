@@ -176,6 +176,7 @@ struct TimetableView: View {
     @State private var importing = false
     @State private var failed = false
     @State private var confirmRemove = false
+    @State private var selected: TimetableClass?
 
     private var dev: Bool { devOn && DevMode.allowed(app.site?.fullname) }
 
@@ -208,6 +209,9 @@ struct TimetableView: View {
         .alert("Couldn't read this PDF", isPresented: $failed) {
             Button("OK", role: .cancel) {}
         } message: { Text("It should be the Course Registration Confirmation Slip, with the table of courses, days, times and venues." + (dev ? " The text that was read has been copied." : "")) }
+        .sheet(item: $selected) { c in
+            TimetableDetail(c: c).presentationDetents([.medium])
+        }
         .confirmationDialog("Remove the timetable?", isPresented: $confirmRemove, titleVisibility: .visible) {
             Button("Remove", role: .destructive) { store.remove() }
         }
@@ -247,8 +251,7 @@ struct TimetableView: View {
             Spacer()
         }
         .padding(.horizontal, 2)
-        TimetableGrid(data: t, hourHeight: 56, text: Theme.txt, muted: Theme.muted, line: Theme.line, accent: Theme.accent)
-            .frame(height: TimetableGrid.height(for: t, hourHeight: 56))
+        TimetableGrid(data: t, text: Theme.txt, muted: Theme.muted, line: Theme.line, accent: Theme.accent, onSelect: { selected = $0 })
             .padding(10)
             .glowCard()
 
@@ -306,4 +309,35 @@ struct TimetableView: View {
     }
 
     private func creditText(_ c: Double) -> String { c == c.rounded() ? "\(Int(c))" : String(format: "%.1f", c) }
+}
+
+/// A subject from the week, enlarged
+private struct TimetableDetail: View {
+    let c: TimetableClass
+    private let days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+
+    private func row(_ icon: String, _ s: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Image(systemName: icon).font(.system(size: 14)).foregroundColor(Theme.accent).frame(width: 20)
+            Text(s).font(Theme.font(.body)).foregroundColor(Theme.txt).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(c.code).font(Theme.font(.title.weight(.bold))).foregroundColor(Theme.txt)
+                Text(c.title).font(Theme.font(.headline)).foregroundColor(Theme.txt)
+            }
+            .padding(.bottom, 4)
+            row("calendar", days[max(0, min(6, c.day - 1))])
+            row("clock", c.range)
+            if !c.venue.isEmpty { row("mappin.and.ellipse", c.venue) }
+            row("person.2", "Section \(c.section) · \(c.credit == c.credit.rounded() ? "\(Int(c.credit))" : String(format: "%.1f", c.credit)) credit\(c.credit == 1 ? "" : "s")")
+            Spacer(minLength: 0)
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Theme.bg.ignoresSafeArea())
+    }
 }

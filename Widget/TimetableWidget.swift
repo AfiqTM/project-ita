@@ -176,7 +176,7 @@ struct TimetableWidgetView: View {
     private func large(_ data: TimetableData) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             header("CLASS TIMETABLE", data.title)
-            TimetableGrid(data: data, compactGaps: !tall, scale: 1, text: T.txt, muted: T.muted, line: T.line, accent: T.accent)
+            TimetableGrid(data: data, scale: 1, text: T.txt, muted: T.muted, line: T.line, accent: T.accent)
         }
     }
 }
