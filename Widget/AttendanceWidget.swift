@@ -1,5 +1,6 @@
 import WidgetKit
 import SwiftUI
+import UIKit
 
 // WIDGET TARGET ONLY (lives in Widget/, built together with Shared/AttendanceShared.swift).
 
@@ -34,7 +35,25 @@ struct AttendanceProvider: TimelineProvider {
     }
 }
 
+/// A solid black picture. A widget background that is a picture (like the black-hole one in Widgy) is drawn as it is;
+/// a plain Color can be lightened by iOS, which made the widget look grey.
+private let blackPicture: Image = {
+    let size = CGSize(width: 8, height: 8)
+    let img = UIGraphicsImageRenderer(size: size).image { ctx in
+        UIColor.black.setFill()
+        ctx.fill(CGRect(origin: .zero, size: size))
+    }
+    return Image(uiImage: img).resizable(resizingMode: .stretch).interpolation(.none)
+}()
+
 extension View {
+    /// AMOLED black for the home-screen widgets: a black picture as the widget background, and black under the content too
+    @ViewBuilder func amoledBackground() -> some View {
+        let content = background(blackPicture.ignoresSafeArea())
+        if #available(iOS 17.0, *) { content.containerBackground(for: .widget) { blackPicture } }
+        else { content }
+    }
+
     @ViewBuilder func widgetBackground(_ color: Color) -> some View {
         if #available(iOS 17.0, *) { containerBackground(color, for: .widget) } else { background(color) }
     }
@@ -79,7 +98,7 @@ struct AttendanceWidgetView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .widgetBackground(W.bg)
+        .amoledBackground()
     }
 
     private var header: some View {

@@ -75,7 +75,7 @@ struct TimetableWidgetView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .widgetBackground(T.bg)   // same pure black as the Attendance widget
+        .amoledBackground()   // the same pure black as the Attendance widget
         .widgetURL(URL(string: "italeem://timetable"))   // a tap opens Class Timetable in the app
     }
 
