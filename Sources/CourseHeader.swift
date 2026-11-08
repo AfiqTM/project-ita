@@ -64,10 +64,15 @@ extension Course {
         return "SEM 1"
     }
 
-    /// Metadata tags shown below the course code on the card cover:
-    /// `["Section 04", "SEM 1"]` for section courses, or `["Public", "SEM 1"]` for courses without a section.
+    /// Metadata tags shown next to the course code on the card cover:
+    /// `["Section 04", "SEM 1"]` for section courses, or `["SEM 1"]` for parent courses.
     func coverTags(timetable: TimetableData? = nil) -> [String] {
-        [sectionLabel ?? "Public", semShortLabel(timetable: timetable)]
+        var tags: [String] = []
+        if let sec = sectionLabel {
+            tags.append(sec)
+        }
+        tags.append(semShortLabel(timetable: timetable))
+        return tags
     }
 
     /// Matches this course's weekly class slots from the timetable (falling back to the default semester sample timetable).
