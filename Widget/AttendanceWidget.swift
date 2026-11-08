@@ -90,7 +90,9 @@ struct AttendanceWidgetView: View {
         }
     }
     private var compact: Bool { family == .systemSmall }
-    private var rowFont: CGFloat { compact ? 10.5 : 12 }
+    private var codeFont: CGFloat { compact ? 11.5 : 13.5 }
+    private var nameFont: CGFloat { compact ? 9.7 : 11.4 }     // ~21.2 / 25.2 ratio to codeFont
+    private var codeColumnWidth: CGFloat { compact ? 60 : 72 }
 
     /// 80% is the usual attendance minimum, so anything under it is tinted red
     private func tint(_ p: Double) -> Color { p >= 80 ? W.accent : W.warn }
@@ -100,8 +102,10 @@ struct AttendanceWidgetView: View {
             header
 
             if let s = entry.snapshot, !s.items.isEmpty {
+                let shown = Array(s.items.prefix(limit))
+                let hasCodes = shown.contains { $0.resolvedCode(timetable: timetable) != nil }
                 VStack(alignment: .leading, spacing: compact ? 8 : 11) {
-                    ForEach(s.items.prefix(limit)) { row($0) }
+                    ForEach(shown) { row($0, alignCodeColumn: hasCodes) }
                 }
                 if s.items.count > limit {
                     Text("+\(s.items.count - limit) more").font(.system(size: 10)).foregroundColor(W.muted)
@@ -133,29 +137,28 @@ struct AttendanceWidgetView: View {
         }
     }
 
-    /// Tan course code + white subject name on the left, percentage on the right
-    private func row(_ i: AttendanceItem) -> some View {
+    /// Tan course code + aligned white subject name on the left, percentage on the right
+    private func row(_ i: AttendanceItem, alignCodeColumn: Bool) -> some View {
         let code = i.resolvedCode(timetable: timetable)
-        return HStack(spacing: 8) {
-            HStack(spacing: 5) {
-                if let code {
-                    Text(code)
-                        .font(.system(size: rowFont, weight: .bold))
-                        .foregroundColor(W.accent)
-                        .lineLimit(1)
-                        .layoutPriority(1)
-                }
-                Text(i.displayName)
-                    .font(.system(size: rowFont, weight: .medium))
-                    .foregroundColor(W.txt)
+        return HStack(alignment: .firstTextBaseline, spacing: 6) {
+            if alignCodeColumn {
+                Text(code ?? "")
+                    .font(.system(size: codeFont, weight: .bold))
+                    .foregroundColor(W.accent)
                     .lineLimit(1)
-                    .truncationMode(.tail)
+                    .minimumScaleFactor(0.85)
+                    .frame(width: codeColumnWidth, alignment: .leading)
             }
+            Text(i.displayName)
+                .font(.system(size: nameFont, weight: .medium))
+                .foregroundColor(W.txt)
+                .lineLimit(1)
+                .truncationMode(.tail)
 
             Spacer(minLength: 4)
 
             Text(formatPercent(i.percent))
-                .font(.system(size: rowFont, weight: .bold))
+                .font(.system(size: codeFont, weight: .bold))
                 .monospacedDigit()
                 .foregroundColor(tint(i.percent))
                 .lineLimit(1)
