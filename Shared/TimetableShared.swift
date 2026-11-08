@@ -45,6 +45,8 @@ struct TimetableData: Codable {
         let used = Array(Set(classes.map { $0.day })).sorted()
         return used.isEmpty ? [1, 2, 3, 4, 5] : used
     }
+    /// The start times that rows are made of: one row per start time, earliest first (an evening class comes last)
+    var slots: [Int] { Array(Set(classes.map { $0.startMin })).sorted() }
     func palette(_ code: String) -> TimetablePalette { TimetablePalette.all[(codes.firstIndex(of: code) ?? 0) % TimetablePalette.all.count] }
 
     static let sample = TimetableData(session: "2026/2027", semester: "1", classes: [
@@ -68,6 +70,12 @@ enum TimetableText {
         return (c.hour ?? 0) * 60 + (c.minute ?? 0)
     }
 
+    /// Minutes after midnight with the seconds as a fraction (for the water level, which rises smoothly)
+    static func exactMinutes(_ d: Date) -> Double {
+        let c = Calendar.current.dateComponents([.hour, .minute, .second], from: d)
+        return Double((c.hour ?? 0) * 60 + (c.minute ?? 0)) + Double(c.second ?? 0) / 60
+    }
+
     private static func parts(_ m: Int) -> (String, Bool) {
         let h = m / 60, mm = m % 60
         let h12 = h % 12 == 0 ? 12 : h % 12
@@ -80,6 +88,16 @@ enum TimetableText {
         return sAM == eAM ? "\(s)–\(e) \(eAM ? "AM" : "PM")" : "\(s) \(sAM ? "AM" : "PM")–\(e) \(eAM ? "AM" : "PM")"
     }
     static func hour(_ h: Int) -> String { "\(h % 12 == 0 ? 12 : h % 12) \(h < 12 || h == 24 ? "AM" : "PM")" }
+}
+
+extension TimetableClass {
+    /// 0...1 while this class is running (today only), otherwise nil. The water in its card rises with it.
+    func progress(at date: Date) -> Double? {
+        guard day == TimetableText.weekday(date), endMin > startMin else { return nil }
+        let m = TimetableText.exactMinutes(date)
+        guard m >= Double(startMin), m < Double(endMin) else { return nil }
+        return (m - Double(startMin)) / Double(endMin - startMin)
+    }
 }
 
 extension TimetableData {
@@ -134,79 +152,235 @@ enum TimetableStore {
     }
 }
 
+// MARK: - Look (dark warm cards, tan pills, a water level that rises during class)
+
+enum TimetableLook {
+    static func c(_ r: Double, _ g: Double, _ b: Double, _ a: Double = 1) -> Color {
+        Color(.sRGB, red: r / 255, green: g / 255, blue: b / 255, opacity: a)
+    }
+    static let card = c(255, 236, 226, 0.075)      // a warm lift over the dark backdrop
+    static let pillFill = c(92, 76, 68)
+    static let pillText = c(224, 190, 162)
+    static let heading = c(228, 192, 172)
+    static let text = c(246, 244, 242)
+    static let muted = c(150, 146, 144)
+    static let dayText = c(165, 160, 158)
+    static let water = c(216, 180, 150)
+    static let waterLine = c(226, 210, 196)
+}
+
+/// The dark, slightly wine-tinted background of the card / widget
+struct TimetableBackdrop: View {
+    var body: some View {
+        ZStack {
+            Color(.sRGB, red: 24 / 255, green: 22 / 255, blue: 23 / 255)
+            RadialGradient(colors: [TimetableLook.c(96, 70, 72, 0.50), Color.clear], center: .topLeading,
+                           startRadius: 0, endRadius: 340)
+            RadialGradient(colors: [TimetableLook.c(74, 60, 64, 0.40), Color.clear], center: .bottomTrailing,
+                           startRadius: 0, endRadius: 380)
+        }
+    }
+}
+
+struct TimetableHeader: View {
+    let title: String
+    var trailing: String? = nil
+    var scale: CGFloat = 1
+
+    var body: some View {
+        HStack(spacing: 6 * scale) {
+            Image(systemName: "calendar").font(.system(size: 12 * scale, weight: .semibold))
+            Text(title).font(.system(size: 11 * scale, weight: .semibold)).tracking(0.8 * scale).lineLimit(1)
+            Spacer(minLength: 0)
+            if let trailing {
+                Text(trailing).font(.system(size: 10 * scale, weight: .medium))
+                    .foregroundColor(TimetableLook.muted).lineLimit(1)
+            }
+        }
+        .foregroundColor(TimetableLook.heading)
+    }
+}
+
+// MARK: - Water
+
+/// The water in a card: `level` 0...1 is how full it is (from the bottom); the surface is a gentle wave.
+struct WaterShape: Shape {
+    var level: Double
+    var phase: Double
+    var amp: CGFloat
+    var line = false      // true: only the surface (to stroke), false: the filled body
+
+    func path(in r: CGRect) -> Path {
+        let lv = min(max(level, 0), 1)
+        let y0 = r.maxY - r.height * CGFloat(lv)
+        let a = amp * CGFloat(min(1, min(lv, 1 - lv) * 10))   // flat when empty or full
+        let steps = max(16, Int(r.width / 3))
+        func yAt(_ i: Int) -> CGFloat {
+            let t = Double(i) / Double(steps)
+            return y0 + CGFloat(sin(t * 2 * Double.pi * 1.3 + phase)) * a
+        }
+        func xAt(_ i: Int) -> CGFloat { r.minX + r.width * CGFloat(i) / CGFloat(steps) }
+        var p = Path()
+        if line {
+            p.move(to: CGPoint(x: xAt(0), y: yAt(0)))
+            for i in 1...steps { p.addLine(to: CGPoint(x: xAt(i), y: yAt(i))) }
+        } else {
+            p.move(to: CGPoint(x: r.minX, y: r.maxY))
+            for i in 0...steps { p.addLine(to: CGPoint(x: xAt(i), y: yAt(i))) }
+            p.addLine(to: CGPoint(x: r.maxX, y: r.maxY))
+            p.closeSubpath()
+        }
+        return p
+    }
+}
+
+struct WaterFill: View {
+    let level: Double
+    var scale: CGFloat = 1
+    var animated = false      // the app moves the surface; a widget can only show one still picture
+
+    var body: some View {
+        if animated {
+            TimelineView(.animation(minimumInterval: 1.0 / 20)) { ctx in
+                layer(ctx.date.timeIntervalSinceReferenceDate * 1.4)
+            }
+        } else {
+            layer(0.8)
+        }
+    }
+
+    private func layer(_ phase: Double) -> some View {
+        let amp = 1.7 * scale
+        return ZStack {
+            WaterShape(level: level, phase: phase, amp: amp)
+                .fill(LinearGradient(colors: [TimetableLook.water.opacity(0.26), TimetableLook.water.opacity(0.08)],
+                                     startPoint: .top, endPoint: .bottom))
+            if level > 0.005 && level < 0.995 {
+                WaterShape(level: level, phase: phase, amp: amp, line: true)
+                    .stroke(TimetableLook.waterLine.opacity(0.85),
+                            style: StrokeStyle(lineWidth: 1.3 * scale, lineCap: .round, lineJoin: .round))
+                    .shadow(color: TimetableLook.water.opacity(0.6), radius: 2 * scale)
+            }
+        }
+    }
+}
+
 // MARK: - The week
 
-/// One column per day that has a class, the classes of that day stacked in time order.
-/// Every box grows to fit its text (nothing is cut), so the grid is as tall as the longest column.
+/// Rows are start times (earliest first), columns are the days that have a class. A class sits in the row of its
+/// start time, so the same hour lines up across the days; an empty slot is left blank. The cards of a row are equally
+/// tall and grow to fit their text (nothing is cut). A class that is running now fills with water.
 struct TimetableGrid: View {
     let data: TimetableData
     var scale: CGFloat = 1
-    var text: Color = Color(white: 0.9)
-    var muted: Color = Color(white: 0.6)
+    // kept so older call sites still compile: the look is fixed (TimetableLook)
+    var text: Color = TimetableLook.text
+    var muted: Color = TimetableLook.muted
     var line: Color = Color(white: 0.13)
-    var accent: Color = Color(red: 210 / 255, green: 180 / 255, blue: 140 / 255)
+    var accent: Color = TimetableLook.pillText
+    var now: Date = Date()
+    var animated = false
     /// set in the app: a tap on a subject calls this (the widget leaves it nil)
     var onSelect: ((TimetableClass) -> Void)? = nil
 
     var body: some View {
-        let today = TimetableText.weekday(Date())
-        HStack(alignment: .top, spacing: 3 * scale) {
-            ForEach(data.days, id: \.self) { d in
-                VStack(spacing: 5 * scale) {
+        let today = TimetableText.weekday(now)
+        let days = data.days
+        let gap = 4 * scale
+        VStack(spacing: gap) {
+            HStack(spacing: gap) {
+                ForEach(days, id: \.self) { d in
                     Text(TimetableText.dayNames[d - 1])
                         .font(.system(size: 11 * scale, weight: .semibold))
-                        .foregroundColor(d == today ? Color.black : muted)
-                        .padding(.horizontal, 10 * scale)
-                        .frame(height: 18 * scale)
-                        .background(d == today ? accent : Color.clear, in: Capsule())
-                        .padding(.bottom, 2 * scale)
-                    ForEach(data.classes.filter { $0.day == d }.sorted { $0.startMin < $1.startMin }) { c in
-                        TimetableBlock(c: c, accent: accent, text: text, muted: muted, scale: scale)
-                            .contentShape(Rectangle())
-                            .onTapGesture { onSelect?(c) }
+                        .foregroundColor(d == today ? TimetableLook.text : TimetableLook.dayText)
+                        .frame(maxWidth: .infinity)
+                }
+            }
+            .padding(.bottom, 2 * scale)
+            ForEach(data.slots, id: \.self) { slot in
+                HStack(alignment: .top, spacing: gap) {
+                    ForEach(days, id: \.self) { d in
+                        let cell = data.classes.filter { $0.day == d && $0.startMin == slot }
+                        VStack(spacing: gap) {
+                            ForEach(cell) { c in
+                                TimetableBlock(c: c, accent: accent, text: text, muted: muted, scale: scale,
+                                               progress: c.progress(at: now), animated: animated)
+                                    .contentShape(Rectangle())
+                                    .onTapGesture { onSelect?(c) }
+                            }
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .top)
+                .fixedSize(horizontal: false, vertical: true)
             }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 }
 
-/// One class in the week: a dark card with a time pill, then code, title and venue wrapped in full.
+/// One class: a card with a full-width time pill, then code, title and venue wrapped in full.
 struct TimetableBlock: View {
     let c: TimetableClass
-    let accent: Color   // kept for the callers; the card itself uses the fixed tan below
+    let accent: Color   // kept for the callers; the look is fixed (TimetableLook)
     let text: Color
     let muted: Color
     let scale: CGFloat
-
-    private let tan = Color(red: 0xD2 / 255, green: 0xB4 / 255, blue: 0x8C / 255)
+    var progress: Double? = nil
+    var animated = false
 
     var body: some View {
-        let r = 10 * scale
+        let shape = RoundedRectangle(cornerRadius: 10 * scale, style: .continuous)
         VStack(alignment: .leading, spacing: 3 * scale) {
             Text(c.shortRange.replacingOccurrences(of: "–", with: " – "))
-                .font(.system(size: 9.5 * scale, weight: .medium)).foregroundColor(tan)
+                .font(.system(size: 9.5 * scale, weight: .medium)).foregroundColor(TimetableLook.pillText)
                 .lineLimit(1).minimumScaleFactor(0.6)   // the time always stays on one row
-                .padding(.horizontal, 6 * scale).padding(.vertical, 2 * scale)
-                .background(tan.opacity(0.18), in: RoundedRectangle(cornerRadius: 6 * scale, style: .continuous))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 2.5 * scale)
+                .background(TimetableLook.pillFill, in: RoundedRectangle(cornerRadius: 6 * scale, style: .continuous))
                 .padding(.bottom, 2 * scale)
-            Text(c.code).font(.system(size: 11 * scale, weight: .bold)).foregroundColor(text)
-            Text(c.title).font(.system(size: 10 * scale, weight: .medium)).foregroundColor(text)
+            Text(c.code).font(.system(size: 11 * scale, weight: .bold)).foregroundColor(TimetableLook.text)
+            Text(c.title).font(.system(size: 10 * scale, weight: .regular)).foregroundColor(TimetableLook.text)
             if !c.venue.isEmpty {
                 HStack(alignment: .top, spacing: 3 * scale) {
-                    VenuePin(color: muted, size: 7 * scale).padding(.top, 1.5 * scale)
-                    Text(c.venue).font(.system(size: 9 * scale)).foregroundColor(muted)
+                    VenuePin(color: TimetableLook.muted, size: 7 * scale).padding(.top, 1.5 * scale)
+                    Text(c.venue).font(.system(size: 9 * scale)).foregroundColor(TimetableLook.muted)
                 }
             }
         }
         .multilineTextAlignment(.leading)
         .fixedSize(horizontal: false, vertical: true)
-        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 7 * scale).padding(.horizontal, 7 * scale)
-        .background(tan.opacity(0.08), in: RoundedRectangle(cornerRadius: r, style: .continuous))   // soft tan tint over whatever is behind
-        .clipShape(RoundedRectangle(cornerRadius: r, style: .continuous))
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(
+            ZStack {
+                shape.fill(TimetableLook.card)
+                if let p = progress { WaterFill(level: p, scale: scale, animated: animated) }
+            }
+            .clipShape(shape)
+        )
+    }
+}
+
+/// The whole screen card of the app: header, then the week, on the dark backdrop with a glass edge
+struct TimetableCard: View {
+    let data: TimetableData
+    var onSelect: ((TimetableClass) -> Void)? = nil
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: 28, style: .continuous)
+        VStack(alignment: .leading, spacing: 12) {
+            TimetableHeader(title: "CLASS TIMETABLE", trailing: data.title, scale: 1.1)
+            // refreshed every 30 s so the water level and "today" stay right
+            TimelineView(.periodic(from: Date(), by: 30)) { ctx in
+                TimetableGrid(data: data, now: ctx.date, animated: true, onSelect: onSelect)
+            }
+        }
+        .padding(14)
+        .background(TimetableBackdrop())
+        .clipShape(shape)
+        .overlay(shape.stroke(LinearGradient(colors: [Color.white.opacity(0.22), Color.white.opacity(0.04)],
+                                             startPoint: .top, endPoint: .bottom), lineWidth: 1))
     }
 }
 

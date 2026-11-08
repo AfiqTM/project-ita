@@ -240,21 +240,9 @@ struct TimetableView: View {
     }
 
     @ViewBuilder private func content(_ t: TimetableData) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: "calendar").font(.system(size: 14, weight: .semibold)).foregroundColor(Theme.accent)
-                .frame(width: 32, height: 32)
-                .background(Theme.accent.opacity(0.15), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            VStack(alignment: .leading, spacing: 1) {
-                Text(t.title).font(Theme.font(.subheadline).weight(.semibold)).foregroundColor(Theme.txt)
-                Text("\(t.codes.count) subjects · \(creditText(t.credits)) credits").font(Theme.font(.caption)).foregroundColor(Theme.muted)
-            }
-            Spacer()
-        }
-        .padding(.horizontal, 2)
-        TimetableGrid(data: t, text: Theme.txt, muted: Theme.muted, line: Theme.line, accent: Theme.accent, onSelect: { selected = $0 })
-            .padding(5)
-            .glowCard()
-
+        TimetableCard(data: t, onSelect: { selected = $0 })
+        Text("\(t.codes.count) subjects · \(creditText(t.credits)) credits")
+            .font(Theme.font(.caption)).foregroundColor(Theme.muted).padding(.horizontal, 4)
         Text("To add the widget: touch and hold the home screen, tap +, search iTa'leem and pick Class Timetable.")
             .font(Theme.font(.caption)).foregroundColor(Theme.muted).padding(.horizontal, 4)
     }
