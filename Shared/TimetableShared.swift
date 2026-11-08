@@ -254,6 +254,7 @@ struct WaterFill: View {
 /// One column per day that has a class, the classes of that day stacked in time order.
 /// Every box grows to fit its text (nothing is cut), so the grid is as tall as the longest column.
 struct TimetableGrid: View {
+    @Environment(\.widgetRenderingMode) private var renderingMode
     let data: TimetableData
     var scale: CGFloat = 1
     var text: Color = Color(white: 0.9)
@@ -270,16 +271,17 @@ struct TimetableGrid: View {
     var body: some View {
         let today = TimetableText.weekday(now)
         let days = data.days
+        let fullColor = renderingMode == .fullColor
         VStack(spacing: 4 * scale) {
             // the day names
             HStack(alignment: .top, spacing: 3 * scale) {
                 ForEach(days, id: \.self) { d in
                     Text(TimetableText.dayNames[d - 1])
                         .font(.system(size: 11 * scale, weight: .semibold))
-                        .foregroundColor(d == today ? Color.black : muted)
+                        .foregroundColor(d == today ? (fullColor ? Color.black : accent) : muted)
                         .padding(.horizontal, 10 * scale)
                         .frame(height: 18 * scale)
-                        .background(d == today ? accent : Color.clear, in: Capsule())
+                        .background(d == today ? (fullColor ? accent : accent.opacity(0.24)) : Color.clear, in: Capsule())
                         .frame(maxWidth: .infinity)
                 }
             }
@@ -341,7 +343,7 @@ struct TimetableBlock: View {
                 .font(.system(size: 9.5 * f, weight: .medium)).foregroundColor(tan)
                 .lineLimit(1).minimumScaleFactor(0.6)   // the time always stays on one row
                 .padding(.horizontal, 6 * k).padding(.vertical, 2 * k)
-                .background(Color(red: 0x33 / 255, green: 0x2C / 255, blue: 0x22 / 255), in: RoundedRectangle(cornerRadius: 6 * k, style: .continuous))
+                .background(tan.opacity(0.24), in: RoundedRectangle(cornerRadius: 6 * k, style: .continuous))
         }
         .multilineTextAlignment(.leading)
         .padding(.vertical, 9 * k).padding(.horizontal, 8 * k)
@@ -357,14 +359,18 @@ struct TimetableBlock: View {
 }
 
 /// The map pin used for venues: a filled teardrop with a round hole (the same one in the design photo)
-private struct PinTriangle: Shape {
+private struct VenuePinShape: Shape {
     func path(in r: CGRect) -> Path {
         let w = r.width
+        let center = CGPoint(x: r.midX, y: r.minY + 0.5 * w)
         var p = Path()
-        p.move(to: CGPoint(x: r.minX + 0.067 * w, y: r.minY + 0.75 * w))
-        p.addLine(to: CGPoint(x: r.minX + 0.933 * w, y: r.minY + 0.75 * w))
+        // Outer teardrop outline
+        p.addArc(center: center, radius: 0.5 * w, startAngle: .degrees(30), endAngle: .degrees(150), clockwise: true)
         p.addLine(to: CGPoint(x: r.midX, y: r.minY + 1.3 * w))
         p.closeSubpath()
+        // Inner hole (even-odd fill cuts this out cleanly in all widget rendering modes)
+        let hole = 0.36 * w
+        p.addEllipse(in: CGRect(x: r.midX - hole / 2, y: center.y - hole / 2, width: hole, height: hole))
         return p
     }
 }
@@ -374,20 +380,8 @@ struct VenuePin: View {
     let size: CGFloat
 
     var body: some View {
-        ZStack(alignment: .top) {
-            Circle().frame(width: size, height: size)
-            PinTriangle().frame(width: size, height: size * 1.3)
-        }
-        .frame(width: size, height: size * 1.3)
-        .foregroundColor(color)
-        .mask(
-            ZStack {
-                Rectangle().fill(Color.white)
-                Circle().frame(width: size * 0.36, height: size * 0.36)
-                    .offset(y: -size * 0.15)
-                    .blendMode(.destinationOut)
-            }
-            .compositingGroup()
-        )
+        VenuePinShape()
+            .fill(color, style: FillStyle(eoFill: true))
+            .frame(width: size, height: size * 1.3)
     }
 }

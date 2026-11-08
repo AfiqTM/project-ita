@@ -37,31 +37,43 @@ struct AttendanceProvider: TimelineProvider {
 
 /// A solid black picture. A widget background that is a picture (like the black-hole one in Widgy) is drawn as it is;
 /// a plain Color can be lightened by iOS, which made the widget look grey.
-private let blackPicture: AnyView = {
+private let blackPicture: Image = {
     let size = CGSize(width: 8, height: 8)
     let img = UIGraphicsImageRenderer(size: size).image { ctx in
         UIColor.black.setFill()
         ctx.fill(CGRect(origin: .zero, size: size))
     }
-    let pic = Image(uiImage: img).resizable(resizingMode: .stretch).interpolation(.none)
-    // with a tinted / dark home-screen icon style iOS tints the widget background grey; full colour keeps this picture black
-    if #available(iOS 18.0, *) { return AnyView(pic.widgetAccentedRenderingMode(.fullColor)) }
-    return AnyView(pic)
+    return Image(uiImage: img).resizable(resizingMode: .stretch).interpolation(.none)
 }()
 
 /// The system's own margins are turned off for the home-screen widgets (`contentMarginsDisabled`), so iOS has no rim
 /// of its own background left to draw (that rim was the grey edge). The same margins are put back here as padding,
-/// and black is painted under the whole widget, edge to edge.
+/// and black is painted under the whole widget in Default/Dark mode, while Clear/Tinted mode (`renderingMode != .fullColor`)
+/// leaves the background transparent so iOS doesn't turn an opaque foreground layer into a solid white block.
 @available(iOS 17.0, *)
 private struct AmoledEdgeToEdge: ViewModifier {
     @Environment(\.widgetContentMargins) private var margins
+    @Environment(\.widgetRenderingMode) private var renderingMode
 
     func body(content: Content) -> some View {
         content
             .padding(margins)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color.black)
-            .containerBackground(for: .widget) { blackPicture }
+            .background {
+                if renderingMode == .fullColor {
+                    Color.black
+                }
+            }
+            .containerBackground(for: .widget) {
+                if renderingMode == .fullColor {
+                    ZStack {
+                        Color.black
+                        blackPicture
+                    }
+                } else {
+                    Color.clear
+                }
+            }
     }
 }
 

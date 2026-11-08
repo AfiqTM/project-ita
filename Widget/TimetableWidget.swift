@@ -7,6 +7,7 @@ import SwiftUI
 private enum T {
     static let bg     = Color.black
     static let accent = Color(red: 210 / 255, green: 180 / 255, blue: 140 / 255)   // iTa'leem tan
+    static let pill   = Color(red: 210 / 255, green: 180 / 255, blue: 140 / 255).opacity(0.24)   // #332C22 on black, translucent in Clear/Tinted mode
     static let txt    = Color(red: 230 / 255, green: 230 / 255, blue: 230 / 255)
     static let muted  = Color(red: 154 / 255, green: 154 / 255, blue: 154 / 255)
     static let line   = Color(red: 34 / 255, green: 34 / 255, blue: 34 / 255)
@@ -138,7 +139,7 @@ struct TimetableWidgetView: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
                     .padding(.horizontal, 7).padding(.vertical, 3.5)
-                    .background(Color(red: 0x33 / 255, green: 0x2C / 255, blue: 0x22 / 255), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .background(T.pill, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                     .offset(x: -1)
                     .padding(.top, 2)
             }
@@ -182,8 +183,8 @@ struct TimetableWidgetView: View {
                 HStack(spacing: 5) {
                     Text(c.code).font(.system(size: 12, weight: .bold)).foregroundColor(T.txt)
                     if now {
-                        Text("NOW").font(.system(size: 8, weight: .bold)).foregroundColor(.black)
-                            .padding(.horizontal, 4).padding(.vertical, 1).background(T.accent).clipShape(Capsule())
+                        Text("NOW").font(.system(size: 8, weight: .bold)).foregroundColor(T.accent)
+                            .padding(.horizontal, 4).padding(.vertical, 1).background(T.pill).clipShape(Capsule())
                     }
                     Text(c.displayTitle).font(.system(size: 11)).foregroundColor(T.muted).lineLimit(1)
                 }
@@ -519,7 +520,7 @@ struct TasksWidgetView: View {
                     .lineLimit(1)
                     .padding(.horizontal, 6.5)
                     .padding(.vertical, 1.5)
-                    .background(Color(red: 0x33 / 255, green: 0x2C / 255, blue: 0x22 / 255), in: Capsule())
+                    .background(T.pill, in: Capsule())
             }
             Spacer(minLength: 0)
             if let trailing {
@@ -588,7 +589,7 @@ struct TasksWidgetView: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
                     .padding(.horizontal, 7).padding(.vertical, 3.5)
-                    .background(Color(red: 0x33 / 255, green: 0x2C / 255, blue: 0x22 / 255), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .background(T.pill, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                     .offset(x: -1)
                     .padding(.top, 2)
             } else {
@@ -646,7 +647,7 @@ struct TasksWidgetView: View {
                 .padding(.horizontal, 7).padding(.vertical, 3)
                 .background(
                     today
-                        ? Color(red: 0x33 / 255, green: 0x2C / 255, blue: 0x22 / 255)
+                        ? T.pill
                         : Color.clear,
                     in: RoundedRectangle(cornerRadius: 6, style: .continuous)
                 )
@@ -749,7 +750,7 @@ struct TodoWidgetView: View {
                     .lineLimit(1)
                     .padding(.horizontal, 6.5)
                     .padding(.vertical, 1.5)
-                    .background(Color(red: 0x33 / 255, green: 0x2C / 255, blue: 0x22 / 255), in: Capsule())
+                    .background(T.pill, in: Capsule())
             }
             Spacer(minLength: 0)
             if let trailing {
@@ -818,7 +819,7 @@ struct TodoWidgetView: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
                     .padding(.horizontal, 7).padding(.vertical, 3.5)
-                    .background(Color(red: 0x33 / 255, green: 0x2C / 255, blue: 0x22 / 255), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .background(T.pill, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                     .offset(x: -1)
                     .padding(.top, 2)
             } else {
@@ -876,7 +877,7 @@ struct TodoWidgetView: View {
                 .padding(.horizontal, 7).padding(.vertical, 3)
                 .background(
                     today
-                        ? Color(red: 0x33 / 255, green: 0x2C / 255, blue: 0x22 / 255)
+                        ? T.pill
                         : Color.clear,
                     in: RoundedRectangle(cornerRadius: 6, style: .continuous)
                 )
@@ -927,7 +928,7 @@ struct StudyPlanWidgetView: View {
     @Environment(\.widgetFamily) private var family
 
     private var trackColor: Color {
-        Color(red: 0x33 / 255, green: 0x2C / 255, blue: 0x22 / 255)
+        T.pill
     }
 
     var body: some View {
