@@ -981,12 +981,12 @@ struct GreetingBar<Trailing: View>: View {
         }
         .onAppear {
             if !name.isEmpty {
-                withAnimation(.easeInOut(duration: 0.45)) { nameVisible = true }
+                withAnimation(.easeOut(duration: 0.18)) { nameVisible = true }
             }
         }
         .onChange(of: name) { newValue in
             if !newValue.isEmpty && !nameVisible {
-                withAnimation(.easeInOut(duration: 0.45)) { nameVisible = true }
+                withAnimation(.easeOut(duration: 0.18)) { nameVisible = true }
             }
         }
     }
