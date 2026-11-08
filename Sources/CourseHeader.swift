@@ -295,17 +295,31 @@ struct CourseHeaderView: View {
         _lecturers = StateObject(wrappedValue: CourseLecturers(courseId: course.id))
     }
 
-    /// "Subject • Section 02 • Semester 1" on one line when it fits; otherwise the subject, then the section and semester
-    /// on the next line (so a line never starts or ends with a loose dot)
+    @ViewBuilder private func separatedRow(_ items: [String]) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            ForEach(Array(items.enumerated()), id: \.offset) { idx, item in
+                if idx > 0 {
+                    Rectangle()
+                        .fill(Theme.txt.opacity(0.45))
+                        .frame(width: 1, height: 15)
+                        .alignmentGuide(.firstTextBaseline) { d in d.height - 1.5 }
+                }
+                Text(item)
+            }
+        }
+    }
+
+    /// "Subject | Section 02 | Semester 1" on one line when it fits; otherwise the subject, then the section and semester
+    /// on the next line
     @ViewBuilder private var subtitle: some View {
-        let rest = [course.sectionLabel, course.semesterLabel].compactMap { $0 }.joined(separator: "  •  ")
+        let rest = [course.sectionLabel, course.semesterLabel].compactMap { $0 }
         if !course.subjectName.isEmpty {
             ViewThatFits(in: .horizontal) {
-                Text(([course.subjectName] + (rest.isEmpty ? [] : [rest])).joined(separator: "  •  "))
+                separatedRow([course.subjectName] + rest)
                     .lineLimit(1)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(course.subjectName).fixedSize(horizontal: false, vertical: true)
-                    if !rest.isEmpty { Text(rest) }
+                    if !rest.isEmpty { separatedRow(rest).lineLimit(1) }
                 }
             }
             .font(Theme.read(.body)).foregroundColor(Theme.txt)
