@@ -1211,7 +1211,7 @@ struct StudyPlanTrackerView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14).flatCard()
+        .padding(14).glowCard()
     }
 
     @ViewBuilder private func content(_ plan: StudyPlan) -> some View {
@@ -1234,7 +1234,7 @@ struct StudyPlanTrackerView: View {
                 }.pickerStyle(.menu).tint(Theme.accent)
             }
         }
-        .padding(14).flatCard()
+        .padding(14).glowCard()
 
         // concentration: chosen once, then the field-elective slots below fill themselves
         if !store.areaNames.isEmpty {
@@ -1259,7 +1259,7 @@ struct StudyPlanTrackerView: View {
                 }.foregroundStyle(Theme.accent)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(14).flatCard()
+            .padding(14).glowCard()
         }
 
         // categories
@@ -1277,7 +1277,7 @@ struct StudyPlanTrackerView: View {
                 }
             }
         }
-        .padding(14).flatCard()
+        .padding(14).glowCard()
 
         // semesters
         ForEach(plan.semesters) { s in semesterCard(s) }
@@ -1320,7 +1320,7 @@ struct StudyPlanTrackerView: View {
                 }.padding(.horizontal, 14).padding(.vertical, 10)
             }
         }
-        .flatCard()
+        .glowCard()
     }
 
     @ViewBuilder private func courseRow(_ c: PlanCourse) -> some View {
@@ -1417,6 +1417,7 @@ struct ConcentrationPickerView: View {
             .background(Theme.bg.ignoresSafeArea())
             .navigationTitle("Concentration")
             .navigationBarTitleDisplayMode(.inline)
+            .topNavFade()
             .toolbar { ToolbarItem(placement: .navigationBarTrailing) { Button("Done") { dismiss() } } }
             .confirmationDialog("Switch to \(pending ?? "")?",
                                 isPresented: Binding(get: { pending != nil }, set: { if !$0 { pending = nil } }),
@@ -1447,7 +1448,7 @@ struct ConcentrationPickerView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(14).flatCard()
+            .padding(14).glowCard()
         }.buttonStyle(.plain)
     }
 }

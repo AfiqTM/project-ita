@@ -101,7 +101,7 @@ struct CourseDetailView: View {
         .toolbarBackground(Visibility.hidden, for: .navigationBar)
         .navigationTitle(course.prettyShort ?? course.prettyFull)
         .navigationBarTitleDisplayMode(.inline)
-        .notebookBack()
+        .notebookBack(topFade: false)
         // the open tab goes away when its last item is removed
         .onChange(of: tabs) { new in if !new.contains(tab) { tab = .course } }
         // the Groups page only starts loading once it is opened (or a swipe heads for it): it fetches the whole participant list
@@ -416,7 +416,7 @@ struct FileViewer: View {
             .background(Theme.bg.ignoresSafeArea())
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
-            .notebookBack()
+            .notebookBack(topFade: false)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     if preparing {
@@ -715,7 +715,7 @@ struct WebActivityView: View {
         .background(Theme.bg.ignoresSafeArea())
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
-        .notebookBack()
+        .notebookBack(topFade: false)
         .task {
             resolved = await MoodleAPI.shared.autologin(url, userid: app.site?.userid ?? 0)
         }

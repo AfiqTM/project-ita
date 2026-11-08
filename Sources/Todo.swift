@@ -456,6 +456,7 @@ struct TodoEditSheet: View {
             .background(Theme.bg.ignoresSafeArea())
             .navigationTitle(existing == nil ? "New to-do" : "Edit to-do")
             .navigationBarTitleDisplayMode(.inline)
+            .topNavFade()
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Cancel") { dismiss() }.foregroundColor(Theme.muted)
@@ -601,6 +602,7 @@ struct TodoDetailSheet: View {
             .background(Theme.bg.ignoresSafeArea())
             .navigationTitle("To-Do")
             .navigationBarTitleDisplayMode(.inline)
+            .topNavFade()
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) { Button("Close") { dismiss() } }
                 ToolbarItem(placement: .navigationBarTrailing) { Button("Edit") { editing = true } }

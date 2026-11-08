@@ -46,6 +46,7 @@ struct SubmitToWorkSheet: View {
             .background(Theme.bg.ignoresSafeArea())
             .navigationTitle("Submit to work")
             .navigationBarTitleDisplayMode(.inline)
+            .topNavFade()
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Cancel") { dismiss() }
@@ -108,6 +109,7 @@ private struct SubmitWorkList: View {
         .background(Theme.bg.ignoresSafeArea())
         .navigationTitle(course.subjectName)
         .navigationBarTitleDisplayMode(.inline)
+        .notebookBack()
         .task { await load() }
     }
 
@@ -212,6 +214,7 @@ private struct SubmitConfirmView: View {
         .background(Theme.bg.ignoresSafeArea())
         .navigationTitle("Submit")
         .navigationBarTitleDisplayMode(.inline)
+        .notebookBack()
         .task { await loadStatus() }
         .confirmationDialog("Submit for grading? You may not be able to change it afterwards.",
                             isPresented: $confirmSubmit, titleVisibility: .visible) {

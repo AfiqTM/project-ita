@@ -203,6 +203,7 @@ private struct DailyToolPicker: View {
             .background(Theme.bg.ignoresSafeArea())
             .navigationTitle("Add a shortcut")
             .navigationBarTitleDisplayMode(.inline)
+            .topNavFade()
             .toolbar { ToolbarItem(placement: .navigationBarLeading) { Button("Close") { dismiss() }.foregroundColor(Theme.muted) } }
         }
         .preferredColorScheme(ThemeStore.shared.theme.scheme)
@@ -251,6 +252,7 @@ struct DailyBackTapGuide: View {
             .background(Theme.bg.ignoresSafeArea())
             .navigationTitle("Send with Back Tap")
             .navigationBarTitleDisplayMode(.inline)
+            .topNavFade()
             .toolbar { ToolbarItem(placement: .navigationBarTrailing) { Button("Done") { dismiss() }.fontWeight(.semibold) } }
         }
         .preferredColorScheme(ThemeStore.shared.theme.scheme)

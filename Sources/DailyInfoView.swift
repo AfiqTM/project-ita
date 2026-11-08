@@ -565,6 +565,7 @@ struct DailyEditSheet: View {
             .background(Theme.bg.ignoresSafeArea())
             .navigationTitle(existing == nil ? "Add to Noticeboard" : "Edit entry")
             .navigationBarTitleDisplayMode(.inline)
+            .topNavFade()
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Cancel") { dismiss() }.foregroundColor(Theme.muted)

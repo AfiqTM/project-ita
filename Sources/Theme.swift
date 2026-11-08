@@ -648,35 +648,179 @@ private struct KeepEdgeSwipeBack: UIViewControllerRepresentable {
     }
 }
 
-/// Notebook: replaces the system back button (liquid glass on iOS 26) with the square one. Other themes: no change.
-struct NotebookBack: ViewModifier {
-    @Environment(\.dismiss) private var dismiss
-    @ObservedObject private var themes = ThemeStore.shared
+/// Observes the vertical UIScrollView of the enclosing screen so the top navbar fade appears when scrolled.
+private struct TopScrollProbe: UIViewRepresentable {
+    let onChange: (CGFloat) -> Void
+    var onDetach: () -> Void = {}
+
+    func makeUIView(context: Context) -> ProbeView {
+        let v = ProbeView()
+        v.isUserInteractionEnabled = false
+        v.backgroundColor = .clear
+        v.onChange = onChange
+        v.onDetach = onDetach
+        return v
+    }
+
+    func updateUIView(_ v: ProbeView, context: Context) {
+        v.onChange = onChange
+        v.onDetach = onDetach
+        v.attachIfNeeded()
+    }
+
+    final class ProbeView: UIView {
+        var onChange: (CGFloat) -> Void = { _ in }
+        var onDetach: () -> Void = {}
+        private var observation: NSKeyValueObservation?
+        private weak var observedScrollView: UIScrollView?
+        private var retryTimer: Timer?
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            if window == nil {
+                retryTimer?.invalidate()
+                retryTimer = nil
+                let hadObservation = observation != nil
+                observation = nil
+                observedScrollView = nil
+                if hadObservation {
+                    DispatchQueue.main.async { [weak self] in self?.onDetach() }
+                }
+            } else {
+                attachIfNeeded()
+                if observation == nil && retryTimer == nil {
+                    retryTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] t in
+                        guard let self, self.window != nil else { t.invalidate(); return }
+                        self.attachIfNeeded()
+                        if self.observation != nil {
+                            t.invalidate()
+                            self.retryTimer = nil
+                        }
+                    }
+                }
+            }
+        }
+
+        private func findScrollView() -> UIScrollView? {
+            var v: UIView? = superview
+            while let cur = v {
+                if let sv = cur as? UIScrollView, isEligible(sv) { return sv }
+                v = cur.superview
+            }
+            var responder: UIResponder? = self
+            var rootView: UIView? = superview
+            while let r = responder {
+                if let vc = r as? UIViewController {
+                    rootView = vc.view
+                    break
+                }
+                responder = r.next
+            }
+            guard let root = rootView else { return nil }
+            var queue: [UIView] = [root]
+            while !queue.isEmpty {
+                let cur = queue.removeFirst()
+                if let sv = cur as? UIScrollView, isEligible(sv) { return sv }
+                queue.append(contentsOf: cur.subviews)
+            }
+            return nil
+        }
+
+        private func isEligible(_ sv: UIScrollView) -> Bool {
+            if sv is UITextView { return false }
+            let supName = String(describing: type(of: sv.superview as Any))
+            if supName.contains("WKWebView") || supName.contains("PDFView") { return false }
+            let isVertical = sv.alwaysBounceVertical || (sv.contentSize.height > sv.bounds.height && !sv.alwaysBounceHorizontal)
+            return isVertical && sv.bounds.height > 80
+        }
+
+        func attachIfNeeded() {
+            if let existing = observedScrollView, existing.window != nil, observation != nil { return }
+            observation = nil
+            observedScrollView = nil
+            guard window != nil, let sv = findScrollView() else { return }
+            observedScrollView = sv
+            observation = sv.observe(\.contentOffset, options: [.new]) { [weak self] s, _ in
+                self?.report(s)
+            }
+            DispatchQueue.main.async { [weak self, weak sv] in
+                if let sv { self?.report(sv) }
+            }
+        }
+
+        private func report(_ s: UIScrollView) {
+            onChange(s.contentOffset.y + s.adjustedContentInset.top)
+        }
+    }
+}
+
+/// Fades scrolled content smoothly under the top navigation bar using the same 28pt 3-stop gradient as CourseDetailView's TopFadeMask.
+struct TopNavFade: ViewModifier {
+    var enabled: Bool = true
+    @State private var scrolled: CGFloat = 0
+
     func body(content: Content) -> some View {
-        if themes.theme.isNotebook {
+        if enabled {
+            let progress = Double(min(max(scrolled / 18, 0), 1))
             content
-                .navigationBarBackButtonHidden(true)
-                .toolbar { NotebookBackToolbar { dismiss() } }
-                .background(KeepEdgeSwipeBack())
+                .noTopEdgeEffect()
+                .background(
+                    TopScrollProbe(
+                        onChange: { y in
+                            let clamped = min(max(y, 0), 20)
+                            if abs(clamped - scrolled) > 0.5 { scrolled = clamped }
+                        },
+                        onDetach: { scrolled = 0 }
+                    )
+                )
+                .overlay(alignment: .top) {
+                    VStack(spacing: 0) {
+                        Theme.bg
+                            .frame(height: 200)
+                            .padding(.top, -200)
+                        LinearGradient(stops: [
+                            .init(color: Theme.bg, location: 0),
+                            .init(color: Theme.bg.opacity(0.65), location: 0.45),
+                            .init(color: Theme.bg.opacity(0), location: 1)
+                        ], startPoint: .top, endPoint: .bottom)
+                        .frame(height: 28)
+                    }
+                    .opacity(progress)
+                    .allowsHitTesting(false)
+                }
         } else {
             content
         }
     }
 }
 
-/// A flat card: the surface colour in a rounded rectangle. Notebook: the outlined card with its block shadow.
-struct FlatCard: ViewModifier {
-    var radius: CGFloat = 14
+/// Notebook: replaces the system back button (liquid glass on iOS 26) with the square one. Also applies the top navbar scroll fade.
+struct NotebookBack: ViewModifier {
+    var topFade: Bool = true
+    @Environment(\.dismiss) private var dismiss
     @ObservedObject private var themes = ThemeStore.shared
     func body(content: Content) -> some View {
+        let base = content.modifier(TopNavFade(enabled: topFade))
         if themes.theme.isNotebook {
-            content.glowCard(radius: radius)
+            base
+                .navigationBarBackButtonHidden(true)
+                .toolbar { NotebookBackToolbar { dismiss() } }
+                .background(KeepEdgeSwipeBack())
         } else {
-            content.background(Theme.surface, in: RoundedRectangle(cornerRadius: radius))
+            base
         }
     }
 }
+
+/// A card with the theme's glow / outline effect.
+struct FlatCard: ViewModifier {
+    var radius: CGFloat = 14
+    func body(content: Content) -> some View {
+        content.glowCard(radius: radius)
+    }
+}
 extension View {
-    func notebookBack() -> some View { modifier(NotebookBack()) }
+    func notebookBack(topFade: Bool = true) -> some View { modifier(NotebookBack(topFade: topFade)) }
+    func topNavFade(_ enabled: Bool = true) -> some View { modifier(TopNavFade(enabled: enabled)) }
     func flatCard(radius: CGFloat = 14) -> some View { modifier(FlatCard(radius: radius)) }
 }

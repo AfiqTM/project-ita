@@ -724,6 +724,7 @@ struct SaveToSubjectSheet: View {
             .background(Theme.bg.ignoresSafeArea())
             .navigationTitle("Save to subject")
             .navigationBarTitleDisplayMode(.inline)
+            .topNavFade()
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Done") { dismiss() }.fontWeight(.semibold)

@@ -88,7 +88,7 @@ struct PDFScreen: View {
         .background(Theme.bg.ignoresSafeArea())
         .navigationTitle(resource.title)
         .navigationBarTitleDisplayMode(.inline)
-        .notebookBack()
+        .notebookBack(topFade: false)
         .toolbar {
             if let url = resource.url {
                 ToolbarItem(placement: .navigationBarTrailing) {

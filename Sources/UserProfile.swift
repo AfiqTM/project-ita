@@ -90,6 +90,7 @@ struct UserProfileView: View {
         .background(Theme.bg.ignoresSafeArea())
         .navigationTitle("Profile")
         .navigationBarTitleDisplayMode(.inline)
+        .notebookBack()
         .refreshable { await load() }
         .task { await load() }
     }

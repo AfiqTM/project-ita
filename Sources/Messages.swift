@@ -329,6 +329,7 @@ struct ChatListView: View {
         }
         .navigationTitle("Messages")
         .navigationBarTitleDisplayMode(.inline)
+        .topNavFade()
     }
 
     private func row(_ c: ChatConv) -> some View {
@@ -495,6 +496,7 @@ struct ChatThreadView: View {
         .background(Theme.bg.ignoresSafeArea())
         .navigationTitle(selecting ? "\(selected.count) selected" : conv.title)
         .navigationBarTitleDisplayMode(.inline)
+        .topNavFade()
         // No back arrow: go back by swiping right from anywhere (EdgeSwipeBack, bottom of this file).
         // The gesture is switched off while selecting so a stray swipe can't leave the screen.
         .navigationBarBackButtonHidden(true)

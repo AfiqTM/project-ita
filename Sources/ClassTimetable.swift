@@ -492,6 +492,7 @@ private struct TimetableEditor: View {
             .background(Theme.bg.ignoresSafeArea())
             .navigationTitle(original == nil ? "Add class" : "Edit class")
             .navigationBarTitleDisplayMode(.inline)
+            .topNavFade()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {

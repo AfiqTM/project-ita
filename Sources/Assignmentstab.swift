@@ -311,6 +311,7 @@ struct AssignmentsTabView: View {
             .padding(.bottom, 16)
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
+        .topNavFade()
         .refreshable { await model.load(uid: uid) }
         // room for the tab bar, which floats over the bottom of the screen
         .safeAreaInset(edge: .bottom, spacing: 0) { Color.clear.frame(height: 96) }
