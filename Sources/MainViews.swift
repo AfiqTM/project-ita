@@ -585,7 +585,8 @@ struct DefaultCover: View {
                 }
             }
             .lineLimit(1).minimumScaleFactor(0.5)
-            .padding(14)
+            .padding(.horizontal, 14)
+            .padding(.bottom, 9)
         }
     }
 }
