@@ -2,22 +2,14 @@ import WidgetKit
 import SwiftUI
 
 // WIDGET TARGET ONLY (lives in Widget/, built together with Shared/TimetableShared.swift).
-// Small: the next class. Medium: the classes of today (or the next day that has any). Large: the whole week,
-// in rows by start time. A class that is running fills with water (the level follows the time, refreshed every 5 min).
+// Small: the next class. Medium: the classes of today (or the next day that has any). Large: the whole week.
 
 private enum T {
-    static let accent = TimetableLook.pillText
-    static let txt    = TimetableLook.text
-    static let muted  = TimetableLook.muted
-    static let line   = Color(white: 0.13)
-}
-
-private extension View {
-    /// The dark wine-tinted backdrop of the widget (the same one as the card in the app)
-    @ViewBuilder func timetableBackdrop() -> some View {
-        if #available(iOS 17.0, *) { containerBackground(for: .widget) { TimetableBackdrop() } }
-        else { background(TimetableBackdrop()) }
-    }
+    static let bg     = Color.black
+    static let accent = Color(red: 210 / 255, green: 180 / 255, blue: 140 / 255)   // iTa'leem tan
+    static let txt    = Color(red: 230 / 255, green: 230 / 255, blue: 230 / 255)
+    static let muted  = Color(red: 154 / 255, green: 154 / 255, blue: 154 / 255)
+    static let line   = Color(red: 34 / 255, green: 34 / 255, blue: 34 / 255)
 }
 
 struct TimetableEntry: TimelineEntry {
@@ -83,12 +75,17 @@ struct TimetableWidgetView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .timetableBackdrop()
+        .widgetBackground(T.bg)   // same pure black as the Attendance widget
         .widgetURL(URL(string: "italeem://timetable"))   // a tap opens Class Timetable in the app
     }
 
     private func header(_ title: String, _ trailing: String?) -> some View {
-        TimetableHeader(title: title, trailing: trailing, scale: 0.9)
+        HStack(spacing: 5) {
+            Image(systemName: "calendar").font(.system(size: 11, weight: .semibold)).foregroundColor(T.accent)
+            Text(title).font(.system(size: 10, weight: .semibold)).tracking(0.6).foregroundColor(T.accent).lineLimit(1)
+            Spacer(minLength: 0)
+            if let trailing { Text(trailing).font(.system(size: 9)).foregroundColor(T.muted).lineLimit(1) }
+        }
     }
 
     private func dayLabel(_ offset: Int) -> String {
@@ -98,14 +95,22 @@ struct TimetableWidgetView: View {
         return TimetableText.dayNames[TimetableText.weekday(d) - 1]
     }
 
+    private func isNow(_ c: TimetableClass, _ offset: Int) -> Bool {
+        let m = TimetableText.minutes(entry.date)
+        return offset == 0 && c.startMin <= m && m < c.endMin
+    }
+
     // MARK: small
 
     @ViewBuilder private func small(_ data: TimetableData) -> some View {
         if let up = data.upcoming(from: entry.date), let c = up.classes.first {
-            let p = up.offset == 0 ? c.progress(at: entry.date) : nil
-            VStack(alignment: .leading, spacing: 6) {
-                header(p != nil ? "NOW" : "NEXT", dayLabel(up.offset))
-                TimetableBlock(c: c, accent: T.accent, text: T.txt, muted: T.muted, scale: 1.05, progress: p)
+            VStack(alignment: .leading, spacing: 4) {
+                header(isNow(c, up.offset) ? "NOW" : "NEXT", dayLabel(up.offset))
+                Spacer(minLength: 0)
+                Text(c.code).font(.system(size: 18, weight: .bold)).foregroundColor(T.accent).lineLimit(1).minimumScaleFactor(0.7)
+                Text(c.title).font(.system(size: 12, weight: .medium)).foregroundColor(T.txt).lineLimit(2)
+                Text(c.range).font(.system(size: 11)).foregroundColor(T.muted).lineLimit(1).minimumScaleFactor(0.8)
+                if !c.venue.isEmpty { Text(c.venue).font(.system(size: 10)).foregroundColor(T.muted).lineLimit(2).fixedSize(horizontal: false, vertical: true) }
             }
         } else {
             VStack(alignment: .leading, spacing: 4) {
@@ -122,9 +127,9 @@ struct TimetableWidgetView: View {
     @ViewBuilder private func medium(_ data: TimetableData) -> some View {
         if let up = data.upcoming(from: entry.date) {
             let shown = Array(up.classes.prefix(3))
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 7) {
                 header(dayLabel(up.offset).uppercased(), data.title)
-                ForEach(shown) { c in row(c, progress: up.offset == 0 ? c.progress(at: entry.date) : nil) }
+                ForEach(shown) { c in row(data, c, now: isNow(c, up.offset)) }
                 if up.classes.count > shown.count {
                     Text("+\(up.classes.count - shown.count) more").font(.system(size: 10)).foregroundColor(T.muted)
                 }
@@ -140,58 +145,48 @@ struct TimetableWidgetView: View {
         }
     }
 
-    private func row(_ c: TimetableClass, progress: Double?) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
-        return HStack(spacing: 8) {
+    private func row(_ data: TimetableData, _ c: TimetableClass, now: Bool) -> some View {
+        HStack(spacing: 8) {
+            Capsule().fill(T.accent).frame(width: 3)
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 5) {
                     Text(c.code).font(.system(size: 12, weight: .bold)).foregroundColor(T.txt)
-                    Text(c.title).font(.system(size: 11)).foregroundColor(T.txt).lineLimit(1)
-                }
-                if !c.venue.isEmpty {
-                    HStack(spacing: 4) {
-                        VenuePin(color: T.muted, size: 6)
-                        Text(c.venue).font(.system(size: 9.5)).foregroundColor(T.muted).lineLimit(1)
+                    if now {
+                        Text("NOW").font(.system(size: 8, weight: .bold)).foregroundColor(.black)
+                            .padding(.horizontal, 4).padding(.vertical, 1).background(T.accent).clipShape(Capsule())
                     }
+                    Text(c.title).font(.system(size: 11)).foregroundColor(T.muted).lineLimit(1)
                 }
+                // time first, then the venue; the venue may use a second row instead of being cut
+                (Text(c.range).foregroundColor(T.accent) + Text(c.venue.isEmpty ? "" : "  " + c.venue).foregroundColor(T.muted))
+                    .font(.system(size: 10)).lineLimit(2).fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
-            Text(c.shortRange.replacingOccurrences(of: "–", with: " – "))
-                .font(.system(size: 9.5, weight: .medium)).foregroundColor(TimetableLook.pillText)
-                .lineLimit(1).minimumScaleFactor(0.7)
-                .padding(.horizontal, 6).padding(.vertical, 2.5)
-                .background(TimetableLook.pillFill, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
-        .padding(.vertical, 5).padding(.horizontal, 8)
+        .padding(.vertical, 4).padding(.horizontal, 7)
         .background(
             ZStack {
-                shape.fill(TimetableLook.card)
-                if let p = progress { WaterFill(level: p, scale: 0.9) }
+                LinearGradient(colors: [T.accent.opacity(0.22), T.accent.opacity(0.08)], startPoint: .leading, endPoint: .trailing)
+                if now, let p = c.progress(at: entry.date) { WaterFill(level: p, scale: 0.9) }   // fills while the class runs
             }
-            .clipShape(shape)
         )
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
-
     // MARK: large
 
-    /// The week is drawn at the biggest size that fits: a busy timetable is scaled down instead of being cut
-    private func large(_ data: TimetableData) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            header("CLASS TIMETABLE", data.title)
-            ViewThatFits(in: .vertical) {
-                week(data, 1.0)
-                week(data, 0.88)
-                week(data, 0.76)
-                week(data, 0.66)
-                week(data, 0.58)
-                week(data, 0.5)
-            }
-        }
+    /// The tall widget has room for every hour at full height
+    private var tall: Bool {
+        #if TALL_WIDGET
+        if #available(iOS 27.0, *) { return family == .systemExtraLargePortrait }
+        #endif
+        return false
     }
 
-    private func week(_ data: TimetableData, _ scale: CGFloat) -> some View {
-        TimetableGrid(data: data, scale: scale, now: entry.date)
-            .fixedSize(horizontal: false, vertical: true)
+    private func large(_ data: TimetableData) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            header("CLASS TIMETABLE", data.title)
+            TimetableGrid(data: data, scale: 1, text: T.txt, muted: T.muted, line: T.line, accent: T.accent, now: entry.date)
+        }
     }
 }
 
