@@ -21,6 +21,9 @@ struct TimetableClass: Codable, Identifiable, Hashable {
     var range: String { TimetableText.range(startMin, endMin) }
     /// "8:30–10:00" without AM / PM (the hour labels on the side say which), so it fits a narrow block
     var shortRange: String { TimetableText.shortRange(startMin, endMin) }
+    /// The title as shown: a title written in all capitals ("ENGLISH FOR ACADEMIC WRITING") becomes
+    /// "English for Academic Writing". A title that already has lower-case letters is left as it is.
+    var displayTitle: String { TimetableText.normalCase(title) }
 }
 
 struct TimetableData: Codable {
@@ -74,6 +77,36 @@ enum TimetableText {
     static func exactMinutes(_ d: Date) -> Double {
         let c = Calendar.current.dateComponents([.hour, .minute, .second], from: d)
         return Double((c.hour ?? 0) * 60 + (c.minute ?? 0)) + Double(c.second ?? 0) / 60
+    }
+
+    private static let smallWords: Set<String> = ["a", "an", "the", "and", "or", "but", "nor", "for", "of", "to", "in", "on",
+                                                   "at", "by", "with", "as", "from", "into", "per", "via", "vs"]
+    /// short words that are really words (not acronyms like ICT) when written in capitals
+    private static let shortWords: Set<String> = ["law", "art", "use", "man", "men", "new", "its", "our", "how", "who", "why",
+                                                   "you", "all", "one", "two", "web", "sun", "sea", "air", "map", "tax", "war",
+                                                   "oil", "gas", "dna", "pe"]
+
+    /// "ENGLISH FOR ACADEMIC WRITING" -> "English for Academic Writing"; anything with a lower-case letter is returned unchanged.
+    /// Roman numerals (II, III) and short acronyms (ICT, AI) stay in capitals.
+    static func normalCase(_ t: String) -> String {
+        let letters = t.filter { $0.isLetter }
+        guard !letters.isEmpty, !letters.contains(where: { $0.isLowercase }) else { return t }
+        var first = true
+        let words = t.split(separator: " ", omittingEmptySubsequences: false).map { sub -> String in
+            let w = String(sub)
+            let core = w.filter { $0.isLetter }.lowercased()
+            defer { if !core.isEmpty { first = false } }
+            guard !core.isEmpty else { return w }
+            let roman = core.allSatisfy { "ivxl".contains($0) } && core.count <= 4
+            let acronym = core.count <= 3 && !smallWords.contains(core) && !shortWords.contains(core)
+            if roman || acronym { return w }
+            if smallWords.contains(core) && !first { return w.lowercased() }
+            // lower-case everything, then raise the first letter
+            var out = w.lowercased()
+            if let i = out.firstIndex(where: { $0.isLetter }) { out.replaceSubrange(i...i, with: String(out[i]).uppercased()) }
+            return out
+        }
+        return words.joined(separator: " ")
     }
 
     private static func parts(_ m: Int) -> (String, Bool) {
@@ -297,7 +330,7 @@ struct TimetableBlock: View {
                 .background(tan.opacity(0.18), in: RoundedRectangle(cornerRadius: 6 * k, style: .continuous))
                 .padding(.bottom, 2 * k)
             Text(c.code).font(.system(size: 11 * f, weight: .bold)).foregroundColor(text)
-            Text(c.title).font(.system(size: 10 * f, weight: .medium)).foregroundColor(text)
+            Text(c.displayTitle).font(.system(size: 10 * f, weight: .medium)).foregroundColor(text)
             if !c.venue.isEmpty {
                 HStack(alignment: .top, spacing: 3 * k) {
                     VenuePin(color: muted, size: 7 * f).padding(.top, 1.5 * k)

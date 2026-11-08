@@ -108,7 +108,7 @@ struct TimetableWidgetView: View {
                 header(isNow(c, up.offset) ? "NOW" : "NEXT", dayLabel(up.offset))
                 Spacer(minLength: 0)
                 Text(c.code).font(.system(size: 18, weight: .bold)).foregroundColor(T.accent).lineLimit(1).minimumScaleFactor(0.7)
-                Text(c.title).font(.system(size: 12, weight: .medium)).foregroundColor(T.txt).lineLimit(2)
+                Text(c.displayTitle).font(.system(size: 12, weight: .medium)).foregroundColor(T.txt).lineLimit(2)
                 Text(c.range).font(.system(size: 11)).foregroundColor(T.muted).lineLimit(1).minimumScaleFactor(0.8)
                 if !c.venue.isEmpty { Text(c.venue).font(.system(size: 10)).foregroundColor(T.muted).lineLimit(2).fixedSize(horizontal: false, vertical: true) }
             }
@@ -155,7 +155,7 @@ struct TimetableWidgetView: View {
                         Text("NOW").font(.system(size: 8, weight: .bold)).foregroundColor(.black)
                             .padding(.horizontal, 4).padding(.vertical, 1).background(T.accent).clipShape(Capsule())
                     }
-                    Text(c.title).font(.system(size: 11)).foregroundColor(T.muted).lineLimit(1)
+                    Text(c.displayTitle).font(.system(size: 11)).foregroundColor(T.muted).lineLimit(1)
                 }
                 // time first, then the venue; the venue may use a second row instead of being cut
                 (Text(c.range).foregroundColor(T.accent) + Text(c.venue.isEmpty ? "" : "  " + c.venue).foregroundColor(T.muted))
@@ -287,12 +287,12 @@ struct TimetableLockView: View {
             if let c = entry.current {
                 switch family {
                 case .accessoryInline:
-                    Text("\(c.title)\(c.venue.isEmpty ? "" : " · " + c.venue)")
+                    Text("\(c.displayTitle)\(c.venue.isEmpty ? "" : " · " + c.venue)")
                 default:
                     VStack(alignment: .leading, spacing: 1) {
                         Text((entry.ongoing ? "NOW" : "SOON") + " · " + c.range)
                             .font(.system(size: 10, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.7).opacity(0.7)
-                        Text(c.title).font(.system(size: 14, weight: .bold)).lineLimit(1).minimumScaleFactor(0.7)
+                        Text(c.displayTitle).font(.system(size: 14, weight: .bold)).lineLimit(1).minimumScaleFactor(0.7)
                         if !c.venue.isEmpty {
                             Text(c.venue).font(.system(size: 11)).lineLimit(2).fixedSize(horizontal: false, vertical: true)
                         }

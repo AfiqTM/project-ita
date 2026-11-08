@@ -294,7 +294,7 @@ struct TimetableView: View {
             Capsule().fill(Theme.accent).frame(width: 4)
             VStack(alignment: .leading, spacing: 3) {
                 Text(code).font(Theme.font(.subheadline).weight(.semibold)).foregroundColor(Theme.txt)
-                Text(mine[0].title).font(Theme.font(.footnote)).foregroundColor(Theme.txt).lineLimit(2)
+                Text(TimetableText.normalCase(mine[0].title)).font(Theme.font(.footnote)).foregroundColor(Theme.txt).lineLimit(2)
                 Text("Section \(mine[0].section) · \(creditText(mine[0].credit)) credit\(mine[0].credit == 1 ? "" : "s")")
                     .font(Theme.font(.caption)).foregroundColor(Theme.muted)
                 ForEach(Array(slots.enumerated()), id: \.offset) { _, s in
@@ -526,7 +526,7 @@ private struct TimetableDetail: View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(c.code).font(Theme.font(.title.weight(.bold))).foregroundColor(Theme.txt)
-                Text(c.title).font(Theme.font(.headline)).foregroundColor(Theme.txt)
+                Text(c.displayTitle).font(Theme.font(.headline)).foregroundColor(Theme.txt)
             }
             .padding(.bottom, 4)
             row("calendar", days[max(0, min(6, c.day - 1))])
