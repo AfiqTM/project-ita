@@ -333,7 +333,6 @@ struct CoursesView: View {
             }
             .padding(16)
         }
-        .topNavFade()
         .background(Theme.bg.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .noBottomEdgeEffect()   // iOS 26: no dark band along the bottom edge under the floating tab bar
