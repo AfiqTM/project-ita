@@ -249,8 +249,8 @@ struct AssignmentsTabView: View {
     // (To do, Overdue, Submitted, All), so swiping moves the lists with the finger like any other pager, and tapping a chip
     // slides to its page the same way.
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Group {
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 18) {
                 Text("Tasks").foregroundColor(Theme.txt).textGlow(radius: 4).rocksHeading(16, normal: .title3.weight(.semibold), pt: 20)
                 filterBar
                 rangeBar
@@ -261,7 +261,9 @@ struct AssignmentsTabView: View {
             TabView(selection: $model.filter) {
                 ForEach(AssignFilter.allCases) { f in
                     // redrawn only when the lists themselves change, not when the swipe changes the chosen filter
-                    StablePage(key: pageKey) { page(f) }.equatable().tag(f)
+                    StablePage(key: pageKey) { page(f) }.equatable()
+                        .mask(alignment: .top) { TopFadeMask() }
+                        .tag(f)
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
@@ -308,6 +310,7 @@ struct AssignmentsTabView: View {
                 }
             }
             .padding(.horizontal, 16)
+            .padding(.top, 18)
             .padding(.bottom, 16)
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }

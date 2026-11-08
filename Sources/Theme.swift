@@ -707,19 +707,29 @@ private struct TopScrollProbe: UIViewRepresentable {
                 if let sv = cur as? UIScrollView, isEligible(sv) { return sv }
                 v = cur.superview
             }
+            var stopView: UIView?
             var responder: UIResponder? = self
-            var rootView: UIView? = superview
             while let r = responder {
                 if let vc = r as? UIViewController {
-                    rootView = vc.view
+                    stopView = vc.view
                     break
                 }
                 responder = r.next
             }
-            guard let root = rootView else { return nil }
+            var ancestor: UIView? = superview
+            while let a = ancestor {
+                if let sv = searchDescendants(of: a) { return sv }
+                if a === stopView { break }
+                ancestor = a.superview
+            }
+            return nil
+        }
+
+        private func searchDescendants(of root: UIView) -> UIScrollView? {
             var queue: [UIView] = [root]
             while !queue.isEmpty {
                 let cur = queue.removeFirst()
+                if cur === self { continue }
                 if let sv = cur as? UIScrollView, isEligible(sv) { return sv }
                 queue.append(contentsOf: cur.subviews)
             }
@@ -728,9 +738,10 @@ private struct TopScrollProbe: UIViewRepresentable {
 
         private func isEligible(_ sv: UIScrollView) -> Bool {
             if sv is UITextView { return false }
+            if sv.isPagingEnabled || sv.alwaysBounceHorizontal { return false }
             let supName = String(describing: type(of: sv.superview as Any))
             if supName.contains("WKWebView") || supName.contains("PDFView") { return false }
-            let isVertical = sv.alwaysBounceVertical || (sv.contentSize.height > sv.bounds.height && !sv.alwaysBounceHorizontal)
+            let isVertical = sv.showsVerticalScrollIndicator || sv.alwaysBounceVertical || sv.contentSize.height > sv.bounds.height
             return isVertical && sv.bounds.height > 80
         }
 
@@ -776,8 +787,8 @@ struct TopNavFade: ViewModifier {
                 .overlay(alignment: .top) {
                     VStack(spacing: 0) {
                         Theme.bg
-                            .frame(height: 200)
-                            .padding(.top, -200)
+                            .ignoresSafeArea(edges: .top)
+                            .frame(height: 0)
                         LinearGradient(stops: [
                             .init(color: Theme.bg, location: 0),
                             .init(color: Theme.bg.opacity(0.65), location: 0.45),
