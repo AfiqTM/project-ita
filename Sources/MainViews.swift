@@ -570,22 +570,23 @@ struct DefaultCover: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                     .padding(14)
             }
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(course.courseCode(timetable: timetable.data))
                     .foregroundColor(baseColor.opacity(0.92))
                     .textGlow()
                     .pixelHeading(16, normal: .system(size: 22, weight: .bold), pt: 22)
+                    .padding(.trailing, 2)
                 ForEach(tags, id: \.self) { tag in
-                    // a thin line a little taller than the capitals, centred on them (top above the caps, bottom just
-                    // under the baseline), so SECTION / SEM sit in the middle of it
+                    // a thin line a little taller than the capitals, lifted slightly alongside SECTION / SEM so the
+                    // text sits in the middle of the separator while the course code stays on the baseline
                     Rectangle()
                         .fill(baseColor.opacity(0.45))
-                        .frame(width: 1, height: 14)
-                        .alignmentGuide(.firstTextBaseline) { d in d.height - 2.5 }
-                        .padding(.horizontal, 2)
+                        .frame(width: 1, height: 13.5)
+                        .alignmentGuide(.firstTextBaseline) { d in d.height - 1.0 }
                     Text(tag)
                         .font(.system(size: 12.5, weight: .medium))
                         .foregroundColor(baseColor.opacity(0.82))
+                        .baselineOffset(1.5)
                 }
             }
             .lineLimit(1).minimumScaleFactor(0.5)
