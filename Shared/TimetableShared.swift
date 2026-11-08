@@ -21,6 +21,14 @@ struct TimetableClass: Codable, Identifiable, Hashable {
     var range: String { TimetableText.range(startMin, endMin) }
     /// "8:30–10:00" without AM / PM (the hour labels on the side say which), so it fits a narrow block
     var shortRange: String { TimetableText.shortRange(startMin, endMin) }
+    /// shortRange, with PM added for an evening class (so "8:00 – 10:00" is not read as the morning)
+    var pillRange: String { startMin >= 17 * 60 ? shortRange + " PM" : shortRange }
+}
+
+/// One row of the week: the classes that start at about the same time, one box per day
+struct TimetableRow {
+    var start: Int
+    var cells: [Int: TimetableClass]     // day -> class
 }
 
 struct TimetableData: Codable {
@@ -45,8 +53,30 @@ struct TimetableData: Codable {
         let used = Array(Set(classes.map { $0.day })).sorted()
         return used.isEmpty ? [1, 2, 3, 4, 5] : used
     }
-    /// The start times that rows are made of: one row per start time, earliest first (an evening class comes last)
-    var slots: [Int] { Array(Set(classes.map { $0.startMin })).sorted() }
+    /// The rows of the week. A class goes in the row of its start time, so the same hour lines up across the days;
+    /// rows run earliest first, and a day's classes keep their order. An evening class (5 PM or later) does not get
+    /// a row of its own when an earlier row has a free spot on its day: that saves a whole row of height.
+    var rows: [TimetableRow] {
+        var rows: [TimetableRow] = []
+        var last: [Int: Int] = [:]      // day -> the row of its latest class
+        for c in classes.sorted(by: { ($0.startMin, $0.day) < ($1.startMin, $1.day) }) {
+            let from = (last[c.day] ?? -1) + 1
+            var target: Int?
+            for i in from..<rows.count where rows[i].start == c.startMin && rows[i].cells[c.day] == nil { target = i; break }
+            if target == nil && c.startMin >= 17 * 60 {
+                for i in from..<rows.count where rows[i].cells[c.day] == nil { target = i; break }
+            }
+            if target == nil {
+                rows.append(TimetableRow(start: c.startMin, cells: [:]))
+                target = rows.count - 1
+            }
+            if let t = target {
+                rows[t].cells[c.day] = c
+                last[c.day] = t
+            }
+        }
+        return rows
+    }
     func palette(_ code: String) -> TimetablePalette { TimetablePalette.all[(codes.firstIndex(of: code) ?? 0) % TimetablePalette.all.count] }
 
     static let sample = TimetableData(session: "2026/2027", semester: "1", classes: [
@@ -236,7 +266,7 @@ struct TimetableGrid: View {
     var body: some View {
         let today = TimetableText.weekday(now)
         let days = data.days
-        VStack(spacing: 4 * scale) {
+        VStack(spacing: 3 * scale) {
             // the day names
             HStack(alignment: .top, spacing: 3 * scale) {
                 ForEach(days, id: \.self) { d in
@@ -252,11 +282,11 @@ struct TimetableGrid: View {
             .padding(.bottom, 2 * scale)
             // one row per start time, earliest first: the same hour lines up across the days, an empty slot stays blank,
             // and the boxes of a row are equally tall
-            ForEach(data.slots, id: \.self) { slot in
+            ForEach(Array(data.rows.enumerated()), id: \.offset) { _, row in
                 HStack(alignment: .top, spacing: 3 * scale) {
                     ForEach(days, id: \.self) { d in
-                        VStack(spacing: 4 * scale) {
-                            ForEach(data.classes.filter { $0.day == d && $0.startMin == slot }) { c in
+                        VStack(spacing: 0) {
+                            if let c = row.cells[d] {
                                 TimetableBlock(c: c, accent: accent, text: text, muted: muted, scale: scale,
                                                progress: c.progress(at: now), animated: animated)
                                     .contentShape(Rectangle())
@@ -285,18 +315,32 @@ struct TimetableBlock: View {
 
     private let tan = Color(red: 0xD2 / 255, green: 0xB4 / 255, blue: 0x8C / 255)
 
+    /// Lines a title needs when words are wrapped at about 11 letters (a word longer than that is one line)
+    private static func lines(_ title: String) -> Int {
+        var n = 1, used = 0
+        for w in title.split(separator: " ") {
+            if used == 0 { used = w.count }
+            else if used + 1 + w.count <= 11 { used += 1 + w.count }
+            else { n += 1; used = w.count }
+        }
+        return n
+    }
+
     var body: some View {
         let k = scale * 1.12          // the box is a little bigger than the plain grid scale
         let r = 10 * k
         VStack(alignment: .leading, spacing: 3 * k) {
-            Text(c.shortRange.replacingOccurrences(of: "–", with: " – "))
+            Text(c.pillRange.replacingOccurrences(of: "–", with: " – "))
                 .font(.system(size: 9.5 * k, weight: .medium)).foregroundColor(tan)
                 .lineLimit(1).minimumScaleFactor(0.6)   // the time always stays on one row
                 .padding(.horizontal, 6 * k).padding(.vertical, 2 * k)
                 .background(tan.opacity(0.18), in: RoundedRectangle(cornerRadius: 6 * k, style: .continuous))
                 .padding(.bottom, 2 * k)
             Text(c.code).font(.system(size: 11 * k, weight: .bold)).foregroundColor(text)
+            // a long word (MANAGEMENT) is shrunk a little instead of being split in the middle: the line limit is the number
+            // of lines the title needs when every word fits (about 11 letters per line), so a split would exceed it
             Text(c.title).font(.system(size: 10 * k, weight: .medium)).foregroundColor(text)
+                .lineLimit(Self.lines(c.title)).minimumScaleFactor(0.7)
             if !c.venue.isEmpty {
                 HStack(alignment: .top, spacing: 3 * k) {
                     VenuePin(color: muted, size: 7 * k).padding(.top, 1.5 * k)
@@ -306,7 +350,7 @@ struct TimetableBlock: View {
         }
         .multilineTextAlignment(.leading)
         .fixedSize(horizontal: false, vertical: true)
-        .padding(.vertical, 9 * k).padding(.horizontal, 8 * k)
+        .padding(.vertical, 7 * k).padding(.horizontal, 7.5 * k)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)   // fills the row's height
         .background(
             ZStack {
