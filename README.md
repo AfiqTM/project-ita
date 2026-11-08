@@ -1,7 +1,7 @@
-# iTa'leem (iOS, SwiftUI)
+# Project Ita' 
 
-Native client for iTa'leem (IIUM Moodle) using Moodle's mobile web-service API, styled like the
-"iTa'leem AMOLED Dark" userscript (true black, #D2B48C tan accent, glow cards, filter row with an Assignments tab).
+Native client IIUM Moodle using Moodle's mobile web-service API, styled like the
+"AMOLED Dark" userscript (true black, #D2B48C tan accent, glow cards, filter row with an Assignments tab).
 
 ## Features
 
