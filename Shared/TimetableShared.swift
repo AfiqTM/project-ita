@@ -185,6 +185,36 @@ enum TimetableStore {
     }
 }
 
+struct TimetableWidgetSettings: Codable, Equatable {
+    var showCards: Bool = false
+    var timeOnTop: Bool = false
+}
+
+enum TimetableWidgetSettingsStore {
+    private static var fileURL: URL? { AttendanceStore.groupFile("timetable_widget_settings.json") }
+    private static let defaultsKey = "timetable.widget.settings.v1"
+
+    static func save(_ s: TimetableWidgetSettings) {
+        if let d = try? JSONEncoder().encode(s) {
+            if let url = fileURL { try? d.write(to: url, options: .atomic) }
+            UserDefaults.standard.set(d, forKey: defaultsKey)
+        }
+        WidgetCenter.shared.reloadAllTimelines()
+    }
+
+    static func load() -> TimetableWidgetSettings {
+        if let url = fileURL, let d = try? Data(contentsOf: url),
+           let s = try? JSONDecoder().decode(TimetableWidgetSettings.self, from: d) {
+            return s
+        }
+        if let d = UserDefaults.standard.data(forKey: defaultsKey),
+           let s = try? JSONDecoder().decode(TimetableWidgetSettings.self, from: d) {
+            return s
+        }
+        return TimetableWidgetSettings()
+    }
+}
+
 // MARK: - Water
 
 /// The water in a box: `level` 0...1 is how full it is (from the bottom); the surface is a gentle wave.
@@ -267,6 +297,8 @@ struct TimetableGrid: View {
     var now: Date = Date()
     var animated = false
     var textScale: CGFloat = 1      // the app screen uses a slightly smaller text than the widget
+    var showCards = false
+    var timeOnTop = false
 
     var body: some View {
         let today = TimetableText.weekday(now)
@@ -294,7 +326,8 @@ struct TimetableGrid: View {
                         VStack(spacing: 4 * scale) {
                             ForEach(data.classes.filter { $0.day == d && $0.startMin == slot }) { c in
                                 TimetableBlock(c: c, accent: accent, text: text, muted: muted, scale: scale,
-                                               progress: c.progress(at: now), animated: animated, textScale: textScale)
+                                               progress: c.progress(at: now), animated: animated, textScale: textScale,
+                                               showCards: showCards, timeOnTop: timeOnTop)
                                     .contentShape(Rectangle())
                                     .onTapGesture { onSelect?(c) }
                             }
@@ -319,6 +352,8 @@ struct TimetableBlock: View {
     var progress: Double? = nil     // 0...1 while the class is running: the box fills with water
     var animated = false
     var textScale: CGFloat = 1
+    var showCards = false
+    var timeOnTop = false
 
     private let tan = Color(red: 0xD2 / 255, green: 0xB4 / 255, blue: 0x8C / 255)
 
@@ -327,8 +362,12 @@ struct TimetableBlock: View {
         let f = k * 1.14 * textScale              // the text is bigger than the box around it (the padding stays at k)
         let r = 10 * k
         VStack(alignment: .leading, spacing: 3 * k) {
+            if timeOnTop {
+                timePill(k: k, f: f)
+                    .padding(.bottom, 2 * k)
+            }
             VStack(alignment: .leading, spacing: 3 * k) {
-                Text(c.code).font(.system(size: 11 * f, weight: .bold)).foregroundColor(tan)
+                Text(c.code).font(.system(size: 11 * f, weight: .bold)).foregroundColor(timeOnTop ? text : tan)
                 Text(c.displayTitle).font(.system(size: 10 * f, weight: .medium)).foregroundColor(text)
                 if !c.venue.isEmpty {
                     HStack(alignment: .top, spacing: 3 * k) {
@@ -338,23 +377,32 @@ struct TimetableBlock: View {
                 }
             }
             .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 2 * k)
-            Text(c.shortRange.replacingOccurrences(of: "–", with: " – "))
-                .font(.system(size: 9.5 * f, weight: .medium)).foregroundColor(tan)
-                .lineLimit(1).minimumScaleFactor(0.6)   // the time always stays on one row
-                .padding(.horizontal, 6 * k).padding(.vertical, 2 * k)
-                .background(tan.opacity(0.24), in: RoundedRectangle(cornerRadius: 6 * k, style: .continuous))
+            if !timeOnTop {
+                Spacer(minLength: 2 * k)
+                timePill(k: k, f: f)
+            }
         }
         .multilineTextAlignment(.leading)
         .padding(.vertical, 9 * k).padding(.horizontal, 8 * k)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)   // fills the row's height
         .background(
             ZStack {
+                if showCards {
+                    RoundedRectangle(cornerRadius: r, style: .continuous).fill(tan.opacity(0.08))
+                }
                 if let p = progress { WaterFill(level: p, scale: k, animated: animated) }
             }
             .clipShape(RoundedRectangle(cornerRadius: r, style: .continuous))
         )
         .clipShape(RoundedRectangle(cornerRadius: r, style: .continuous))
+    }
+
+    private func timePill(k: CGFloat, f: CGFloat) -> some View {
+        Text(c.shortRange.replacingOccurrences(of: "–", with: " – "))
+            .font(.system(size: 9.5 * f, weight: .medium)).foregroundColor(tan)
+            .lineLimit(1).minimumScaleFactor(0.6)   // the time always stays on one row
+            .padding(.horizontal, 6 * k).padding(.vertical, 2 * k)
+            .background(tan.opacity(0.24), in: RoundedRectangle(cornerRadius: 6 * k, style: .continuous))
     }
 }
 

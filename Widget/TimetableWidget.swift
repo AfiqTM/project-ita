@@ -16,14 +16,19 @@ private enum T {
 struct TimetableEntry: TimelineEntry {
     let date: Date
     let data: TimetableData?
+    var settings: TimetableWidgetSettings = TimetableWidgetSettingsStore.load()
     var shared = true
 }
 
 struct TimetableProvider: TimelineProvider {
-    func placeholder(in context: Context) -> TimetableEntry { TimetableEntry(date: Date(), data: .sample) }
+    func placeholder(in context: Context) -> TimetableEntry {
+        TimetableEntry(date: Date(), data: .sample, settings: TimetableWidgetSettingsStore.load())
+    }
 
     private func entry(_ date: Date) -> TimetableEntry {
-        TimetableEntry(date: date, data: TimetableStore.load(), shared: AttendanceStore.isShared)
+        TimetableEntry(date: date, data: TimetableStore.load(),
+                       settings: TimetableWidgetSettingsStore.load(),
+                       shared: AttendanceStore.isShared)
     }
     func getSnapshot(in context: Context, completion: @escaping (TimetableEntry) -> Void) {
         completion(context.isPreview ? TimetableEntry(date: Date(), data: .sample) : entry(Date()))
@@ -214,7 +219,8 @@ struct TimetableWidgetView: View {
     }
 
     private func week(_ data: TimetableData, _ scale: CGFloat) -> some View {
-        TimetableGrid(data: data, scale: scale, text: T.txt, muted: T.muted, line: T.line, accent: T.accent, now: entry.date)
+        TimetableGrid(data: data, scale: scale, text: T.txt, muted: T.muted, line: T.line, accent: T.accent,
+                      now: entry.date, showCards: entry.settings.showCards, timeOnTop: entry.settings.timeOnTop)
             .fixedSize(horizontal: false, vertical: true)
     }
 

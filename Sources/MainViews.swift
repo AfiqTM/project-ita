@@ -80,6 +80,7 @@ struct RootView: View {
                     .navigationDestination(for: OthersRoute.self) { route in
                         switch route {
                         case .themes: ThemesView()
+                        case .widgetSettings: WidgetSettingsView()
                         }
                     }
             }
@@ -735,7 +736,7 @@ struct AlertsView: View {
 // MARK: - Profile
 
 /// Screens in Others that are opened by value, so the open one can be kept when the tabs are rebuilt for a new theme
-enum OthersRoute: Hashable { case themes }
+enum OthersRoute: Hashable { case themes, widgetSettings }
 
 struct ProfileView: View {
     @EnvironmentObject var app: AppState
@@ -837,6 +838,10 @@ struct ProfileView: View {
                     NavigationLink(value: OthersRoute.themes) {
                         ProfileRow(icon: "paintpalette", title: "Themes",
                                    subtitle: themes.theme.name, showLine: true)
+                    }
+                    NavigationLink(value: OthersRoute.widgetSettings) {
+                        ProfileRow(icon: "rectangle.3.group", title: "Widget Settings",
+                                   subtitle: "Customise home-screen widgets", showLine: true)
                     }
                     NavigationLink { SavedLoginView() } label: {
                         ProfileRow(icon: "key", title: "Saved login",

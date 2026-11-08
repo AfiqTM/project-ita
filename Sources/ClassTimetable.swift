@@ -178,6 +178,7 @@ final class TimetableManager: ObservableObject {
 
 struct TimetableView: View {
     @ObservedObject private var store = TimetableManager.shared
+    @ObservedObject private var widgetSettings = TimetableWidgetSettingsModel.shared
     @EnvironmentObject var app: AppState
     @AppStorage(DevMode.key) private var devOn = false
     @State private var importing = false
@@ -273,7 +274,8 @@ struct TimetableView: View {
         .padding(.horizontal, 2)
         TimelineView(.periodic(from: Date(), by: 30)) { ctx in   // so the water level and "today" stay right
             TimetableGrid(data: t, text: Theme.txt, muted: Theme.muted, line: Theme.line, accent: Theme.accent,
-                          onSelect: { selected = $0 }, now: ctx.date, animated: true, textScale: 0.9)
+                          onSelect: { selected = $0 }, now: ctx.date, animated: true, textScale: 0.9,
+                          showCards: widgetSettings.settings.showCards, timeOnTop: widgetSettings.settings.timeOnTop)
         }
         .padding(5)
             .glowCard()
@@ -553,4 +555,80 @@ private struct TimetableDetail: View {
 private struct TimetableSheetHeight: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
+// MARK: - Widget Settings (Others > App Preferences > Widget Settings)
+
+@MainActor
+final class TimetableWidgetSettingsModel: ObservableObject {
+    static let shared = TimetableWidgetSettingsModel()
+
+    @Published var settings: TimetableWidgetSettings {
+        didSet {
+            if settings != oldValue {
+                TimetableWidgetSettingsStore.save(settings)
+            }
+        }
+    }
+
+    private init() {
+        self.settings = TimetableWidgetSettingsStore.load()
+    }
+}
+
+struct WidgetSettingsView: View {
+    @ObservedObject private var model = TimetableWidgetSettingsModel.shared
+
+    private func sectionTitle(_ t: String) -> some View {
+        Text(t).font(ThemeStore.shared.theme.isNotebook ? Theme.font(.subheadline) : Theme.font(.footnote).weight(.semibold))
+            .foregroundColor(Theme.muted)
+            .textCase(.uppercase).padding(.horizontal, ThemeStore.shared.theme.isNotebook ? 0 : 6).padding(.bottom, -8)
+    }
+
+    private func toggleRow(title: String, subtitle: String, isOn: Binding<Bool>, showLine: Bool) -> some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .foregroundColor(Theme.txt).fontWeight(.semibold).textGlow(radius: 3)
+                Text(subtitle)
+                    .font(Theme.font(.caption)).foregroundColor(Theme.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 8)
+            Toggle("", isOn: isOn)
+                .labelsHidden()
+                .tint(Theme.accent)
+        }
+        .padding(ThemeStore.shared.theme.isNotebook ? 16 : 14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(RowDivider().frame(height: showLine ? 1 : 0).opacity(showLine ? 1 : 0), alignment: .bottom)
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                sectionTitle("Timetable Widget")
+                VStack(spacing: 0) {
+                    toggleRow(
+                        title: "Add cards",
+                        subtitle: "Display a dark brown card behind each subject in the timetable.",
+                        isOn: $model.settings.showCards,
+                        showLine: true
+                    )
+                    toggleRow(
+                        title: "Show class time on top",
+                        subtitle: "Place the class time badge above the course code instead of at the bottom.",
+                        isOn: $model.settings.timeOnTop,
+                        showLine: false
+                    )
+                }
+                .glowCard()
+            }
+            .padding(16)
+        }
+        .background(Theme.bg.ignoresSafeArea())
+        .navigationTitle("Widget Settings")
+        .navigationBarTitleDisplayMode(.inline)
+        .notebookBack()
+    }
 }
