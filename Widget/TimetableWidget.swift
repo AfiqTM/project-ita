@@ -182,10 +182,22 @@ struct TimetableWidgetView: View {
         return false
     }
 
+    private func week(_ data: TimetableData, _ scale: CGFloat) -> some View {
+        TimetableGrid(data: data, scale: scale, text: T.txt, muted: T.muted, line: T.line, accent: T.accent, now: entry.date)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
     private func large(_ data: TimetableData) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             header("CLASS TIMETABLE", data.title)
-            TimetableGrid(data: data, scale: 1, text: T.txt, muted: T.muted, line: T.line, accent: T.accent, now: entry.date)
+            ViewThatFits(in: .vertical) {
+                week(data, 1.0)
+                week(data, 0.88)
+                week(data, 0.76)
+                week(data, 0.66)
+                week(data, 0.58)
+                week(data, 0.5)
+            }
         }
     }
 }

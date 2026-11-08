@@ -45,6 +45,8 @@ struct TimetableData: Codable {
         let used = Array(Set(classes.map { $0.day })).sorted()
         return used.isEmpty ? [1, 2, 3, 4, 5] : used
     }
+    /// The start times that rows are made of: one row per start time, earliest first (an evening class comes last)
+    var slots: [Int] { Array(Set(classes.map { $0.startMin })).sorted() }
     func palette(_ code: String) -> TimetablePalette { TimetablePalette.all[(codes.firstIndex(of: code) ?? 0) % TimetablePalette.all.count] }
 
     static let sample = TimetableData(session: "2026/2027", semester: "1", classes: [
@@ -233,24 +235,38 @@ struct TimetableGrid: View {
 
     var body: some View {
         let today = TimetableText.weekday(now)
-        HStack(alignment: .top, spacing: 3 * scale) {
-            ForEach(data.days, id: \.self) { d in
-                VStack(spacing: 5 * scale) {
+        let days = data.days
+        VStack(spacing: 4 * scale) {
+            // the day names
+            HStack(alignment: .top, spacing: 3 * scale) {
+                ForEach(days, id: \.self) { d in
                     Text(TimetableText.dayNames[d - 1])
                         .font(.system(size: 11 * scale, weight: .semibold))
                         .foregroundColor(d == today ? Color.black : muted)
                         .padding(.horizontal, 10 * scale)
                         .frame(height: 18 * scale)
                         .background(d == today ? accent : Color.clear, in: Capsule())
-                        .padding(.bottom, 2 * scale)
-                    ForEach(data.classes.filter { $0.day == d }.sorted { $0.startMin < $1.startMin }) { c in
-                        TimetableBlock(c: c, accent: accent, text: text, muted: muted, scale: scale,
-                                       progress: c.progress(at: now), animated: animated)
-                            .contentShape(Rectangle())
-                            .onTapGesture { onSelect?(c) }
+                        .frame(maxWidth: .infinity)
+                }
+            }
+            .padding(.bottom, 2 * scale)
+            // one row per start time, earliest first: the same hour lines up across the days, an empty slot stays blank,
+            // and the boxes of a row are equally tall
+            ForEach(data.slots, id: \.self) { slot in
+                HStack(alignment: .top, spacing: 3 * scale) {
+                    ForEach(days, id: \.self) { d in
+                        VStack(spacing: 4 * scale) {
+                            ForEach(data.classes.filter { $0.day == d && $0.startMin == slot }) { c in
+                                TimetableBlock(c: c, accent: accent, text: text, muted: muted, scale: scale,
+                                               progress: c.progress(at: now), animated: animated)
+                                    .contentShape(Rectangle())
+                                    .onTapGesture { onSelect?(c) }
+                            }
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .top)
+                .fixedSize(horizontal: false, vertical: true)
             }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -289,8 +305,8 @@ struct TimetableBlock: View {
         }
         .multilineTextAlignment(.leading)
         .fixedSize(horizontal: false, vertical: true)
-        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 7 * scale).padding(.horizontal, 7 * scale)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)   // fills the row's height
         .background(
             ZStack {
                 RoundedRectangle(cornerRadius: r, style: .continuous).fill(tan.opacity(0.08))   // soft tan tint over whatever is behind
