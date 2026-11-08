@@ -192,14 +192,10 @@ struct TimetableWidgetView: View {
             header("CLASS TIMETABLE", data.title)
             ViewThatFits(in: .vertical) {
                 week(data, 1.0)
-                week(data, 0.94)
                 week(data, 0.88)
-                week(data, 0.82)
                 week(data, 0.76)
-                week(data, 0.70)
-                week(data, 0.64)
+                week(data, 0.66)
                 week(data, 0.58)
-                week(data, 0.54)
                 week(data, 0.5)
             }
         }
