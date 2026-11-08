@@ -926,6 +926,7 @@ struct GreetingBar<Trailing: View>: View {
     @State private var textSize: CGSize = .zero
     @State private var rowSize: CGSize = .zero
     @State private var trailingWidth: CGFloat = 0
+    @State private var nameVisible = false
 
     init(hello: String, name: String, @ViewBuilder trailing: () -> Trailing) {
         self.hello = hello
@@ -978,6 +979,16 @@ struct GreetingBar<Trailing: View>: View {
         .overlay(alignment: .leading) {
             if playing { effect.mask(alignment: .leading) { laneMask } }
         }
+        .onAppear {
+            if !name.isEmpty {
+                withAnimation(.easeInOut(duration: 0.45)) { nameVisible = true }
+            }
+        }
+        .onChange(of: name) { newValue in
+            if !newValue.isEmpty && !nameVisible {
+                withAnimation(.easeInOut(duration: 0.45)) { nameVisible = true }
+            }
+        }
     }
 
     @ViewBuilder private var textRow: some View {
@@ -996,7 +1007,10 @@ struct GreetingBar<Trailing: View>: View {
     private func greeting(_ a: AttributedString, _ b: AttributedString) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Text(a).foregroundColor(Theme.muted)
-            Text(b).foregroundColor(Theme.accent).fontWeight(.semibold)
+            Text(b)
+                .foregroundColor(Theme.accent)
+                .fontWeight(.semibold)
+                .opacity(nameVisible ? 1 : 0)
         }
         .textGlow()
         .rocksHeading(16, normal: .title3, pt: 20)
