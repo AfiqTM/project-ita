@@ -487,10 +487,10 @@ struct TasksWidgetView: View {
         Group {
             if let snap = entry.snapshot {
                 let list = snap.upcoming(from: entry.date)
-                if let first = list.first {
+                if let closest = snap.closest(from: entry.date) {
                     switch family {
                     case .systemSmall:
-                        small(first)
+                        small(closest.item, count: closest.totalCount)
                     default:
                         mediumOrLarge(list)
                     }
@@ -508,10 +508,19 @@ struct TasksWidgetView: View {
         .widgetURL(URL(string: "italeem://tasks"))
     }
 
-    private func header(_ trailing: String?) -> some View {
+    private func header(count: Int? = nil, _ trailing: String?) -> some View {
         HStack(spacing: 5) {
             Image(systemName: "calendar").font(.system(size: 11, weight: .semibold)).foregroundColor(T.accent)
             Text("TASKS").font(.system(size: 10, weight: .semibold)).tracking(0.6).foregroundColor(T.accent).lineLimit(1)
+            if let count, count > 0 {
+                Text("\(count)")
+                    .font(.system(size: 9.5, weight: .bold))
+                    .foregroundColor(T.accent)
+                    .lineLimit(1)
+                    .padding(.horizontal, 6.5)
+                    .padding(.vertical, 1.5)
+                    .background(Color(red: 0x33 / 255, green: 0x2C / 255, blue: 0x22 / 255), in: Capsule())
+            }
             Spacer(minLength: 0)
             if let trailing {
                 Text(trailing).font(.system(size: 9.5, weight: .medium)).foregroundColor(T.muted).lineLimit(1)
@@ -548,11 +557,11 @@ struct TasksWidgetView: View {
 
     // MARK: small
 
-    @ViewBuilder private func small(_ t: TaskWidgetItem) -> some View {
+    @ViewBuilder private func small(_ t: TaskWidgetItem, count: Int) -> some View {
         let today = isDueToday(t)
         let code = t.resolvedCode(timetable: timetable)
         VStack(alignment: .leading, spacing: 4) {
-            header(dateLabel(t))
+            header(count: count, dateLabel(t))
             Spacer(minLength: 0)
             if let code {
                 Text(code)
@@ -595,7 +604,7 @@ struct TasksWidgetView: View {
         let maxCount = family == .systemMedium ? 3 : 6
         let shown = Array(list.prefix(maxCount))
         VStack(alignment: .leading, spacing: 8) {
-            header("\(list.count) upcoming")
+            header(count: list.count, nil)
             ForEach(shown) { t in
                 taskRow(t)
             }
@@ -708,10 +717,10 @@ struct TodoWidgetView: View {
         Group {
             if let snap = entry.snapshot {
                 let list = snap.upcoming(from: entry.date)
-                if let first = list.first {
+                if let closest = snap.closest(from: entry.date) {
                     switch family {
                     case .systemSmall:
-                        small(first)
+                        small(closest.item, count: closest.totalCount)
                     default:
                         mediumOrLarge(list)
                     }
@@ -729,10 +738,19 @@ struct TodoWidgetView: View {
         .widgetURL(URL(string: "italeem://todo"))
     }
 
-    private func header(_ trailing: String?) -> some View {
+    private func header(count: Int? = nil, _ trailing: String?) -> some View {
         HStack(spacing: 5) {
             Image(systemName: "calendar").font(.system(size: 11, weight: .semibold)).foregroundColor(T.accent)
             Text("TO-DO").font(.system(size: 10, weight: .semibold)).tracking(0.6).foregroundColor(T.accent).lineLimit(1)
+            if let count, count > 0 {
+                Text("\(count)")
+                    .font(.system(size: 9.5, weight: .bold))
+                    .foregroundColor(T.accent)
+                    .lineLimit(1)
+                    .padding(.horizontal, 6.5)
+                    .padding(.vertical, 1.5)
+                    .background(Color(red: 0x33 / 255, green: 0x2C / 255, blue: 0x22 / 255), in: Capsule())
+            }
             Spacer(minLength: 0)
             if let trailing {
                 Text(trailing).font(.system(size: 9.5, weight: .medium)).foregroundColor(T.muted).lineLimit(1)
@@ -769,11 +787,11 @@ struct TodoWidgetView: View {
 
     // MARK: small
 
-    @ViewBuilder private func small(_ t: TodoWidgetItem) -> some View {
+    @ViewBuilder private func small(_ t: TodoWidgetItem, count: Int) -> some View {
         let today = isDueToday(t)
         let code = t.resolvedCode(timetable: timetable)
         VStack(alignment: .leading, spacing: 4) {
-            header(dateLabel(t))
+            header(count: count, dateLabel(t))
             Spacer(minLength: 0)
             if let code {
                 Text(code)
@@ -816,7 +834,7 @@ struct TodoWidgetView: View {
         let maxCount = family == .systemMedium ? 3 : 6
         let shown = Array(list.prefix(maxCount))
         VStack(alignment: .leading, spacing: 8) {
-            header("\(list.count) pending")
+            header(count: list.count, nil)
             ForEach(shown) { t in
                 todoRow(t)
             }

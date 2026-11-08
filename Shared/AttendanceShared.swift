@@ -93,15 +93,25 @@ struct TasksSnapshot: Codable {
     var items: [TaskWidgetItem]
     var updated: Date
 
-    /// Unsubmitted tasks that are still due in the future, soonest first.
+    /// Unsubmitted tasks that are still due in the future, soonest first (ties at the exact same date & time are randomly ordered).
     func upcoming(from date: Date) -> [TaskWidgetItem] {
         let now = Int(date.timeIntervalSince1970)
-        return items.filter { $0.due > now }.sorted { $0.due < $1.due }
+        return items.filter { $0.due > now }.shuffled().sorted { $0.due < $1.due }
+    }
+
+    /// The single closest upcoming task; if multiple share the earliest due date & time, one is chosen randomly.
+    func closest(from date: Date) -> (item: TaskWidgetItem, totalCount: Int)? {
+        let list = upcoming(from: date)
+        guard let minDue = list.first?.due,
+              let chosen = list.filter({ $0.due == minDue }).randomElement() else { return nil }
+        return (chosen, list.count)
     }
 
     static let sample = TasksSnapshot(items: [
         .init(id: 1, title: "Assignment 2", courseName: "SEM1 BICS 1303 Section 04 Digital Embedded & Systems",
-              due: Int(Date().addingTimeInterval(14 * 3600).timeIntervalSince1970))
+              due: Int(Date().addingTimeInterval(14 * 3600).timeIntervalSince1970)),
+        .init(id: 2, title: "Lab Report 3", courseName: "SEM1 BICS 2306 Section 05 Software Engineering",
+              due: Int(Date().addingTimeInterval(48 * 3600).timeIntervalSince1970))
     ], updated: Date())
 }
 
@@ -213,14 +223,24 @@ struct TodoWidgetSnapshot: Codable {
     var items: [TodoWidgetItem]
     var updated: Date
 
-    /// Pending to-dos due in the future (or today), soonest first.
+    /// Pending to-dos due in the future (or today), soonest first (ties at the exact same date & time are randomly ordered).
     func upcoming(from date: Date) -> [TodoWidgetItem] {
-        items.filter { $0.due > date }.sorted { $0.due < $1.due }
+        items.filter { $0.due > date }.shuffled().sorted { $0.due < $1.due }
+    }
+
+    /// The single closest upcoming to-do; if multiple share the earliest due date & time, one is chosen randomly.
+    func closest(from date: Date) -> (item: TodoWidgetItem, totalCount: Int)? {
+        let list = upcoming(from: date)
+        guard let minDue = list.first?.due,
+              let chosen = list.filter({ $0.due == minDue }).randomElement() else { return nil }
+        return (chosen, list.count)
     }
 
     static let sample = TodoWidgetSnapshot(items: [
         .init(id: UUID(), title: "Study for assignment 2", courseName: "LEED 1301 English for Academic Writing",
-              due: Date().addingTimeInterval(14 * 3600))
+              due: Date().addingTimeInterval(14 * 3600)),
+        .init(id: UUID(), title: "Finish tutorial sheet", courseName: "BICS 2306 Software Engineering",
+              due: Date().addingTimeInterval(48 * 3600))
     ], updated: Date())
 }
 
