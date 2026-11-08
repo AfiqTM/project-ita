@@ -118,10 +118,13 @@ struct TimetableWidgetView: View {
                     .foregroundColor(T.txt)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
-                if !c.venue.isEmpty {
+                let v = c.venue.isEmpty
+                    ? (data.classes.first { $0.code == c.code && !$0.venue.isEmpty }?.venue ?? "")
+                    : c.venue
+                if !v.isEmpty {
                     HStack(alignment: .top, spacing: 4) {
                         VenuePin(color: T.muted, size: 8).padding(.top, 1.5)
-                        Text(c.venue)
+                        Text(v)
                             .font(.system(size: 10))
                             .foregroundColor(T.muted)
                             .lineLimit(2)
@@ -135,7 +138,7 @@ struct TimetableWidgetView: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
                     .padding(.horizontal, 7).padding(.vertical, 3.5)
-                    .background(T.accent.opacity(0.18), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .background(T.accent.opacity(0.24), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                     .offset(x: -1)
                     .padding(.top, 2)
             }

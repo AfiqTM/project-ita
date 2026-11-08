@@ -53,7 +53,7 @@ struct TimetableData: Codable {
     func palette(_ code: String) -> TimetablePalette { TimetablePalette.all[(codes.firstIndex(of: code) ?? 0) % TimetablePalette.all.count] }
 
     static let sample = TimetableData(session: "2026/2027", semester: "1", classes: [
-        .init(code: "LEED 1301", section: 51, title: "ENGLISH FOR ACADEMIC WRITING", credit: 3, day: 1, startMin: 510, endMin: 600, venue: ""),
+        .init(code: "LEED 1301", section: 51, title: "ENGLISH FOR ACADEMIC WRITING", credit: 3, day: 1, startMin: 510, endMin: 600, venue: "ICT LT 1 LEVEL 4D"),
         .init(code: "BICS 1306", section: 4, title: "Digital & Embedded Systems", credit: 3, day: 1, startMin: 600, endMin: 680, venue: "ICT LT 1 LEVEL 4D"),
         .init(code: "BICS 2306", section: 5, title: "Software Engineering", credit: 3, day: 1, startMin: 690, endMin: 770, venue: "ICT TL-E5-01 LEVEL 5E"),
         .init(code: "BIIT 2301", section: 4, title: "User Experience Design", credit: 3, day: 1, startMin: 840, endMin: 920, venue: "ICT HCI LAB LEVEL 4C"),
