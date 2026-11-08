@@ -146,11 +146,20 @@ final class TodoStore: ObservableObject {
     init() {
         if let d = UserDefaults.standard.data(forKey: key),
            let list = try? JSONDecoder().decode([TodoItem].self, from: d) { items = list }
+        syncWidget()
+    }
+
+    private func syncWidget() {
+        let out = pending.map {
+            TodoWidgetItem(id: $0.id, title: $0.title, courseName: $0.courseName ?? $0.kind.title, due: $0.due)
+        }
+        TodoWidgetStore.save(TodoWidgetSnapshot(items: out, updated: Date()))
     }
 
     private func persist() {
         if let d = try? JSONEncoder().encode(items) { UserDefaults.standard.set(d, forKey: key) }
         NotificationManager.shared.scheduleTodos(live)
+        syncWidget()
     }
     private func save() {
         persist()

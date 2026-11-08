@@ -125,6 +125,76 @@ enum TasksStore {
     }
 }
 
+// MARK: - To-Do (Academic Tools > To-Do List)
+
+struct TodoWidgetItem: Codable, Identifiable, Hashable {
+    var id: UUID
+    var title: String       // what to do, e.g. "Study for assignment 2"
+    var courseName: String  // subject name (or kind title when no subject)
+    var due: Date
+
+    /// Course code extracted from courseName or matched against the saved timetable.
+    func resolvedCode(timetable: TimetableData?) -> String? {
+        let pattern = "(?:^|\\b)([A-Z]{2,6}\\s*\\d{3,4})\\b"
+        if let re = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
+           let m = re.firstMatch(in: courseName, range: NSRange(courseName.startIndex..., in: courseName)),
+           let r = Range(m.range(at: 1), in: courseName) {
+            let raw = String(courseName[r]).uppercased().replacingOccurrences(of: "\\s+", with: "", options: .regularExpression)
+            let letters = raw.prefix { $0.isLetter }
+            let digits = raw.dropFirst(letters.count)
+            return "\(letters) \(digits)"
+        }
+        guard let t = timetable else { return nil }
+        let target = displayCourseName.lowercased()
+        guard !target.isEmpty else { return nil }
+        return t.classes.first { $0.displayTitle.lowercased() == target || $0.title.lowercased() == target }?.code
+    }
+
+    var displayCourseName: String {
+        let prefix = "^\\s*(?:SEM\\s*\\d+\\s+)?[A-Z]{2,6}\\s*\\d{3,4}\\s+(?:(?:SECTION|SEC)\\s*\\d+\\s+)?"
+        var s = courseName.replacingOccurrences(of: prefix, with: "", options: [.regularExpression, .caseInsensitive])
+        s = s.replacingOccurrences(of: "\\s*[\\(\\[][^\\)\\]]*[\\)\\]]", with: "", options: .regularExpression)
+        s = s.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+        s = s.trimmingCharacters(in: CharacterSet(charactersIn: " -–—:,"))
+        return TimetableText.normalCase(s.isEmpty ? courseName : s)
+    }
+}
+
+struct TodoWidgetSnapshot: Codable {
+    var items: [TodoWidgetItem]
+    var updated: Date
+
+    /// Pending to-dos due in the future (or today), soonest first.
+    func upcoming(from date: Date) -> [TodoWidgetItem] {
+        items.filter { $0.due > date }.sorted { $0.due < $1.due }
+    }
+
+    static let sample = TodoWidgetSnapshot(items: [
+        .init(id: UUID(), title: "Study for assignment 2", courseName: "LEED 1301 English for Academic Writing",
+              due: Date().addingTimeInterval(14 * 3600))
+    ], updated: Date())
+}
+
+enum TodoWidgetStore {
+    private static var fileURL: URL? { AttendanceStore.groupFile("todos.json") }
+
+    static func save(_ s: TodoWidgetSnapshot) {
+        guard let url = fileURL, let d = try? JSONEncoder().encode(s) else { return }
+        try? d.write(to: url, options: .atomic)
+        WidgetCenter.shared.reloadAllTimelines()
+    }
+
+    static func load() -> TodoWidgetSnapshot? {
+        guard let url = fileURL, let d = try? Data(contentsOf: url) else { return nil }
+        return try? JSONDecoder().decode(TodoWidgetSnapshot.self, from: d)
+    }
+
+    static func clear() {
+        if let url = fileURL { try? FileManager.default.removeItem(at: url) }
+        WidgetCenter.shared.reloadAllTimelines()
+    }
+}
+
 func formatPercent(_ p: Double) -> String {
     let r = (p * 10).rounded() / 10
     return r == r.rounded() ? "\(Int(r))%" : String(format: "%.1f%%", r)

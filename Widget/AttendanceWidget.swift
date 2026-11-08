@@ -184,6 +184,7 @@ struct AttendanceWidgetBundle: WidgetBundle {
         AttendanceHomeWidget()
         TimetableHomeWidget()
         TasksHomeWidget()
+        TodoHomeWidget()
         TimetableLockWidget()
         TimetableTimerWidget()
     }

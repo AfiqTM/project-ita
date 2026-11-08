@@ -31,9 +31,10 @@ struct iTaleemApp: App {
             .environmentObject(catalog)
             .environmentObject(sync)
             .onAppear { sync.configure(todos: todos, lib: driveLib, auth: driveAuth) }
-            .onOpenURL { url in   // the Class Timetable and Tasks widgets open italeem://timetable or italeem://tasks
+            .onOpenURL { url in   // the Class Timetable, Tasks, and To-Do widgets open their screens in the app
                 guard url.scheme == "italeem" else { return }
                 if url.host == "timetable" { ToolPresenter.shared.open(.timetable) }
+                else if url.host == "todo" { ToolPresenter.shared.open(.todo) }
                 else if url.host == "tasks" { ToolPresenter.shared.close(); NotificationCenter.default.post(name: .openTasksTab, object: nil) }
             }
             .onChange(of: scenePhase) { phase in if phase == .active { sync.syncNow(); AppIcon.syncWithTheme() } }

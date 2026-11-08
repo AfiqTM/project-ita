@@ -656,3 +656,224 @@ struct TasksHomeWidget: Widget {
         .contentMarginsDisabled()
     }
 }
+
+// MARK: - To-Do (Academic Tools > To-Do List) widget
+
+struct TodoWidgetEntry: TimelineEntry {
+    let date: Date
+    let snapshot: TodoWidgetSnapshot?
+    var shared = true
+}
+
+struct TodoWidgetProvider: TimelineProvider {
+    func placeholder(in context: Context) -> TodoWidgetEntry {
+        TodoWidgetEntry(date: Date(), snapshot: .sample)
+    }
+
+    private func entry(_ date: Date) -> TodoWidgetEntry {
+        TodoWidgetEntry(date: date, snapshot: TodoWidgetStore.load(), shared: AttendanceStore.isShared)
+    }
+
+    func getSnapshot(in context: Context, completion: @escaping (TodoWidgetEntry) -> Void) {
+        completion(context.isPreview ? placeholder(in: context) : entry(Date()))
+    }
+
+    func getTimeline(in context: Context, completion: @escaping (Timeline<TodoWidgetEntry>) -> Void) {
+        let now = Date()
+        let cal = Calendar.current
+        var dates = [now]
+        for h in 1...6 {
+            if let d = cal.date(byAdding: .hour, value: h, to: now) { dates.append(d) }
+        }
+        if let midnight = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: now)) {
+            dates.append(midnight)
+        }
+        let next = cal.date(byAdding: .hour, value: 1, to: now) ?? now.addingTimeInterval(3600)
+        completion(Timeline(entries: dates.sorted().map(entry), policy: .after(next)))
+    }
+}
+
+struct TodoWidgetView: View {
+    @Environment(\.widgetFamily) private var family
+    let entry: TodoWidgetEntry
+    private let timetable = TimetableStore.load()
+
+    private static let dateFmt: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "d MMMM"
+        return f
+    }()
+
+    var body: some View {
+        Group {
+            if let snap = entry.snapshot {
+                let list = snap.upcoming(from: entry.date)
+                if let first = list.first {
+                    switch family {
+                    case .systemSmall:
+                        small(first)
+                    default:
+                        mediumOrLarge(list)
+                    }
+                } else {
+                    emptyView("Nothing to do.")
+                }
+            } else {
+                emptyView(!entry.shared
+                          ? "Can't reach the app's data. The app and widget need the same App Group when signing."
+                          : "Open iTa'leem > Others > To-Do List to add your tasks.")
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .amoledBackground()
+        .widgetURL(URL(string: "italeem://todo"))
+    }
+
+    private func header(_ trailing: String?) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: "calendar").font(.system(size: 11, weight: .semibold)).foregroundColor(T.accent)
+            Text("TO-DO").font(.system(size: 10, weight: .semibold)).tracking(0.6).foregroundColor(T.accent).lineLimit(1)
+            Spacer(minLength: 0)
+            if let trailing {
+                Text(trailing).font(.system(size: 9.5, weight: .medium)).foregroundColor(T.muted).lineLimit(1)
+            }
+        }
+    }
+
+    private func emptyView(_ msg: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            header(nil)
+            Spacer(minLength: 0)
+            Text(msg).font(.system(size: 13, weight: .medium)).foregroundColor(T.txt)
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func isDueToday(_ t: TodoWidgetItem) -> Bool {
+        Calendar.current.isDate(t.due, inSameDayAs: entry.date)
+    }
+
+    private func dateLabel(_ t: TodoWidgetItem) -> String {
+        isDueToday(t) ? "Today" : Self.dateFmt.string(from: t.due)
+    }
+
+    private func hoursLeftText(_ t: TodoWidgetItem) -> String {
+        let secs = max(0, t.due.timeIntervalSince(entry.date))
+        let hrs = Int(ceil(secs / 3600))
+        if hrs <= 1 {
+            let mins = max(1, Int(ceil(secs / 60)))
+            return mins < 60 ? "\(mins) Min Left" : "1 Hour Left"
+        }
+        return "\(hrs) Hours Left"
+    }
+
+    // MARK: small
+
+    @ViewBuilder private func small(_ t: TodoWidgetItem) -> some View {
+        let today = isDueToday(t)
+        let code = t.resolvedCode(timetable: timetable)
+        VStack(alignment: .leading, spacing: 4) {
+            header(dateLabel(t))
+            Spacer(minLength: 0)
+            if let code {
+                Text(code)
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundColor(T.accent)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+            }
+            Text(t.displayCourseName)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(T.txt)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(t.title)
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundColor(T.muted)
+                .lineLimit(today ? 2 : 3)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 1)
+            if today {
+                Text(hoursLeftText(t))
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundColor(T.accent)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .padding(.horizontal, 7).padding(.vertical, 3.5)
+                    .background(Color(red: 0x33 / 255, green: 0x2C / 255, blue: 0x22 / 255), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .offset(x: -1)
+                    .padding(.top, 2)
+            } else {
+                Spacer(minLength: 0)
+                    .frame(maxHeight: 10)
+            }
+        }
+    }
+
+    // MARK: medium & large
+
+    @ViewBuilder private func mediumOrLarge(_ list: [TodoWidgetItem]) -> some View {
+        let maxCount = family == .systemMedium ? 3 : 6
+        let shown = Array(list.prefix(maxCount))
+        VStack(alignment: .leading, spacing: 8) {
+            header("\(list.count) pending")
+            ForEach(shown) { t in
+                todoRow(t)
+            }
+            if list.count > shown.count {
+                Text("+\(list.count - shown.count) more").font(.system(size: 10)).foregroundColor(T.muted)
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func todoRow(_ t: TodoWidgetItem) -> some View {
+        let today = isDueToday(t)
+        let code = t.resolvedCode(timetable: timetable)
+        return HStack(alignment: .center, spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(alignment: .firstTextBaseline, spacing: 5) {
+                    if let code {
+                        Text(code)
+                            .font(.system(size: 12.5, weight: .bold))
+                            .foregroundColor(T.accent)
+                            .lineLimit(1)
+                            .layoutPriority(1)
+                    }
+                    Text(t.displayCourseName)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(T.txt)
+                        .lineLimit(1)
+                }
+                Text(t.title)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(T.muted)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 4)
+            Text(today ? hoursLeftText(t) : dateLabel(t))
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(today ? T.accent : T.muted)
+                .lineLimit(1)
+                .padding(.horizontal, 7).padding(.vertical, 3)
+                .background(
+                    today
+                        ? Color(red: 0x33 / 255, green: 0x2C / 255, blue: 0x22 / 255)
+                        : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+                )
+        }
+    }
+}
+
+struct TodoHomeWidget: Widget {
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: "TodoWidget", provider: TodoWidgetProvider()) { entry in
+            TodoWidgetView(entry: entry)
+        }
+        .configurationDisplayName("To-Do")
+        .description("Your upcoming to-do items from Academic Tools.")
+        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
+        .contentMarginsDisabled()
+    }
+}
