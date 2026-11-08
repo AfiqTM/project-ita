@@ -81,26 +81,35 @@ struct AttendanceWidgetView: View {
     @Environment(\.widgetFamily) private var family
     let entry: AttendanceEntry
 
+    private var columnsCount: Int {
+        switch family {
+        case .systemSmall: return 1
+        default: return 2
+        }
+    }
     private var limit: Int {
         switch family {
-        case .systemSmall: return 3
+        case .systemSmall: return 2
         case .systemMedium: return 4
-        default: return 9
+        default: return 8
         }
     }
     private var compact: Bool { family == .systemSmall }
-    private var rowFont: CGFloat { compact ? 11 : 12.5 }
 
     /// 80% is the usual attendance minimum, so anything under it is tinted red
     private func tint(_ p: Double) -> Color { p >= 80 ? W.accent : W.warn }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: compact ? 7 : 9) {
+        VStack(alignment: .leading, spacing: 6) {
             header
 
             if let s = entry.snapshot, !s.items.isEmpty {
-                VStack(alignment: .leading, spacing: compact ? 7 : 9) {
-                    ForEach(s.items.prefix(limit)) { row($0) }
+                let shown = Array(s.items.prefix(limit))
+                ViewThatFits(in: .vertical) {
+                    grid(shown, scale: 1.0)
+                    grid(shown, scale: 0.92)
+                    grid(shown, scale: 0.84)
+                    grid(shown, scale: 0.76)
                 }
                 if s.items.count > limit {
                     Text("+\(s.items.count - limit) more").font(.system(size: 10)).foregroundColor(W.muted)
@@ -132,31 +141,76 @@ struct AttendanceWidgetView: View {
         }
     }
 
-    /// Subject name and its maximum possible attendance, with a thin bar under them
-    private func row(_ i: AttendanceItem) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 6) {
-                Text(i.displayName)   // "SEM1 BICS 1306 Section 04 ..." prefix removed
-                    .font(.system(size: rowFont))
-                    .foregroundColor(W.txt)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                Spacer(minLength: 4)
-                Text(formatPercent(i.percent))
-                    .font(.system(size: rowFont, weight: .bold))
-                    .monospacedDigit()
-                    .foregroundColor(tint(i.percent))
-                    .lineLimit(1)
+    @ViewBuilder private func grid(_ items: [AttendanceItem], scale: CGFloat) -> some View {
+        let cols = columnsCount
+        let rowCount = (items.count + cols - 1) / cols
+        VStack(spacing: 5 * scale) {
+            ForEach(0..<rowCount, id: \.self) { r in
+                HStack(alignment: .top, spacing: 5 * scale) {
+                    ForEach(0..<cols, id: \.self) { c in
+                        let idx = r * cols + c
+                        if idx < items.count {
+                            card(items[idx], scale: scale)
+                        } else {
+                            Color.clear.frame(maxWidth: .infinity)
+                        }
+                    }
+                }
+                .fixedSize(horizontal: false, vertical: true)
             }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// Subject card matching the timetable block UI: a soft tan card with a percentage pill, code, title, and bar
+    private func card(_ i: AttendanceItem, scale: CGFloat) -> some View {
+        let col = tint(i.percent)
+        let r = 10 * scale
+        return VStack(alignment: .leading, spacing: 3 * scale) {
+            HStack(spacing: 6 * scale) {
+                Text(formatPercent(i.percent))
+                    .font(.system(size: 9.5 * scale, weight: .bold))
+                    .monospacedDigit()
+                    .foregroundColor(col)
+                    .lineLimit(1)
+                    .padding(.horizontal, 6 * scale).padding(.vertical, 2 * scale)
+                    .background(col.opacity(0.18), in: RoundedRectangle(cornerRadius: 6 * scale, style: .continuous))
+                if let code = i.code {
+                    Text(code)
+                        .font(.system(size: 10.5 * scale, weight: .bold))
+                        .foregroundColor(W.txt)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.bottom, 1 * scale)
+
+            Text(i.displayName)
+                .font(.system(size: 10 * scale, weight: .medium))
+                .foregroundColor(W.txt)
+                .lineLimit(compact ? 1 : 2)
+                .minimumScaleFactor(0.85)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Spacer(minLength: 2 * scale)
+
             ZStack(alignment: .leading) {
                 Capsule().fill(W.track)
                 GeometryReader { g in
-                    Capsule().fill(tint(i.percent))
+                    Capsule().fill(col)
                         .frame(width: g.size.width * CGFloat(min(max(i.percent, 0), 100) / 100))
                 }
             }
-            .frame(height: 3)
+            .frame(height: 3 * scale)
         }
+        .padding(.vertical, 7 * scale).padding(.horizontal, 8 * scale)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(
+            RoundedRectangle(cornerRadius: r, style: .continuous)
+                .fill(col.opacity(0.08))
+        )
+        .clipShape(RoundedRectangle(cornerRadius: r, style: .continuous))
     }
 }
 struct AttendanceHomeWidget: Widget {

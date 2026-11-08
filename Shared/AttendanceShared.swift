@@ -9,6 +9,15 @@ struct AttendanceItem: Codable, Identifiable, Hashable {
     var name: String       // subject
     var percent: Double    // maximum possible attendance, 0-100
 
+    /// Course code extracted from the prefix if present, e.g. "BICS 1306".
+    var code: String? {
+        let pattern = "^\\s*(?:SEM\\s*\\d+\\s+)?([A-Z]{2,6}\\s*\\d{3,4})"
+        guard let re = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
+              let m = re.firstMatch(in: name, range: NSRange(name.startIndex..., in: name)),
+              let r = Range(m.range(at: 1), in: name) else { return nil }
+        return String(name[r]).replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression).uppercased()
+    }
+
     /// Name without the "SEM1 BICS 1306 Section 04" prefix, e.g.
     /// "SEM1 BICS 1306 Section 04 Digital & Embedded Systems" -> "Digital & Embedded Systems".
     /// Computed only, so it is not part of the saved JSON. Falls back to the full name if stripping leaves nothing.
@@ -17,7 +26,7 @@ struct AttendanceItem: Codable, Identifiable, Hashable {
         let cleaned = name
             .replacingOccurrences(of: pattern, with: "", options: [.regularExpression, .caseInsensitive])
             .trimmingCharacters(in: .whitespaces)
-        return cleaned.isEmpty ? name : cleaned
+        return TimetableText.normalCase(cleaned.isEmpty ? name : cleaned)
     }
 }
 
