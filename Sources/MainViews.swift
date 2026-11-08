@@ -557,6 +557,7 @@ struct DefaultCover: View {
         let covers = themes.theme.covers
         let p = covers[abs(course.id) % covers.count]
         let baseColor = themes.theme.westernHeadings ? Color.white : Theme.accent
+        let tagColor = (themes.theme.scheme == .light ? Theme.txt : Color.white).opacity(0.75)
         let tags = course.coverTags(timetable: timetable.data)
         ZStack(alignment: .bottomLeading) {
             LinearGradient(colors: [Color(hex: p.0), Color(hex: p.1)],
@@ -570,28 +571,28 @@ struct DefaultCover: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                     .padding(14)
             }
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
+            VStack(alignment: .leading, spacing: 5) {
                 Text(course.courseCode(timetable: timetable.data))
                     .foregroundColor(baseColor.opacity(0.92))
                     .textGlow()
                     .pixelHeading(16, normal: .system(size: 22, weight: .bold), pt: 22)
-                    .padding(.trailing, 2)
-                ForEach(tags, id: \.self) { tag in
-                    // a thin line a little taller than the capitals, lifted slightly alongside SECTION / SEM so the
-                    // text sits in the middle of the separator while the course code stays on the baseline
-                    Rectangle()
-                        .fill(baseColor.opacity(0.45))
-                        .frame(width: 1, height: 13.5)
-                        .alignmentGuide(.firstTextBaseline) { d in d.height - 1.0 }
-                    Text(tag)
-                        .font(.system(size: 12.5, weight: .medium))
-                        .foregroundColor(baseColor.opacity(0.82))
-                        .baselineOffset(1.5)
+                HStack(alignment: .center, spacing: 10) {
+                    ForEach(tags, id: \.self) { tag in
+                        HStack(alignment: .center, spacing: 6) {
+                            Circle()
+                                .fill(tagColor)
+                                .frame(width: 4.5, height: 4.5)
+                            Text(tag)
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(tagColor)
+                        }
+                    }
                 }
+                .padding(.leading, 1)
             }
             .lineLimit(1).minimumScaleFactor(0.5)
             .padding(.horizontal, 14)
-            .padding(.bottom, 9)
+            .padding(.bottom, 10)
         }
     }
 }
