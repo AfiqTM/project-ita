@@ -160,6 +160,13 @@ final class TimetableManager: ObservableObject {
         TimetableStore.save(t)
     }
 
+    /// An edit made by hand (the text read from the PDF is kept)
+    func update(_ t: TimetableData) {
+        data = t
+        if let d = try? JSONEncoder().encode(t) { UserDefaults.standard.set(d, forKey: Self.key) }
+        TimetableStore.save(t)
+    }
+
     func remove() {
         data = nil
         UserDefaults.standard.removeObject(forKey: Self.key)
@@ -177,6 +184,7 @@ struct TimetableView: View {
     @State private var failed = false
     @State private var confirmRemove = false
     @State private var selected: TimetableClass?
+    @State private var editing: TimetableEditTarget?
 
     private var dev: Bool { devOn && DevMode.allowed(app.site?.fullname) }
 
@@ -195,6 +203,7 @@ struct TimetableView: View {
             if store.data != nil {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
+                        Button { editing = TimetableEditTarget(original: nil) } label: { Label("Add a class", systemImage: "plus") }
                         Button { importing = true } label: { Label("Upload a new PDF", systemImage: "arrow.up.doc") }
                         if dev { Button { UIPasteboard.general.string = store.lastText } label: { Label("Copy text read from PDF", systemImage: "doc.on.doc") } }
                         Button(role: .destructive) { confirmRemove = true } label: { Label("Remove timetable", systemImage: "trash") }
@@ -210,7 +219,15 @@ struct TimetableView: View {
             Button("OK", role: .cancel) {}
         } message: { Text("It should be the Course Registration Confirmation Slip, with the table of courses, days, times and venues." + (dev ? " The text that was read has been copied." : "")) }
         .sheet(item: $selected) { c in
-            TimetableDetail(c: c)
+            TimetableDetail(c: c, onEdit: {
+                selected = nil
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { editing = TimetableEditTarget(original: c) }
+            })
+        }
+        .sheet(item: $editing) { target in
+            TimetableEditor(original: target.original, siblings: siblings(of: target.original),
+                            onSave: { c, others in save(c, original: target.original, others: others) },
+                            onDelete: { others in delete(target.original, others: others) })
         }
         .confirmationDialog("Remove the timetable?", isPresented: $confirmRemove, titleVisibility: .visible) {
             Button("Remove", role: .destructive) { store.remove() }
@@ -234,6 +251,9 @@ struct TimetableView: View {
                 Label("Choose PDF", systemImage: "arrow.up.doc").font(Theme.font(.subheadline.weight(.semibold)))
                     .padding(.horizontal, 20).padding(.vertical, 12)
                     .background(Theme.accent, in: Capsule()).foregroundStyle(Theme.onAccent)
+            }
+            Button { editing = TimetableEditTarget(original: nil) } label: {
+                Text("or add your classes by hand").font(Theme.font(.subheadline.weight(.semibold))).foregroundStyle(Theme.accent)
             }
         }
         .frame(maxWidth: .infinity).padding(.vertical, 40).padding(.horizontal, 8)
@@ -304,11 +324,194 @@ struct TimetableView: View {
     }
 
     private func creditText(_ c: Double) -> String { c == c.rounded() ? "\(Int(c))" : String(format: "%.1f", c) }
+
+    // MARK: editing by hand
+
+    /// The same subject at the same time and place on other days (an edit can apply to all of them)
+    private func siblings(of o: TimetableClass?) -> [TimetableClass] {
+        guard let o, let t = store.data else { return [] }
+        return t.classes.filter { $0.id != o.id && $0.code == o.code && $0.section == o.section
+            && $0.startMin == o.startMin && $0.endMin == o.endMin && $0.venue == o.venue }
+    }
+
+    private func finish(_ t: TimetableData) {
+        var t = t
+        var seen = Set<String>()
+        t.classes = t.classes.filter { seen.insert($0.id).inserted }   // no two identical boxes
+        t.updated = Date()
+        if t.classes.isEmpty { store.remove() } else { store.update(t) }
+    }
+
+    private func save(_ c: TimetableClass, original: TimetableClass?, others: Bool) {
+        var t = store.data ?? TimetableData(session: "", semester: "", classes: [], updated: Date())
+        if let o = original, let i = t.classes.firstIndex(where: { $0.id == o.id }) {
+            if others {
+                for j in t.classes.indices where j != i && siblings(of: o).contains(where: { $0.id == t.classes[j].id }) {
+                    var s = c
+                    s.day = t.classes[j].day
+                    t.classes[j] = s
+                }
+            }
+            t.classes[i] = c
+        } else {
+            t.classes.append(c)
+        }
+        finish(t)
+    }
+
+    private func delete(_ original: TimetableClass?, others: Bool) {
+        guard let o = original, var t = store.data else { return }
+        let gone = Set([o.id] + (others ? siblings(of: o).map { $0.id } : []))
+        t.classes.removeAll { gone.contains($0.id) }
+        finish(t)
+    }
+}
+
+// MARK: - Editor
+
+private struct TimetableEditTarget: Identifiable {
+    let id = UUID()
+    var original: TimetableClass?     // nil = a new class
+}
+
+private func timeDate(_ m: Int) -> Date {
+    Calendar.current.date(bySettingHour: m / 60, minute: m % 60, second: 0, of: Date()) ?? Date()
+}
+
+private func creditString(_ c: Double) -> String { c == c.rounded() ? "\(Int(c))" : String(format: "%.1f", c) }
+
+private struct TimetableEditor: View {
+    @Environment(\.dismiss) private var dismiss
+    let original: TimetableClass?
+    let siblings: [TimetableClass]
+    let onSave: (TimetableClass, Bool) -> Void
+    let onDelete: (Bool) -> Void
+
+    @State private var code: String
+    @State private var title: String
+    @State private var venue: String
+    @State private var section: String
+    @State private var credit: String
+    @State private var day: Int
+    @State private var start: Date
+    @State private var end: Date
+    @State private var withOthers = true
+    @State private var confirmDelete = false
+
+    init(original: TimetableClass?, siblings: [TimetableClass],
+         onSave: @escaping (TimetableClass, Bool) -> Void, onDelete: @escaping (Bool) -> Void) {
+        self.original = original
+        self.siblings = siblings
+        self.onSave = onSave
+        self.onDelete = onDelete
+        _code = State(initialValue: original?.code ?? "")
+        _title = State(initialValue: original?.title ?? "")
+        _venue = State(initialValue: original?.venue ?? "")
+        _section = State(initialValue: original.map { String($0.section) } ?? "1")
+        _credit = State(initialValue: original.map { creditString($0.credit) } ?? "3")
+        _day = State(initialValue: original?.day ?? 1)
+        _start = State(initialValue: timeDate(original?.startMin ?? 540))
+        _end = State(initialValue: timeDate(original?.endMin ?? 620))
+    }
+
+    private func clean(_ s: String) -> String { s.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var valid: Bool { !clean(code).isEmpty && TimetableText.minutes(end) > TimetableText.minutes(start) }
+    private var othersDays: String { siblings.map { TimetableText.dayNames[$0.day - 1] }.sorted().joined(separator: ", ") }
+
+    private func built() -> TimetableClass {
+        let c = clean(code).uppercased()
+        let t = clean(title)
+        return TimetableClass(code: c, section: Int(clean(section)) ?? original?.section ?? 1,
+                              title: t.isEmpty ? c : t,
+                              credit: Double(clean(credit).replacingOccurrences(of: ",", with: ".")) ?? original?.credit ?? 0,
+                              day: day, startMin: TimetableText.minutes(start), endMin: TimetableText.minutes(end),
+                              venue: clean(venue))
+    }
+
+    private func field(_ label: String, _ text: Binding<String>, caps: Bool = false, keyboard: UIKeyboardType = .default) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label.uppercased()).font(Theme.font(.caption)).foregroundColor(Theme.muted)
+            TextField("", text: text)
+                .textInputAutocapitalization(caps ? TextInputAutocapitalization.characters : TextInputAutocapitalization.words).autocorrectionDisabled()
+                .keyboardType(keyboard)
+                .padding(10).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 10))
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    field("Subject code (e.g. BICS 1306)", $code, caps: true)
+                    field("Subject name", $title)
+                    field("Venue", $venue, caps: true)
+                    HStack(spacing: 12) {
+                        field("Section", $section, keyboard: .numberPad)
+                        field("Credit hours", $credit, keyboard: .decimalPad)
+                    }
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("DAY").font(Theme.font(.caption)).foregroundColor(Theme.muted)
+                        Picker("Day", selection: $day) {
+                            ForEach(1...7, id: \.self) { d in Text(TimetableText.dayNames[d - 1]).tag(d) }
+                        }
+                        .pickerStyle(.segmented)
+                    }
+                    HStack(spacing: 16) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("STARTS").font(Theme.font(.caption)).foregroundColor(Theme.muted)
+                            DatePicker("", selection: $start, displayedComponents: .hourAndMinute).labelsHidden()
+                        }
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("ENDS").font(Theme.font(.caption)).foregroundColor(Theme.muted)
+                            DatePicker("", selection: $end, displayedComponents: .hourAndMinute).labelsHidden()
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    if TimetableText.minutes(end) <= TimetableText.minutes(start) {
+                        Text("The end time has to be after the start time.")
+                            .font(Theme.font(.caption)).foregroundColor(.red.opacity(0.85))
+                    }
+                    if !siblings.isEmpty {
+                        Toggle(isOn: $withOthers) {
+                            Text("Also apply to the same class on \(othersDays)").font(Theme.font(.subheadline)).foregroundColor(Theme.txt)
+                        }
+                        .tint(Theme.accent)
+                    }
+                    if original != nil {
+                        Button(role: .destructive) { confirmDelete = true } label: {
+                            Label("Delete this class", systemImage: "trash").font(Theme.font(.subheadline.weight(.semibold)))
+                        }
+                        .padding(.top, 6)
+                    }
+                    Text("Changes are kept on this phone and shown in the widget. Uploading a new PDF replaces them.")
+                        .font(Theme.font(.caption)).foregroundColor(Theme.muted)
+                }
+                .padding(16)
+            }
+            .scrollDismissesKeyboard(.interactively)
+            .background(Theme.bg.ignoresSafeArea())
+            .navigationTitle(original == nil ? "Add class" : "Edit class")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { onSave(built(), withOthers && !siblings.isEmpty); dismiss() }
+                        .disabled(!valid)
+                }
+            }
+            .confirmationDialog("Delete this class?", isPresented: $confirmDelete, titleVisibility: .visible) {
+                Button("Delete", role: .destructive) { onDelete(withOthers && !siblings.isEmpty); dismiss() }
+            } message: {
+                Text(!siblings.isEmpty && withOthers ? "It is also removed on \(othersDays)." : "It is removed from the timetable and the widget.")
+            }
+        }
+    }
 }
 
 /// A subject from the week, enlarged
 private struct TimetableDetail: View {
     let c: TimetableClass
+    var onEdit: () -> Void = {}
     @State private var height: CGFloat = 320
     private let days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
@@ -330,6 +533,11 @@ private struct TimetableDetail: View {
             row("clock", c.range)
             if !c.venue.isEmpty { row("mappin.and.ellipse", c.venue) }
             row("person.2", "Section \(c.section) · \(c.credit == c.credit.rounded() ? "\(Int(c.credit))" : String(format: "%.1f", c.credit)) credit\(c.credit == 1 ? "" : "s")")
+            Button { onEdit() } label: {
+                Label("Edit this class", systemImage: "pencil").font(Theme.font(.subheadline.weight(.semibold)))
+                    .foregroundColor(Theme.accent)
+            }
+            .padding(.top, 4)
         }
         .padding(.horizontal, 24).padding(.top, 28).padding(.bottom, 12)
         .background(GeometryReader { g in Color.clear.preference(key: TimetableSheetHeight.self, value: g.size.height) })
