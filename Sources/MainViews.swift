@@ -4,6 +4,8 @@ import UserNotifications
 extension Notification.Name {
     /// The Courses tab was tapped again while its list is already showing
     static let coursesScrollToTop = Notification.Name("coursesScrollToTop")
+    /// The Tasks home-screen widget was tapped
+    static let openTasksTab = Notification.Name("openTasksTab")
 }
 
 struct RootView: View {
@@ -116,6 +118,9 @@ struct RootView: View {
         .onReceive(NotificationCenter.default.publisher(for: .offlineQueueSent)) { _ in
             guard let uid = app.site?.userid else { return }
             Task { await assignments.load(uid: uid) }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .openTasksTab)) { _ in
+            tab = 1
         }
         // Home-screen widget data (maximum possible attendance per subject)
         .task(id: app.site?.userid) {

@@ -219,6 +219,12 @@ final class AssignmentsModel: ObservableObject {
             }
             items = out
             if !OfflineCache.cacheOnly { NotificationManager.shared.scheduleAssignments(out) }   // not from the first paint: statuses may be missing
+            let nowTs = Int(Date().timeIntervalSince1970)
+            let todoTasks = out
+                .filter { !$0.submitted && $0.due > nowTs }
+                .sorted { $0.due < $1.due }
+                .map { TaskWidgetItem(id: $0.id, title: $0.a.name.decodedEntities, courseName: $0.courseName.decodedEntities, due: $0.due) }
+            TasksStore.save(TasksSnapshot(items: todoTasks, updated: Date()))
         } catch {
             if !(error is CancellationError), (error as? URLError)?.code != .cancelled {
                 self.error = error.localizedDescription
