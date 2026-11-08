@@ -70,23 +70,6 @@ Native client IIUM Moodle using Moodle's mobile web-service API, styled like the
   - **Delete downloaded files** removes only these files; offline data stays. Files live in `Application Support/OfflineFiles`
   - The file viewer opens the saved copy when there is no internet
 
-## Setup
-
-### Build
-1. On a Mac: `brew install xcodegen`
-2. In this folder: `xcodegen` (creates `iTaleem.xcodeproj` from `project.yml`)
-3. Open it, pick your Apple ID under Signing & Capabilities, run on your iPhone (iOS 16+).
-
-(No XcodeGen? New Xcode project -> iOS App (SwiftUI) -> delete the template files -> drag the
-`Sources` files in. Set the display name and force Dark appearance.)
-
-### No Mac? (Windows)
-1. Create a GitHub repo and upload the contents of this folder to its root (including `.github`).
-   Make sure every file in `Sources`, `Shared` and `Widget` is uploaded; a missing file shows up as "cannot find ... in scope".
-2. Actions tab -> "Build IPA" -> Run workflow. Download the `iTaleem-ipa` artifact (unzip -> iTaleem.ipa).
-3. Install it with Sideloadly (Windows) using your Apple ID. Free accounts must re-sign every 7 days.
-If the build fails, the Actions log shows the Swift errors.
-
 ### Google Drive (My Drive and sync)
 Paste an OAuth **iOS** client ID from Google Cloud Console into the setup section at the top of `Sources/MyDrive.swift`.
 
