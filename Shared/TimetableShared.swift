@@ -348,7 +348,6 @@ struct TimetableBlock: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)   // fills the row's height
         .background(
             ZStack {
-                RoundedRectangle(cornerRadius: r, style: .continuous).fill(tan.opacity(0.08))   // soft tan tint over whatever is behind
                 if let p = progress { WaterFill(level: p, scale: k, animated: animated) }
             }
             .clipShape(RoundedRectangle(cornerRadius: r, style: .continuous))
