@@ -96,11 +96,11 @@ struct AttendanceWidgetView: View {
     private func tint(_ p: Double) -> Color { p >= 80 ? W.accent : W.warn }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: compact ? 6 : 8) {
+        VStack(alignment: .leading, spacing: compact ? 8 : 10) {
             header
 
             if let s = entry.snapshot, !s.items.isEmpty {
-                VStack(alignment: .leading, spacing: compact ? 5 : 6) {
+                VStack(alignment: .leading, spacing: compact ? 8 : 11) {
                     ForEach(s.items.prefix(limit)) { row($0) }
                 }
                 if s.items.count > limit {
@@ -133,7 +133,7 @@ struct AttendanceWidgetView: View {
         }
     }
 
-    /// Subject pill on the left (tan course code + white subject name), percentage on the right
+    /// Tan course code + white subject name on the left, percentage on the right
     private func row(_ i: AttendanceItem) -> some View {
         let code = i.resolvedCode(timetable: timetable)
         return HStack(spacing: 8) {
@@ -151,9 +151,6 @@ struct AttendanceWidgetView: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
-            .padding(.horizontal, compact ? 7 : 9)
-            .padding(.vertical, compact ? 4 : 5)
-            .background(W.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
 
             Spacer(minLength: 4)
 

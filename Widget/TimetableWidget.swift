@@ -105,49 +105,38 @@ struct TimetableWidgetView: View {
     @ViewBuilder private func small(_ data: TimetableData) -> some View {
         if let up = data.upcoming(from: entry.date), let c = up.classes.first {
             let now = isNow(c, up.offset)
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 4) {
                 header(now ? "NOW" : "NEXT", dayLabel(up.offset))
                 Spacer(minLength: 0)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(c.code)
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundColor(T.accent)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.75)
-                    Text(c.displayTitle)
-                        .font(.system(size: 11.5, weight: .medium))
-                        .foregroundColor(T.txt)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                    if !c.venue.isEmpty {
-                        HStack(alignment: .top, spacing: 3) {
-                            VenuePin(color: T.muted, size: 7.5).padding(.top, 1.5)
-                            Text(c.venue)
-                                .font(.system(size: 9.5))
-                                .foregroundColor(T.muted)
-                                .lineLimit(2)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
+                Text(c.code)
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundColor(T.accent)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                Text(c.displayTitle)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(T.txt)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                if !c.venue.isEmpty {
+                    HStack(alignment: .top, spacing: 4) {
+                        VenuePin(color: T.muted, size: 8).padding(.top, 1.5)
+                        Text(c.venue)
+                            .font(.system(size: 10))
+                            .foregroundColor(T.muted)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    Text(c.range)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(T.accent)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                        .padding(.horizontal, 7).padding(.vertical, 2.5)
-                        .background(T.accent.opacity(0.18), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                        .padding(.top, 2)
+                    .padding(.top, 1)
                 }
-                .padding(.vertical, 9).padding(.horizontal, 10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 12, style: .continuous).fill(T.accent.opacity(0.08))
-                        if now, let p = c.progress(at: entry.date) { WaterFill(level: p, scale: 1) }
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                Text(c.range)
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundColor(T.accent)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(T.accent.opacity(0.18), in: Capsule())
+                    .padding(.top, 2)
             }
         } else {
             VStack(alignment: .leading, spacing: 4) {
