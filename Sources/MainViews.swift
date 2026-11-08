@@ -675,7 +675,6 @@ struct AlertsView: View {
             .padding(16)
             .padding(.bottom, unread > 0 ? 56 : 0)   // room so the floating button never covers the last card
         }
-        .topNavFade()
         .background(Theme.bg.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .overlay(alignment: .bottom) {
@@ -868,7 +867,6 @@ struct ProfileView: View {
             }
             .padding(16)
         }
-        .topNavFade()
         .background(Theme.bg.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
     }
