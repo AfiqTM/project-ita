@@ -551,7 +551,6 @@ struct CourseCard: View {
 struct DefaultCover: View {
     let course: Course
     @ObservedObject private var themes = ThemeStore.shared
-    @ObservedObject private var timetable = TimetableManager.shared
 
     var body: some View {
         let covers = themes.theme.covers
@@ -568,7 +567,7 @@ struct DefaultCover: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                     .padding(14)
             }
-            Text(course.cardCode(timetable: timetable.data))
+            Text(course.prettyShort ?? "")
                 .foregroundColor(themes.theme.westernHeadings ? Color.white : Theme.accent.opacity(0.92))
                 .textGlow()
                 .pixelHeading(16, normal: .system(size: 22, weight: .bold), pt: 22)

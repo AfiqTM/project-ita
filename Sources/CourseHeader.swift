@@ -17,24 +17,13 @@ extension Course {
         let short = t.replacingOccurrences(of: "(?<=\\d{4})\\s+\\d{1,2}$", with: "", options: .regularExpression)
         return short.isEmpty ? (t.isEmpty ? base : t) : short
     }
-    /// "Section 02" (from "... Section 2 ..." in the full name, or the section number in the short name)
+    /// "Section 02" (from "... Section 2 ..." in the full name)
     var sectionLabel: String? {
-        if let r = prettyFull.range(of: "\\b(?:section|sec)\\s*0*(\\d+)", options: [.regularExpression, .caseInsensitive]) {
-            let digits = prettyFull[r].filter(\.isNumber)
-            if let n = Int(digits) { return String(format: "Section %02d", n) }
-        }
-        if let ps = prettyShort {
-            let clean = ps.replacingOccurrences(of: "\\s*\\bSEM\\s*\\d+\\b", with: "", options: [.regularExpression, .caseInsensitive])
-                .trimmingCharacters(in: .whitespaces)
-            if let r = clean.range(of: "(?<=\\b[A-Z]{2,6}\\s*\\d{3,4})\\s+0*(\\d{1,2})$", options: [.regularExpression, .caseInsensitive]) {
-                let digits = clean[r].filter(\.isNumber)
-                if let n = Int(digits) { return String(format: "Section %02d", n) }
-            }
-        }
-        return nil
+        guard let r = fullname.range(of: "section\\s*0*(\\d+)", options: [.regularExpression, .caseInsensitive]) else { return nil }
+        let digits = fullname[r].filter(\.isNumber)
+        guard let n = Int(digits) else { return nil }
+        return String(format: "Section %02d", n)
     }
-    /// True when the course has no section number (a parent course).
-    var isParentCourse: Bool { sectionLabel == nil }
 
     /// Just the course code (e.g. "BICS 1306"), extracted from the course name or matched against the timetable.
     func courseCode(timetable: TimetableData? = nil) -> String {
@@ -51,15 +40,6 @@ extension Course {
             return matched.code
         }
         return headerCode
-    }
-
-    /// Yellow cover text on the main page: "BICS 1306" for section courses, "BICS 1306 Parent" for parent courses.
-    func cardCode(timetable: TimetableData? = nil) -> String {
-        let code = courseCode(timetable: timetable)
-        if isParentCourse {
-            return code.localizedCaseInsensitiveContains("parent") ? code : "\(code) Parent"
-        }
-        return code
     }
 
     /// Course title on the main page: "Digital & Embedded Systems Section 04" (or just the subject name for parent courses).
@@ -117,10 +97,7 @@ extension Course {
     /// - Mid-semester break: 14 Nov 2026 – 22 Nov 2026 (no classes)
     /// - Weeks 8–14: 23 Nov 2026 – 8 Jan 2027
     /// - Family Management (CCFM 2061): started in Week 2 and runs until Week 8 (Weeks 2–8).
-    /// - Parent courses (no section number) return nil so no completion bar is shown.
     func completionProgress(timetable: TimetableData? = nil, now: Date = Date()) -> Double? {
-        guard !isParentCourse else { return nil }
-
         let matched = matchingTimetableClasses(timetable: timetable)
         let codeNorm = courseCode(timetable: timetable).replacingOccurrences(of: " ", with: "").uppercased()
         let isFamilyManagement = codeNorm == "CCFM2061"
