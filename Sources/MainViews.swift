@@ -551,10 +551,13 @@ struct CourseCard: View {
 struct DefaultCover: View {
     let course: Course
     @ObservedObject private var themes = ThemeStore.shared
+    @ObservedObject private var timetable = TimetableManager.shared
 
     var body: some View {
         let covers = themes.theme.covers
         let p = covers[abs(course.id) % covers.count]
+        let baseColor = themes.theme.westernHeadings ? Color.white : Theme.accent
+        let tags = course.coverTags(timetable: timetable.data)
         ZStack(alignment: .bottomLeading) {
             LinearGradient(colors: [Color(hex: p.0), Color(hex: p.1)],
                            startPoint: .topLeading, endPoint: .bottomTrailing)
@@ -567,12 +570,22 @@ struct DefaultCover: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                     .padding(14)
             }
-            Text(course.prettyShort ?? "")
-                .foregroundColor(themes.theme.westernHeadings ? Color.white : Theme.accent.opacity(0.92))
-                .textGlow()
-                .pixelHeading(16, normal: .system(size: 22, weight: .bold), pt: 22)
-                .lineLimit(1).minimumScaleFactor(0.5)
-                .padding(14)
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(course.courseCode(timetable: timetable.data))
+                    .foregroundColor(baseColor.opacity(0.92))
+                    .textGlow()
+                    .pixelHeading(16, normal: .system(size: 22, weight: .bold), pt: 22)
+                ForEach(tags, id: \.self) { tag in
+                    Text("|")
+                        .font(.system(size: 12.5, weight: .regular))
+                        .foregroundColor(baseColor.opacity(0.45))
+                    Text(tag)
+                        .font(.system(size: 12.5, weight: .medium))
+                        .foregroundColor(baseColor.opacity(0.82))
+                }
+            }
+            .lineLimit(1).minimumScaleFactor(0.5)
+            .padding(14)
         }
     }
 }

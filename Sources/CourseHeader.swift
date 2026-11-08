@@ -50,6 +50,31 @@ extension Course {
         return subjectName
     }
 
+    /// Short uppercase semester label for the course card cover (e.g. "SEM 1").
+    func semShortLabel(timetable: TimetableData? = nil) -> String {
+        for s in [fullname, shortname ?? ""] {
+            if let r = s.range(of: "\\bSEM\\s*(\\d+)", options: [.regularExpression, .caseInsensitive]) {
+                let digits = s[r].filter(\.isNumber)
+                if !digits.isEmpty { return "SEM \(digits)" }
+            }
+        }
+        if let sem = timetable?.semester, !sem.isEmpty {
+            return "SEM \(sem)"
+        }
+        return "SEM 1"
+    }
+
+    /// Uppercase metadata tags shown next to the course code on the card cover:
+    /// `["SECTION 04", "SEM 1"]` for section courses, or `["SEM 1"]` for parent courses.
+    func coverTags(timetable: TimetableData? = nil) -> [String] {
+        var tags: [String] = []
+        if let sec = sectionLabel {
+            tags.append(sec.uppercased())
+        }
+        tags.append(semShortLabel(timetable: timetable))
+        return tags
+    }
+
     /// Matches this course's weekly class slots from the timetable (falling back to the default semester sample timetable).
     func matchingTimetableClasses(timetable: TimetableData? = nil) -> [TimetableClass] {
         let pattern = "\\b(?!SEM\\b)([A-Z]{2,6})\\s*(\\d{3,4})\\b"
