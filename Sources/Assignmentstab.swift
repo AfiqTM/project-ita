@@ -135,6 +135,16 @@ final class AssignmentsModel: ObservableObject {
             g[f] = out
         }
         grouped = g; counts = c; version &+= 1
+        if !OfflineCache.cacheOnly || TasksStore.load() == nil {
+            syncWidget()
+        }
+    }
+
+    func syncWidget() {
+        let todoTasks = list(.todo).map {
+            TaskWidgetItem(id: $0.id, title: $0.a.name.decodedEntities, courseName: $0.courseName.decodedEntities, due: $0.due)
+        }
+        TasksStore.save(TasksSnapshot(items: todoTasks, updated: Date()))
     }
     private var running = false
 
@@ -198,6 +208,7 @@ final class AssignmentsModel: ObservableObject {
                 for a in c.assignments { base.append((a, c.id, names[c.id] ?? "")) }
             }
 
+            let prevStatuses = Dictionary(items.compactMap { i in i.status.map { (i.id, $0) } }, uniquingKeysWith: { a, _ in a })
             var out: [AssignItem] = []
             var start = 0
             while start < base.count {
@@ -205,10 +216,11 @@ final class AssignmentsModel: ObservableObject {
                 start += 8
                 let part = await withTaskGroup(of: AssignItem.self) { g -> [AssignItem] in
                     for (a, cid, cn) in chunk {
+                        let fallback = prevStatuses[a.id]
                         g.addTask {
                             let s: StatusResp? = try? await MoodleAPI.shared.call(
                                 "mod_assign_get_submission_status", ["assignid": a.id, "userid": uid])
-                            return AssignItem(a: a, courseId: cid, courseName: cn, status: s)
+                            return AssignItem(a: a, courseId: cid, courseName: cn, status: s ?? fallback)
                         }
                     }
                     var res: [AssignItem] = []
@@ -218,13 +230,10 @@ final class AssignmentsModel: ObservableObject {
                 out.append(contentsOf: part)
             }
             items = out
-            if !OfflineCache.cacheOnly { NotificationManager.shared.scheduleAssignments(out) }   // not from the first paint: statuses may be missing
-            let nowTs = Int(Date().timeIntervalSince1970)
-            let todoTasks = out
-                .filter { !$0.submitted && $0.due > nowTs }
-                .sorted { $0.due < $1.due }
-                .map { TaskWidgetItem(id: $0.id, title: $0.a.name.decodedEntities, courseName: $0.courseName.decodedEntities, due: $0.due) }
-            TasksStore.save(TasksSnapshot(items: todoTasks, updated: Date()))
+            if !OfflineCache.cacheOnly {
+                NotificationManager.shared.scheduleAssignments(out)   // not from the first paint: statuses may be missing
+                syncWidget()
+            }
         } catch {
             if !(error is CancellationError), (error as? URLError)?.code != .cancelled {
                 self.error = error.localizedDescription

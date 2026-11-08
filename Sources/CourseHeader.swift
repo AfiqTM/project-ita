@@ -8,7 +8,7 @@ import SwiftUI
 // Dark themes dim the photo; the Light theme uses its own bright version (Assets.xcassets/CourseHeaderLight.imageset) so the dark text stays readable.
 
 extension Course {
-    /// "BICS 1306 04 SEM1" -> "BICS 1306 04"
+    /// "BICS 1306 04 SEM1" -> "BICS 1306"
     var headerCode: String {
         let base = prettyShort ?? prettyFull
         let t = base.replacingOccurrences(of: "\\s*\\bSEM\\s*\\d+\\b", with: "", options: [.regularExpression, .caseInsensitive])
@@ -17,13 +17,158 @@ extension Course {
         let short = t.replacingOccurrences(of: "(?<=\\d{4})\\s+\\d{1,2}$", with: "", options: .regularExpression)
         return short.isEmpty ? (t.isEmpty ? base : t) : short
     }
-    /// "Section 02" (from "... Section 2 ..." in the full name)
+    /// "Section 02" (from "... Section 2 ..." in the full name, or the section number in the short name)
     var sectionLabel: String? {
-        guard let r = fullname.range(of: "section\\s*0*(\\d+)", options: [.regularExpression, .caseInsensitive]) else { return nil }
-        let digits = fullname[r].filter(\.isNumber)
-        guard let n = Int(digits) else { return nil }
-        return String(format: "Section %02d", n)
+        if let r = prettyFull.range(of: "\\b(?:section|sec)\\s*0*(\\d+)", options: [.regularExpression, .caseInsensitive]) {
+            let digits = prettyFull[r].filter(\.isNumber)
+            if let n = Int(digits) { return String(format: "Section %02d", n) }
+        }
+        if let ps = prettyShort {
+            let clean = ps.replacingOccurrences(of: "\\s*\\bSEM\\s*\\d+\\b", with: "", options: [.regularExpression, .caseInsensitive])
+                .trimmingCharacters(in: .whitespaces)
+            if let r = clean.range(of: "(?<=\\b[A-Z]{2,6}\\s*\\d{3,4})\\s+0*(\\d{1,2})$", options: [.regularExpression, .caseInsensitive]) {
+                let digits = clean[r].filter(\.isNumber)
+                if let n = Int(digits) { return String(format: "Section %02d", n) }
+            }
+        }
+        return nil
     }
+    /// True when the course has no section number (a parent course).
+    var isParentCourse: Bool { sectionLabel == nil }
+
+    /// Just the course code (e.g. "BICS 1306"), extracted from the course name or matched against the timetable.
+    func courseCode(timetable: TimetableData? = nil) -> String {
+        let pattern = "\\b(?!SEM\\b)([A-Z]{2,6})\\s*(\\d{3,4})\\b"
+        for src in [prettyShort ?? "", prettyFull] {
+            if let re = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
+               let m = re.firstMatch(in: src, range: NSRange(src.startIndex..., in: src)),
+               let r1 = Range(m.range(at: 1), in: src),
+               let r2 = Range(m.range(at: 2), in: src) {
+                return "\(src[r1].uppercased()) \(src[r2])"
+            }
+        }
+        if let matched = matchingTimetableClasses(timetable: timetable).first {
+            return matched.code
+        }
+        return headerCode
+    }
+
+    /// Yellow cover text on the main page: "BICS 1306" for section courses, "BICS 1306 Parent" for parent courses.
+    func cardCode(timetable: TimetableData? = nil) -> String {
+        let code = courseCode(timetable: timetable)
+        if isParentCourse {
+            return code.localizedCaseInsensitiveContains("parent") ? code : "\(code) Parent"
+        }
+        return code
+    }
+
+    /// Course title on the main page: "Digital & Embedded Systems Section 04" (or just the subject name for parent courses).
+    var cardTitle: String {
+        if let sec = sectionLabel {
+            return "\(subjectName) \(sec)"
+        }
+        return subjectName
+    }
+
+    /// Matches this course's weekly class slots from the timetable (falling back to the default semester sample timetable).
+    func matchingTimetableClasses(timetable: TimetableData? = nil) -> [TimetableClass] {
+        let pattern = "\\b(?!SEM\\b)([A-Z]{2,6})\\s*(\\d{3,4})\\b"
+        var extractedCode: String?
+        for src in [prettyShort ?? "", prettyFull] {
+            if let re = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
+               let m = re.firstMatch(in: src, range: NSRange(src.startIndex..., in: src)),
+               let r1 = Range(m.range(at: 1), in: src),
+               let r2 = Range(m.range(at: 2), in: src) {
+                extractedCode = "\(src[r1].uppercased())\(src[r2])"
+                break
+            }
+        }
+        let target = subjectName.lowercased()
+        let targetWords = target.split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init)
+        let pools: [TimetableData] = [timetable, TimetableData.sample].compactMap { $0 }
+
+        for pool in pools {
+            if let code = extractedCode {
+                let byCode = pool.classes.filter {
+                    $0.code.replacingOccurrences(of: " ", with: "").uppercased() == code
+                }
+                if !byCode.isEmpty { return byCode }
+            }
+            let byTitle = pool.classes.filter {
+                $0.displayTitle.lowercased() == target || $0.title.lowercased() == target
+            }
+            if !byTitle.isEmpty { return byTitle }
+            if !targetWords.isEmpty {
+                let byStem = pool.classes.filter { c in
+                    let cw = c.title.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init)
+                    guard cw.count == targetWords.count else { return false }
+                    return zip(targetWords, cw).allSatisfy { a, b in
+                        a == b || (min(a.count, b.count) >= 6 && a.prefix(6) == b.prefix(6))
+                    }
+                }
+                if !byStem.isEmpty { return byStem }
+            }
+        }
+        return []
+    }
+
+    /// Completion percentage (0...100) based on the timetable class dates across the semester:
+    /// - Weeks 1–7: 28 Sep 2026 – 13 Nov 2026
+    /// - Mid-semester break: 14 Nov 2026 – 22 Nov 2026 (no classes)
+    /// - Weeks 8–14: 23 Nov 2026 – 8 Jan 2027
+    /// - Family Management (CCFM 2061): started in Week 2 and runs until Week 8 (Weeks 2–8).
+    /// - Parent courses (no section number) return nil so no completion bar is shown.
+    func completionProgress(timetable: TimetableData? = nil, now: Date = Date()) -> Double? {
+        guard !isParentCourse else { return nil }
+
+        let matched = matchingTimetableClasses(timetable: timetable)
+        let codeNorm = courseCode(timetable: timetable).replacingOccurrences(of: " ", with: "").uppercased()
+        let isFamilyManagement = codeNorm == "CCFM2061"
+            || fullname.localizedCaseInsensitiveContains("family management")
+            || (shortname ?? "").localizedCaseInsensitiveContains("ccfm")
+            || matched.contains {
+                $0.code.replacingOccurrences(of: " ", with: "").uppercased() == "CCFM2061"
+                || $0.title.localizedCaseInsensitiveContains("family management")
+            }
+
+        let activeWeeks = isFamilyManagement ? Array(2...8) : Array(1...14)
+
+        struct SlotKey: Hashable { let day: Int; let startMin: Int; let endMin: Int }
+        var seen = Set<SlotKey>()
+        var slots: [SlotKey] = []
+        for c in matched {
+            let k = SlotKey(day: c.day, startMin: c.startMin, endMin: c.endMin)
+            if seen.insert(k).inserted { slots.append(k) }
+        }
+        if slots.isEmpty {
+            slots = (1...5).map { SlotKey(day: $0, startMin: 540, endMin: 1020) }
+        }
+
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "Asia/Kuala_Lumpur") ?? .current
+        guard let week1Mon = cal.date(from: DateComponents(year: 2026, month: 9, day: 28, hour: 0, minute: 0, second: 0)),
+              let week8Mon = cal.date(from: DateComponents(year: 2026, month: 11, day: 23, hour: 0, minute: 0, second: 0)) else {
+            return progress
+        }
+
+        var sessionDates: [Date] = []
+        for w in activeWeeks {
+            let baseMon = w <= 7
+                ? (cal.date(byAdding: .day, value: (w - 1) * 7, to: week1Mon) ?? week1Mon)
+                : (cal.date(byAdding: .day, value: (w - 8) * 7, to: week8Mon) ?? week8Mon)
+            for s in slots {
+                guard let classDay = cal.date(byAdding: .day, value: max(0, s.day - 1), to: baseMon) else { continue }
+                let endMinutes = s.endMin > 0 ? s.endMin : (23 * 60 + 59)
+                let sessionEnd = cal.date(byAdding: .minute, value: endMinutes, to: classDay) ?? classDay
+                sessionDates.append(sessionEnd)
+            }
+        }
+
+        guard !sessionDates.isEmpty else { return nil }
+        let passed = sessionDates.filter { now >= $0 }.count
+        return Double(passed) / Double(sessionDates.count) * 100.0
+    }
+
     /// "Semester 1" (from "SEM 1" / "SEM1")
     var semesterLabel: String? {
         for s in [fullname, shortname ?? ""] {

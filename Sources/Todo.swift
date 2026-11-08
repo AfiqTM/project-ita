@@ -18,15 +18,17 @@ extension Course {
 
     /// "SEM1 BICS 2306 Section 05 Software Engineering" -> "Software Engineering"
     /// "Enterprise Networking Section 5"                -> "Enterprise Networking"
-    var subjectName: String { Course.cleanSubject(fullname) }
+    var subjectName: String { Course.cleanSubject(prettyFull) }
 
     static func cleanSubject(_ s: String) -> String {
-        var t = s.replacingOccurrences(of: "\\bsection\\s*\\d*\\b", with: "",
+        var t = s.replacingOccurrences(of: "\\b(?:section|sec)\\s*\\d*\\b", with: "",
                                        options: [.regularExpression, .caseInsensitive])
         if stripCodes {
             // leading semester / course code such as "SEM1 BICS 2306" (upper-case codes only)
             t = t.replacingOccurrences(of: "^\\s*(SEM\\s*\\d+\\s+)?[A-Z]{2,6}\\s*\\d{3,4}\\b", with: "",
                                        options: .regularExpression)
+            t = t.replacingOccurrences(of: "\\bSEM\\s*\\d+\\b", with: "",
+                                       options: [.regularExpression, .caseInsensitive])
         }
         t = t.replacingOccurrences(of: "\\s{2,}", with: " ", options: .regularExpression)
         t = t.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "-–—:,|()")))

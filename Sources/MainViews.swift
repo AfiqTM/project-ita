@@ -494,6 +494,7 @@ struct CoursesView: View {
 struct CourseCard: View {
     let course: Course
     @ObservedObject private var themes = ThemeStore.shared
+    @ObservedObject private var timetable = TimetableManager.shared
 
     var body: some View {
         if themes.theme.isNotebook {
@@ -507,14 +508,14 @@ struct CourseCard: View {
         VStack(alignment: .leading, spacing: 0) {
             cover.frame(height: 110).frame(maxWidth: .infinity).clipped()
             VStack(alignment: .leading, spacing: 8) {
-                Text(course.prettyFull)
+                Text(course.cardTitle)
                     .foregroundColor(Theme.txt)
                     .multilineTextAlignment(.leading)
                     .textGlow(radius: 3)
                     .pixelHeading(12, normal: .subheadline.weight(.semibold), pt: themes.theme.isNotebook ? 14.5 : 15)
-                if let p = course.progress {
+                if let p = course.completionProgress(timetable: timetable.data) {
                     ProgressView(value: min(max(p, 0), 100), total: 100).tint(Theme.accent)
-                    Text("\(Int(p))% complete").font(Theme.font(.caption)).foregroundColor(Theme.muted)
+                    Text("\(Int(p.rounded()))% complete").font(Theme.font(.caption)).foregroundColor(Theme.muted)
                 }
             }
             .padding(14)
@@ -550,6 +551,7 @@ struct CourseCard: View {
 struct DefaultCover: View {
     let course: Course
     @ObservedObject private var themes = ThemeStore.shared
+    @ObservedObject private var timetable = TimetableManager.shared
 
     var body: some View {
         let covers = themes.theme.covers
@@ -566,7 +568,7 @@ struct DefaultCover: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                     .padding(14)
             }
-            Text(course.prettyShort ?? "")
+            Text(course.cardCode(timetable: timetable.data))
                 .foregroundColor(themes.theme.westernHeadings ? Color.white : Theme.accent.opacity(0.92))
                 .textGlow()
                 .pixelHeading(16, normal: .system(size: 22, weight: .bold), pt: 22)
