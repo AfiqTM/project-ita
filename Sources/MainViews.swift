@@ -577,10 +577,10 @@ struct DefaultCover: View {
                     .pixelHeading(16, normal: .system(size: 22, weight: .bold), pt: 22)
                 ForEach(tags, id: \.self) { tag in
                     Text("|")
-                        .font(.system(size: 12.5, weight: .regular))
+                        .font(.system(size: 15, weight: .regular))
                         .foregroundColor(baseColor.opacity(0.45))
                     Text(tag)
-                        .font(.system(size: 12.5, weight: .medium))
+                        .font(.system(size: 14.5, weight: .medium))
                         .foregroundColor(baseColor.opacity(0.82))
                 }
             }
