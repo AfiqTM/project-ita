@@ -761,14 +761,14 @@ struct TopNavFade: ViewModifier {
 
     func body(content: Content) -> some View {
         if enabled {
-            let progress = Double(min(max(scrolled / 6, 0), 1))
+            let progress = Double(min(max(scrolled / 18, 0), 1))
             content
                 .noTopEdgeEffect()
                 .background(
                     TopScrollProbe(
                         onChange: { y in
-                            let clamped = min(max(y, 0), 8)
-                            if abs(clamped - scrolled) > 0.25 { scrolled = clamped }
+                            let clamped = min(max(y, 0), 20)
+                            if abs(clamped - scrolled) > 0.5 { scrolled = clamped }
                         },
                         onDetach: { scrolled = 0 }
                     )
