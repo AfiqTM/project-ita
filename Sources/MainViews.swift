@@ -576,19 +576,18 @@ struct DefaultCover: View {
                     .foregroundColor(baseColor.opacity(0.92))
                     .textGlow()
                     .pixelHeading(16, normal: .system(size: 22, weight: .bold), pt: 22)
-                HStack(alignment: .center, spacing: 10) {
-                    ForEach(tags, id: \.self) { tag in
-                        HStack(alignment: .center, spacing: 6) {
+                HStack(alignment: .center, spacing: 6) {
+                    ForEach(Array(tags.enumerated()), id: \.offset) { idx, tag in
+                        if idx > 0 {
                             Circle()
                                 .fill(tagColor)
                                 .frame(width: 4.5, height: 4.5)
-                            Text(tag)
-                                .font(.system(size: 13, weight: .medium))
-                                .foregroundColor(tagColor)
                         }
+                        Text(tag)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(tagColor)
                     }
                 }
-                .padding(.leading, 1)
             }
             .lineLimit(1).minimumScaleFactor(0.5)
             .padding(.horizontal, 14)
