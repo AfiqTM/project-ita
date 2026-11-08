@@ -287,20 +287,21 @@ struct TimetableBlock: View {
 
     var body: some View {
         let k = scale * 1.12          // the box is a little bigger than the plain grid scale
+        let f = k * 1.14              // the text is bigger than the box around it (the padding stays at k)
         let r = 10 * k
         VStack(alignment: .leading, spacing: 3 * k) {
             Text(c.shortRange.replacingOccurrences(of: "–", with: " – "))
-                .font(.system(size: 9.5 * k, weight: .medium)).foregroundColor(tan)
+                .font(.system(size: 9.5 * f, weight: .medium)).foregroundColor(tan)
                 .lineLimit(1).minimumScaleFactor(0.6)   // the time always stays on one row
                 .padding(.horizontal, 6 * k).padding(.vertical, 2 * k)
                 .background(tan.opacity(0.18), in: RoundedRectangle(cornerRadius: 6 * k, style: .continuous))
                 .padding(.bottom, 2 * k)
-            Text(c.code).font(.system(size: 11 * k, weight: .bold)).foregroundColor(text)
-            Text(c.title).font(.system(size: 10 * k, weight: .medium)).foregroundColor(text)
+            Text(c.code).font(.system(size: 11 * f, weight: .bold)).foregroundColor(text)
+            Text(c.title).font(.system(size: 10 * f, weight: .medium)).foregroundColor(text)
             if !c.venue.isEmpty {
                 HStack(alignment: .top, spacing: 3 * k) {
-                    VenuePin(color: muted, size: 7 * k).padding(.top, 1.5 * k)
-                    Text(c.venue).font(.system(size: 9 * k)).foregroundColor(muted)
+                    VenuePin(color: muted, size: 7 * f).padding(.top, 1.5 * k)
+                    Text(c.venue).font(.system(size: 9 * f)).foregroundColor(muted)
                 }
             }
         }
