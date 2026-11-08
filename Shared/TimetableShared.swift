@@ -265,6 +265,7 @@ struct TimetableGrid: View {
     /// the time the water level is worked out from (the widget passes the timeline date)
     var now: Date = Date()
     var animated = false
+    var textScale: CGFloat = 1      // the app screen uses a slightly smaller text than the widget
 
     var body: some View {
         let today = TimetableText.weekday(now)
@@ -291,7 +292,7 @@ struct TimetableGrid: View {
                         VStack(spacing: 4 * scale) {
                             ForEach(data.classes.filter { $0.day == d && $0.startMin == slot }) { c in
                                 TimetableBlock(c: c, accent: accent, text: text, muted: muted, scale: scale,
-                                               progress: c.progress(at: now), animated: animated)
+                                               progress: c.progress(at: now), animated: animated, textScale: textScale)
                                     .contentShape(Rectangle())
                                     .onTapGesture { onSelect?(c) }
                             }
@@ -315,12 +316,13 @@ struct TimetableBlock: View {
     let scale: CGFloat
     var progress: Double? = nil     // 0...1 while the class is running: the box fills with water
     var animated = false
+    var textScale: CGFloat = 1
 
     private let tan = Color(red: 0xD2 / 255, green: 0xB4 / 255, blue: 0x8C / 255)
 
     var body: some View {
         let k = scale * 1.12          // the box is a little bigger than the plain grid scale
-        let f = k * 1.14              // the text is bigger than the box around it (the padding stays at k)
+        let f = k * 1.14 * textScale              // the text is bigger than the box around it (the padding stays at k)
         let r = 10 * k
         VStack(alignment: .leading, spacing: 3 * k) {
             Text(c.shortRange.replacingOccurrences(of: "–", with: " – "))

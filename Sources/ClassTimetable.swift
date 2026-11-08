@@ -273,7 +273,7 @@ struct TimetableView: View {
         .padding(.horizontal, 2)
         TimelineView(.periodic(from: Date(), by: 30)) { ctx in   // so the water level and "today" stay right
             TimetableGrid(data: t, text: Theme.txt, muted: Theme.muted, line: Theme.line, accent: Theme.accent,
-                          onSelect: { selected = $0 }, now: ctx.date, animated: true)
+                          onSelect: { selected = $0 }, now: ctx.date, animated: true, textScale: 0.9)
         }
         .padding(5)
             .glowCard()
