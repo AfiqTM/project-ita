@@ -91,7 +91,7 @@ struct AttendanceWidgetView: View {
     }
     private var compact: Bool { family == .systemSmall }
     private var codeFont: CGFloat { compact ? 11.5 : 13.5 }
-    private var nameFont: CGFloat { compact ? 9.7 : 11.4 }     // ~21.2 / 25.2 ratio to codeFont
+    private var nameFont: CGFloat { codeFont }
     private var codeColumnWidth: CGFloat { compact ? 60 : 72 }
 
     /// 80% is the usual attendance minimum, so anything under it is tinted red
