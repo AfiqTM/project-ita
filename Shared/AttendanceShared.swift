@@ -125,6 +125,55 @@ enum TasksStore {
     }
 }
 
+
+func formatPercent(_ p: Double) -> String {
+    let r = (p * 10).rounded() / 10
+    return r == r.rounded() ? "\(Int(r))%" : String(format: "%.1f%%", r)
+}
+
+enum AttendanceStore {
+    // Must match the group in the entitlements (project.yml). The signer may rewrite bundle ids when
+    // sideloading, so "group.<runtime app bundle id>" is tried first, then the original name.
+    private static let originalGroup = "group.com.afiq.italeem"
+
+    private static var appBundleID: String {
+        let id = Bundle.main.bundleIdentifier ?? ""
+        let isWidget = Bundle.main.bundlePath.hasSuffix(".appex")
+        return isWidget ? id.split(separator: ".").dropLast().joined(separator: ".") : id
+    }
+
+    /// A file inside the shared App Group folder (attendance.json, timetable.json)
+    static func groupFile(_ name: String) -> URL? {
+        for g in ["group." + appBundleID, originalGroup] {
+            if let dir = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: g) {
+                return dir.appendingPathComponent(name)
+            }
+        }
+        return nil
+    }
+
+    private static var fileURL: URL? { groupFile("attendance.json") }
+
+    /// false = the app and widget were signed without a shared App Group, so no data can be passed
+    static var isShared: Bool { fileURL != nil }
+
+    static func save(_ s: AttendanceSnapshot) {
+        guard let url = fileURL, let d = try? JSONEncoder().encode(s) else { return }
+        try? d.write(to: url, options: .atomic)
+        WidgetCenter.shared.reloadAllTimelines()
+    }
+
+    static func load() -> AttendanceSnapshot? {
+        guard let url = fileURL, let d = try? Data(contentsOf: url) else { return nil }
+        return try? JSONDecoder().decode(AttendanceSnapshot.self, from: d)
+    }
+
+    static func clear() {
+        if let url = fileURL { try? FileManager.default.removeItem(at: url) }
+        WidgetCenter.shared.reloadAllTimelines()
+    }
+}
+
 // MARK: - To-Do (Academic Tools > To-Do List)
 
 struct TodoWidgetItem: Codable, Identifiable, Hashable {
@@ -195,46 +244,60 @@ enum TodoWidgetStore {
     }
 }
 
-func formatPercent(_ p: Double) -> String {
-    let r = (p * 10).rounded() / 10
-    return r == r.rounded() ? "\(Int(r))%" : String(format: "%.1f%%", r)
+// MARK: - Study Plan (Academic Tools > Study Plan Tracker)
+
+struct StudyPlanWidgetCategory: Codable, Hashable, Identifiable {
+    var id: String { name }
+    var name: String
+    var taken: Double
+    var required: Double
 }
 
-enum AttendanceStore {
-    // Must match the group in the entitlements (project.yml). The signer may rewrite bundle ids when
-    // sideloading, so "group.<runtime app bundle id>" is tried first, then the original name.
-    private static let originalGroup = "group.com.afiq.italeem"
+struct StudyPlanWidgetSnapshot: Codable {
+    var title: String
+    var creditsTaken: Double
+    var totalRequired: Double
+    var categories: [StudyPlanWidgetCategory]
+    var updated: Date
 
-    private static var appBundleID: String {
-        let id = Bundle.main.bundleIdentifier ?? ""
-        let isWidget = Bundle.main.bundlePath.hasSuffix(".appex")
-        return isWidget ? id.split(separator: ".").dropLast().joined(separator: ".") : id
+    var fraction: Double {
+        guard totalRequired > 0 else { return 0 }
+        return min(max(creditsTaken / totalRequired, 0), 1)
     }
 
-    /// A file inside the shared App Group folder (attendance.json, timetable.json)
-    static func groupFile(_ name: String) -> URL? {
-        for g in ["group." + appBundleID, originalGroup] {
-            if let dir = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: g) {
-                return dir.appendingPathComponent(name)
-            }
-        }
-        return nil
+    var percentInt: Int {
+        Int((fraction * 100).rounded())
     }
 
-    private static var fileURL: URL? { groupFile("attendance.json") }
+    static func formatCredits(_ v: Double) -> String {
+        v == v.rounded() ? "\(Int(v))" : String(format: "%.1f", v)
+    }
 
-    /// false = the app and widget were signed without a shared App Group, so no data can be passed
-    static var isShared: Bool { fileURL != nil }
+    static let sample = StudyPlanWidgetSnapshot(
+        title: "Study Plan",
+        creditsTaken: 54.5,
+        totalRequired: 120,
+        categories: [
+            .init(name: "University Required", taken: 12, required: 20),
+            .init(name: "Core", taken: 30.5, required: 60),
+            .init(name: "Elective", taken: 12, required: 40)
+        ],
+        updated: Date()
+    )
+}
 
-    static func save(_ s: AttendanceSnapshot) {
+enum StudyPlanWidgetStore {
+    private static var fileURL: URL? { AttendanceStore.groupFile("studyplan.json") }
+
+    static func save(_ s: StudyPlanWidgetSnapshot) {
         guard let url = fileURL, let d = try? JSONEncoder().encode(s) else { return }
         try? d.write(to: url, options: .atomic)
         WidgetCenter.shared.reloadAllTimelines()
     }
 
-    static func load() -> AttendanceSnapshot? {
+    static func load() -> StudyPlanWidgetSnapshot? {
         guard let url = fileURL, let d = try? Data(contentsOf: url) else { return nil }
-        return try? JSONDecoder().decode(AttendanceSnapshot.self, from: d)
+        return try? JSONDecoder().decode(StudyPlanWidgetSnapshot.self, from: d)
     }
 
     static func clear() {
@@ -242,3 +305,5 @@ enum AttendanceStore {
         WidgetCenter.shared.reloadAllTimelines()
     }
 }
+
+

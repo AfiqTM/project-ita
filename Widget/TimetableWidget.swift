@@ -877,3 +877,186 @@ struct TodoHomeWidget: Widget {
         .contentMarginsDisabled()
     }
 }
+
+// MARK: - Study Plan widget (Academic Tools > Study Plan Tracker)
+
+struct StudyPlanWidgetEntry: TimelineEntry {
+    let date: Date
+    let data: StudyPlanWidgetSnapshot?
+    var shared: Bool = true
+}
+
+struct StudyPlanWidgetProvider: TimelineProvider {
+    func placeholder(in context: Context) -> StudyPlanWidgetEntry {
+        StudyPlanWidgetEntry(date: Date(), data: .sample)
+    }
+    func getSnapshot(in context: Context, completion: @escaping (StudyPlanWidgetEntry) -> Void) {
+        let data = StudyPlanWidgetStore.load() ?? (context.isPreview ? .sample : nil)
+        completion(StudyPlanWidgetEntry(date: Date(), data: data, shared: AttendanceStore.isShared))
+    }
+    func getTimeline(in context: Context, completion: @escaping (Timeline<StudyPlanWidgetEntry>) -> Void) {
+        let now = Date()
+        let data = StudyPlanWidgetStore.load()
+        let shared = AttendanceStore.isShared
+        let entry = StudyPlanWidgetEntry(date: now, data: data, shared: shared)
+        let reload = Calendar.current.date(byAdding: .hour, value: 1, to: now) ?? now.addingTimeInterval(3600)
+        completion(Timeline(entries: [entry], policy: .after(reload)))
+    }
+}
+
+struct StudyPlanWidgetView: View {
+    let entry: StudyPlanWidgetEntry
+    @Environment(\.widgetFamily) private var family
+
+    private var trackColor: Color {
+        Color(red: 0x33 / 255, green: 0x2C / 255, blue: 0x22 / 255)
+    }
+
+    var body: some View {
+        Group {
+            if !entry.shared {
+                emptyView("App Group isn't shared")
+            } else if let s = entry.data {
+                switch family {
+                case .systemSmall:
+                    small(s)
+                default:
+                    mediumOrLarge(s)
+                }
+            } else {
+                emptyView("No study plan yet")
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .widgetURL(URL(string: "italeem://studyplan"))
+        .amoledBackground()
+    }
+
+    private var header: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "calendar")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(T.accent)
+            Text("STUDY PLAN")
+                .font(.system(size: 12.5, weight: .bold))
+                .tracking(0.8)
+                .foregroundColor(T.accent)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func emptyView(_ msg: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            header
+            Spacer(minLength: 0)
+            Text(msg).font(.system(size: 13, weight: .medium)).foregroundColor(T.txt)
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func ring(_ s: StudyPlanWidgetSnapshot, size: CGFloat, lineWidth: CGFloat, fontSize: CGFloat) -> some View {
+        ZStack {
+            Circle()
+                .stroke(trackColor, lineWidth: lineWidth)
+            Circle()
+                .trim(from: 0, to: CGFloat(s.fraction))
+                .stroke(T.accent, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+            Text("\(s.percentInt)%")
+                .font(.system(size: fontSize, weight: .bold))
+                .foregroundColor(T.accent)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .frame(width: size, height: size)
+    }
+
+    // MARK: small
+
+    private func small(_ s: StudyPlanWidgetSnapshot) -> some View {
+        VStack(spacing: 0) {
+            header
+            Spacer(minLength: 4)
+            ring(s, size: 76, lineWidth: 5.5, fontSize: 20)
+            Spacer(minLength: 4)
+            Text("\(StudyPlanWidgetSnapshot.formatCredits(s.creditsTaken)) / \(StudyPlanWidgetSnapshot.formatCredits(s.totalRequired)) Credit Hours done")
+                .font(.system(size: 9.5, weight: .medium))
+                .foregroundColor(T.muted)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+                .frame(maxWidth: .infinity, alignment: .center)
+        }
+    }
+
+    // MARK: medium & large
+
+    @ViewBuilder private func mediumOrLarge(_ s: StudyPlanWidgetSnapshot) -> some View {
+        let maxCats = family == .systemMedium ? 3 : 6
+        let cats = Array(s.categories.prefix(maxCats))
+        VStack(alignment: .leading, spacing: 10) {
+            header
+            HStack(alignment: .center, spacing: 16) {
+                VStack(spacing: 6) {
+                    ring(s, size: 74, lineWidth: 5.5, fontSize: 19)
+                    Text("\(StudyPlanWidgetSnapshot.formatCredits(s.creditsTaken)) / \(StudyPlanWidgetSnapshot.formatCredits(s.totalRequired)) CH")
+                        .font(.system(size: 9.5, weight: .medium))
+                        .foregroundColor(T.muted)
+                        .lineLimit(1)
+                }
+                if !cats.isEmpty {
+                    VStack(alignment: .leading, spacing: 7) {
+                        ForEach(cats) { cat in
+                            categoryRow(cat)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    Text("\(StudyPlanWidgetSnapshot.formatCredits(s.creditsTaken)) / \(StudyPlanWidgetSnapshot.formatCredits(s.totalRequired)) Credit Hours done")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(T.txt)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func categoryRow(_ cat: StudyPlanWidgetCategory) -> some View {
+        let frac = cat.required > 0 ? min(max(cat.taken / cat.required, 0), 1) : 0
+        return VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 4) {
+                Text(cat.name)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(T.txt)
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                Text("\(StudyPlanWidgetSnapshot.formatCredits(cat.taken))/\(StudyPlanWidgetSnapshot.formatCredits(cat.required))")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(T.accent)
+                    .lineLimit(1)
+            }
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(trackColor)
+                    Capsule().fill(T.accent).frame(width: geo.size.width * CGFloat(frac))
+                }
+            }
+            .frame(height: 4)
+        }
+    }
+}
+
+struct StudyPlanHomeWidget: Widget {
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: "StudyPlanWidget", provider: StudyPlanWidgetProvider()) { entry in
+            StudyPlanWidgetView(entry: entry)
+        }
+        .configurationDisplayName("Study Plan")
+        .description("Your credit hours completed from Study Plan Tracker.")
+        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
+        .contentMarginsDisabled()
+    }
+}
+

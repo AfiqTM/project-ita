@@ -865,6 +865,7 @@ final class StudyPlanStore: ObservableObject {
     @Published var student: StudentType {
         didSet {
             UserDefaults.standard.set(student.rawValue, forKey: "studyplan.student")
+            syncWidget()
             if !applying { touch() }
         }
     }
@@ -881,6 +882,7 @@ final class StudyPlanStore: ObservableObject {
         taken = Set(UserDefaults.standard.stringArray(forKey: takenKey) ?? [])
         picks = (UserDefaults.standard.dictionary(forKey: picksKey) as? [String: String]) ?? [:]
         concentration = UserDefaults.standard.string(forKey: concKey)
+        syncWidget()
     }
 
     /// Always written on the phone first
@@ -890,6 +892,24 @@ final class StudyPlanStore: ObservableObject {
         UserDefaults.standard.set(Array(taken), forKey: takenKey)
         UserDefaults.standard.set(picks, forKey: picksKey)
         if let c = concentration { UserDefaults.standard.set(c, forKey: concKey) } else { UserDefaults.standard.removeObject(forKey: concKey) }
+        syncWidget()
+    }
+
+    private func syncWidget() {
+        guard let p = plan else {
+            StudyPlanWidgetStore.clear()
+            return
+        }
+        let cats = p.requirements.map { req in
+            StudyPlanWidgetCategory(name: req.category, taken: categoryTaken(req.category), required: req.hours)
+        }
+        StudyPlanWidgetStore.save(StudyPlanWidgetSnapshot(
+            title: p.title,
+            creditsTaken: creditsTaken,
+            totalRequired: totalRequired,
+            categories: cats,
+            updated: Date()
+        ))
     }
     /// A change made on this device: kept locally, and (when Google Drive is connected) sent to Drive by SyncManager.
     /// With no Drive connection the change waits and goes up as soon as Drive is connected.
