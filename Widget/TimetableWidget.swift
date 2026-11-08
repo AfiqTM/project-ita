@@ -214,6 +214,7 @@ struct TimetableHomeWidget: Widget {
         .configurationDisplayName("Class timetable")
         .description("Your next class, today's classes, or the whole week.")
         .supportedFamilies(Self.families)
+        .contentMarginsDisabled()   // black to the edges; amoledBackground puts the margins back as padding
     }
 
     /// Small, medium, large, plus the tall one (like the Photos widget) when the app is built with the iOS 27 SDK

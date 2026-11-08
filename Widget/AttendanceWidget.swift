@@ -49,12 +49,27 @@ private let blackPicture: AnyView = {
     return AnyView(pic)
 }()
 
+/// The system's own margins are turned off for the home-screen widgets (`contentMarginsDisabled`), so iOS has no rim
+/// of its own background left to draw (that rim was the grey edge). The same margins are put back here as padding,
+/// and black is painted under the whole widget, edge to edge.
+@available(iOS 17.0, *)
+private struct AmoledEdgeToEdge: ViewModifier {
+    @Environment(\.widgetContentMargins) private var margins
+
+    func body(content: Content) -> some View {
+        content
+            .padding(margins)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.black)
+            .containerBackground(for: .widget) { blackPicture }
+    }
+}
+
 extension View {
-    /// AMOLED black for the home-screen widgets: a black picture as the widget background, and black under the content too
+    /// AMOLED black for the home-screen widgets, filling the widget to its edges
     @ViewBuilder func amoledBackground() -> some View {
-        let content = background(blackPicture.ignoresSafeArea())
-        if #available(iOS 17.0, *) { content.containerBackground(for: .widget) { blackPicture } }
-        else { content }
+        if #available(iOS 17.0, *) { modifier(AmoledEdgeToEdge()) }
+        else { padding(16).background(blackPicture.ignoresSafeArea()) }
     }
 
     @ViewBuilder func widgetBackground(_ color: Color) -> some View {
@@ -152,6 +167,7 @@ struct AttendanceHomeWidget: Widget {
         .configurationDisplayName("Max attendance")
         .description("The highest attendance you can still reach in each subject.")
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
+        .contentMarginsDisabled()   // black to the edges; amoledBackground puts the margins back as padding
     }
 }
 
