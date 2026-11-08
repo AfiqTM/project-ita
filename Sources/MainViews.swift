@@ -576,10 +576,13 @@ struct DefaultCover: View {
                     .textGlow()
                     .pixelHeading(16, normal: .system(size: 22, weight: .bold), pt: 22)
                 ForEach(tags, id: \.self) { tag in
-                    Text("|")
-                        .font(.system(size: 12.5, weight: .regular))
-                        .baselineOffset(0.5)
-                        .foregroundColor(baseColor.opacity(0.45))
+                    // a thin line a little taller than the capitals, centred on them (top above the caps, bottom just
+                    // under the baseline), so SECTION / SEM sit in the middle of it
+                    Rectangle()
+                        .fill(baseColor.opacity(0.45))
+                        .frame(width: 1, height: 14)
+                        .alignmentGuide(.firstTextBaseline) { d in d.height - 2.5 }
+                        .padding(.horizontal, 2)
                     Text(tag)
                         .font(.system(size: 12.5, weight: .medium))
                         .foregroundColor(baseColor.opacity(0.82))
