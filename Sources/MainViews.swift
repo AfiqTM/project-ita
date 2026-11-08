@@ -556,7 +556,6 @@ struct DefaultCover: View {
     var body: some View {
         let covers = themes.theme.covers
         let p = covers[abs(course.id) % covers.count]
-        let baseColor = themes.theme.westernHeadings ? Color.white : Theme.accent
         let tagColor = (themes.theme.scheme == .light ? Theme.txt : Color.white).opacity(0.75)
         let tags = course.coverTags(timetable: timetable.data)
         ZStack(alignment: .bottomLeading) {
@@ -573,7 +572,10 @@ struct DefaultCover: View {
             }
             VStack(alignment: .leading, spacing: 5) {
                 Text(course.courseCode(timetable: timetable.data))
-                    .foregroundColor(baseColor.opacity(0.92))
+                    .foregroundStyle(themes.theme.isNotebook
+                                     ? AnyShapeStyle(Theme.txt)
+                                     : AnyShapeStyle(LinearGradient(colors: [Theme.txt, Theme.accent.opacity(0.85)],
+                                                                    startPoint: .topLeading, endPoint: .bottomTrailing)))
                     .textGlow()
                     .pixelHeading(16, normal: .system(size: 22, weight: .bold), pt: 22)
                 HStack(alignment: .center, spacing: 6) {
