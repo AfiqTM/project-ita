@@ -575,18 +575,15 @@ struct DefaultCover: View {
                     .foregroundColor(baseColor.opacity(0.92))
                     .textGlow()
                     .pixelHeading(16, normal: .system(size: 22, weight: .bold), pt: 22)
-                HStack(alignment: .center, spacing: 8) {
-                    ForEach(tags, id: \.self) { tag in
-                        Rectangle()
-                            .fill(baseColor.opacity(0.45))
-                            .frame(width: 1.2, height: 11)
-                            .offset(y: -0.5)
-                        Text(tag)
-                            .font(.system(size: 12.5, weight: .medium))
-                            .foregroundColor(baseColor.opacity(0.82))
-                    }
+                ForEach(tags, id: \.self) { tag in
+                    Text("|")
+                        .font(.system(size: 12.5, weight: .regular))
+                        .baselineOffset(0.5)
+                        .foregroundColor(baseColor.opacity(0.45))
+                    Text(tag)
+                        .font(.system(size: 12.5, weight: .medium))
+                        .foregroundColor(baseColor.opacity(0.82))
                 }
-                .offset(y: -1.5)
             }
             .lineLimit(1).minimumScaleFactor(0.5)
             .padding(.horizontal, 14)
