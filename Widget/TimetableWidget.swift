@@ -138,7 +138,7 @@ struct TimetableWidgetView: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
                     .padding(.horizontal, 7).padding(.vertical, 3.5)
-                    .background(T.accent.opacity(0.24), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .background(Color(red: 0x33 / 255, green: 0x2C / 255, blue: 0x22 / 255), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                     .offset(x: -1)
                     .padding(.top, 2)
             }

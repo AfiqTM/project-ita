@@ -341,7 +341,7 @@ struct TimetableBlock: View {
                 .font(.system(size: 9.5 * f, weight: .medium)).foregroundColor(tan)
                 .lineLimit(1).minimumScaleFactor(0.6)   // the time always stays on one row
                 .padding(.horizontal, 6 * k).padding(.vertical, 2 * k)
-                .background(tan.opacity(0.18), in: RoundedRectangle(cornerRadius: 6 * k, style: .continuous))
+                .background(Color(red: 0x33 / 255, green: 0x2C / 255, blue: 0x22 / 255), in: RoundedRectangle(cornerRadius: 6 * k, style: .continuous))
         }
         .multilineTextAlignment(.leading)
         .padding(.vertical, 9 * k).padding(.horizontal, 8 * k)
