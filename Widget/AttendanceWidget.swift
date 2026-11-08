@@ -80,36 +80,28 @@ extension View {
 struct AttendanceWidgetView: View {
     @Environment(\.widgetFamily) private var family
     let entry: AttendanceEntry
+    private let timetable = TimetableStore.load()
 
-    private var columnsCount: Int {
-        switch family {
-        case .systemSmall: return 1
-        default: return 2
-        }
-    }
     private var limit: Int {
         switch family {
-        case .systemSmall: return 2
+        case .systemSmall: return 3
         case .systemMedium: return 4
-        default: return 8
+        default: return 9
         }
     }
     private var compact: Bool { family == .systemSmall }
+    private var rowFont: CGFloat { compact ? 10.5 : 12 }
 
     /// 80% is the usual attendance minimum, so anything under it is tinted red
     private func tint(_ p: Double) -> Color { p >= 80 ? W.accent : W.warn }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: compact ? 6 : 8) {
             header
 
             if let s = entry.snapshot, !s.items.isEmpty {
-                let shown = Array(s.items.prefix(limit))
-                ViewThatFits(in: .vertical) {
-                    grid(shown, scale: 1.0)
-                    grid(shown, scale: 0.92)
-                    grid(shown, scale: 0.84)
-                    grid(shown, scale: 0.76)
+                VStack(alignment: .leading, spacing: compact ? 5 : 6) {
+                    ForEach(s.items.prefix(limit)) { row($0) }
                 }
                 if s.items.count > limit {
                     Text("+\(s.items.count - limit) more").font(.system(size: 10)).foregroundColor(W.muted)
@@ -141,76 +133,37 @@ struct AttendanceWidgetView: View {
         }
     }
 
-    @ViewBuilder private func grid(_ items: [AttendanceItem], scale: CGFloat) -> some View {
-        let cols = columnsCount
-        let rowCount = (items.count + cols - 1) / cols
-        VStack(spacing: 5 * scale) {
-            ForEach(0..<rowCount, id: \.self) { r in
-                HStack(alignment: .top, spacing: 5 * scale) {
-                    ForEach(0..<cols, id: \.self) { c in
-                        let idx = r * cols + c
-                        if idx < items.count {
-                            card(items[idx], scale: scale)
-                        } else {
-                            Color.clear.frame(maxWidth: .infinity)
-                        }
-                    }
-                }
-                .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .fixedSize(horizontal: false, vertical: true)
-    }
-
-    /// Subject card matching the timetable block UI: a soft tan card with a percentage pill, code, title, and bar
-    private func card(_ i: AttendanceItem, scale: CGFloat) -> some View {
-        let col = tint(i.percent)
-        let r = 10 * scale
-        return VStack(alignment: .leading, spacing: 3 * scale) {
-            HStack(spacing: 6 * scale) {
-                Text(formatPercent(i.percent))
-                    .font(.system(size: 9.5 * scale, weight: .bold))
-                    .monospacedDigit()
-                    .foregroundColor(col)
-                    .lineLimit(1)
-                    .padding(.horizontal, 6 * scale).padding(.vertical, 2 * scale)
-                    .background(col.opacity(0.18), in: RoundedRectangle(cornerRadius: 6 * scale, style: .continuous))
-                if let code = i.code {
+    /// Subject pill on the left (tan course code + white subject name), percentage on the right
+    private func row(_ i: AttendanceItem) -> some View {
+        let code = i.resolvedCode(timetable: timetable)
+        return HStack(spacing: 8) {
+            HStack(spacing: 5) {
+                if let code {
                     Text(code)
-                        .font(.system(size: 10.5 * scale, weight: .bold))
-                        .foregroundColor(W.txt)
+                        .font(.system(size: rowFont, weight: .bold))
+                        .foregroundColor(W.accent)
                         .lineLimit(1)
-                        .minimumScaleFactor(0.75)
+                        .layoutPriority(1)
                 }
-                Spacer(minLength: 0)
+                Text(i.displayName)
+                    .font(.system(size: rowFont, weight: .medium))
+                    .foregroundColor(W.txt)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
-            .padding(.bottom, 1 * scale)
+            .padding(.horizontal, compact ? 7 : 9)
+            .padding(.vertical, compact ? 4 : 5)
+            .background(W.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
 
-            Text(i.displayName)
-                .font(.system(size: 10 * scale, weight: .medium))
-                .foregroundColor(W.txt)
-                .lineLimit(compact ? 1 : 2)
-                .minimumScaleFactor(0.85)
-                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 4)
 
-            Spacer(minLength: 2 * scale)
-
-            ZStack(alignment: .leading) {
-                Capsule().fill(W.track)
-                GeometryReader { g in
-                    Capsule().fill(col)
-                        .frame(width: g.size.width * CGFloat(min(max(i.percent, 0), 100) / 100))
-                }
-            }
-            .frame(height: 3 * scale)
+            Text(formatPercent(i.percent))
+                .font(.system(size: rowFont, weight: .bold))
+                .monospacedDigit()
+                .foregroundColor(tint(i.percent))
+                .lineLimit(1)
+                .layoutPriority(1)
         }
-        .padding(.vertical, 7 * scale).padding(.horizontal, 8 * scale)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(
-            RoundedRectangle(cornerRadius: r, style: .continuous)
-                .fill(col.opacity(0.08))
-        )
-        .clipShape(RoundedRectangle(cornerRadius: r, style: .continuous))
     }
 }
 struct AttendanceHomeWidget: Widget {

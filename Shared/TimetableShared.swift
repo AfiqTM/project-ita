@@ -325,13 +325,7 @@ struct TimetableBlock: View {
         let f = k * 1.14 * textScale              // the text is bigger than the box around it (the padding stays at k)
         let r = 10 * k
         VStack(alignment: .leading, spacing: 3 * k) {
-            Text(c.shortRange.replacingOccurrences(of: "–", with: " – "))
-                .font(.system(size: 9.5 * f, weight: .medium)).foregroundColor(tan)
-                .lineLimit(1).minimumScaleFactor(0.6)   // the time always stays on one row
-                .padding(.horizontal, 6 * k).padding(.vertical, 2 * k)
-                .background(tan.opacity(0.18), in: RoundedRectangle(cornerRadius: 6 * k, style: .continuous))
-                .padding(.bottom, 2 * k)
-            Text(c.code).font(.system(size: 11 * f, weight: .bold)).foregroundColor(text)
+            Text(c.code).font(.system(size: 11 * f, weight: .bold)).foregroundColor(tan)
             Text(c.displayTitle).font(.system(size: 10 * f, weight: .medium)).foregroundColor(text)
             if !c.venue.isEmpty {
                 HStack(alignment: .top, spacing: 3 * k) {
@@ -339,6 +333,12 @@ struct TimetableBlock: View {
                     Text(c.venue).font(.system(size: 9 * f)).foregroundColor(muted)
                 }
             }
+            Text(c.shortRange.replacingOccurrences(of: "–", with: " – "))
+                .font(.system(size: 9.5 * f, weight: .medium)).foregroundColor(tan)
+                .lineLimit(1).minimumScaleFactor(0.6)   // the time always stays on one row
+                .padding(.horizontal, 6 * k).padding(.vertical, 2 * k)
+                .background(tan.opacity(0.18), in: RoundedRectangle(cornerRadius: 6 * k, style: .continuous))
+                .padding(.top, 2 * k)
         }
         .multilineTextAlignment(.leading)
         .fixedSize(horizontal: false, vertical: true)

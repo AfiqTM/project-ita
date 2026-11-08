@@ -9,13 +9,24 @@ struct AttendanceItem: Codable, Identifiable, Hashable {
     var name: String       // subject
     var percent: Double    // maximum possible attendance, 0-100
 
+    /// Course code extracted from the name (e.g. "BICS 1306") or matched against the saved timetable by title.
+    func resolvedCode(timetable: TimetableData?) -> String? {
+        if let c = code { return c }
+        guard let t = timetable else { return nil }
+        let target = displayName.lowercased()
+        return t.classes.first { $0.displayTitle.lowercased() == target || $0.title.lowercased() == target }?.code
+    }
+
     /// Course code extracted from the prefix if present, e.g. "BICS 1306".
     var code: String? {
-        let pattern = "^\\s*(?:SEM\\s*\\d+\\s+)?([A-Z]{2,6}\\s*\\d{3,4})"
+        let pattern = "(?:^|\\b)([A-Z]{2,6}\\s*\\d{3,4})\\b"
         guard let re = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
               let m = re.firstMatch(in: name, range: NSRange(name.startIndex..., in: name)),
               let r = Range(m.range(at: 1), in: name) else { return nil }
-        return String(name[r]).replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression).uppercased()
+        let raw = String(name[r]).uppercased().replacingOccurrences(of: "\\s+", with: "", options: .regularExpression)
+        let letters = raw.prefix { $0.isLetter }
+        let digits = raw.dropFirst(letters.count)
+        return "\(letters) \(digits)"
     }
 
     /// Name without the "SEM1 BICS 1306 Section 04" prefix, e.g.
