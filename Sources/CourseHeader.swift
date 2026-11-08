@@ -64,12 +64,12 @@ extension Course {
         return "SEM 1"
     }
 
-    /// Uppercase metadata tags shown next to the course code on the card cover:
-    /// `["SECTION 04", "SEM 1"]` for section courses, or `["SEM 1"]` for parent courses.
+    /// Metadata tags shown next to the course code on the card cover:
+    /// `["Section 04", "SEM 1"]` for section courses, or `["SEM 1"]` for parent courses.
     func coverTags(timetable: TimetableData? = nil) -> [String] {
         var tags: [String] = []
         if let sec = sectionLabel {
-            tags.append(sec.uppercased())
+            tags.append(sec)
         }
         tags.append(semShortLabel(timetable: timetable))
         return tags
