@@ -286,31 +286,32 @@ struct TimetableBlock: View {
     private let tan = Color(red: 0xD2 / 255, green: 0xB4 / 255, blue: 0x8C / 255)
 
     var body: some View {
-        let r = 10 * scale
-        VStack(alignment: .leading, spacing: 3 * scale) {
+        let k = scale * 1.12          // the box is a little bigger than the plain grid scale
+        let r = 10 * k
+        VStack(alignment: .leading, spacing: 3 * k) {
             Text(c.shortRange.replacingOccurrences(of: "–", with: " – "))
-                .font(.system(size: 9.5 * scale, weight: .medium)).foregroundColor(tan)
+                .font(.system(size: 9.5 * k, weight: .medium)).foregroundColor(tan)
                 .lineLimit(1).minimumScaleFactor(0.6)   // the time always stays on one row
-                .padding(.horizontal, 6 * scale).padding(.vertical, 2 * scale)
-                .background(tan.opacity(0.18), in: RoundedRectangle(cornerRadius: 6 * scale, style: .continuous))
-                .padding(.bottom, 2 * scale)
-            Text(c.code).font(.system(size: 11 * scale, weight: .bold)).foregroundColor(text)
-            Text(c.title).font(.system(size: 10 * scale, weight: .medium)).foregroundColor(text)
+                .padding(.horizontal, 6 * k).padding(.vertical, 2 * k)
+                .background(tan.opacity(0.18), in: RoundedRectangle(cornerRadius: 6 * k, style: .continuous))
+                .padding(.bottom, 2 * k)
+            Text(c.code).font(.system(size: 11 * k, weight: .bold)).foregroundColor(text)
+            Text(c.title).font(.system(size: 10 * k, weight: .medium)).foregroundColor(text)
             if !c.venue.isEmpty {
-                HStack(alignment: .top, spacing: 3 * scale) {
-                    VenuePin(color: muted, size: 7 * scale).padding(.top, 1.5 * scale)
-                    Text(c.venue).font(.system(size: 9 * scale)).foregroundColor(muted)
+                HStack(alignment: .top, spacing: 3 * k) {
+                    VenuePin(color: muted, size: 7 * k).padding(.top, 1.5 * k)
+                    Text(c.venue).font(.system(size: 9 * k)).foregroundColor(muted)
                 }
             }
         }
         .multilineTextAlignment(.leading)
         .fixedSize(horizontal: false, vertical: true)
-        .padding(.vertical, 7 * scale).padding(.horizontal, 7 * scale)
+        .padding(.vertical, 9 * k).padding(.horizontal, 8 * k)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)   // fills the row's height
         .background(
             ZStack {
                 RoundedRectangle(cornerRadius: r, style: .continuous).fill(tan.opacity(0.08))   // soft tan tint over whatever is behind
-                if let p = progress { WaterFill(level: p, scale: scale, animated: animated) }
+                if let p = progress { WaterFill(level: p, scale: k, animated: animated) }
             }
             .clipShape(RoundedRectangle(cornerRadius: r, style: .continuous))
         )
