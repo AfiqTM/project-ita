@@ -43,7 +43,10 @@ private let blackPicture: Image = {
         UIColor.black.setFill()
         ctx.fill(CGRect(origin: .zero, size: size))
     }
-    return Image(uiImage: img).resizable(resizingMode: .stretch).interpolation(.none)
+    var pic = Image(uiImage: img).resizable(resizingMode: .stretch).interpolation(.none)
+    // with a tinted / dark home-screen icon style iOS tints the widget background grey; full colour keeps this picture black
+    if #available(iOS 18.0, *) { pic = pic.widgetAccentedRenderingMode(.fullColor) }
+    return pic
 }()
 
 extension View {
