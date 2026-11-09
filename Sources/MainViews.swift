@@ -566,29 +566,23 @@ struct DefaultCover: View {
     ]
 
     /// Solid colour matching the book icon on this card's cover (`Theme.accent` at 16% blended over the right side of the `(p.0, p.1)` gradient).
-    /// `boost` (> 1) lifts the brightness on dark covers while keeping the exact same RGB hue ratio as the book icon.
-    private static func bookColor(p0: UInt32, p1: UInt32, accent: UInt32, light: Bool = false, boost: Double = 1.0) -> Color {
+    private static func bookColor(p0: UInt32, p1: UInt32, accent: UInt32, weight: Double = 0.16) -> Color {
         let r0 = Double((p0 >> 16) & 255), g0 = Double((p0 >> 8) & 255), b0 = Double(p0 & 255)
         let r1 = Double((p1 >> 16) & 255), g1 = Double((p1 >> 8) & 255), b1 = Double(p1 & 255)
         let ra = Double((accent >> 16) & 255), ga = Double((accent >> 8) & 255), ba = Double(accent & 255)
         let bgR = r0 * 0.18 + r1 * 0.82
         let bgG = g0 * 0.18 + g1 * 0.82
         let bgB = b0 * 0.18 + b1 * 0.82
-        let w = light ? min(0.16 * boost, 0.55) : 0.16
-        let s = light ? 1.0 : boost
-        let r = min(max((bgR * (1 - w) + ra * w) * s / 255, 0), 1)
-        let g = min(max((bgG * (1 - w) + ga * w) * s / 255, 0), 1)
-        let b = min(max((bgB * (1 - w) + ba * w) * s / 255, 0), 1)
-        return Color(.sRGB, red: r, green: g, blue: b)
+        return Color(.sRGB,
+                     red: (bgR * (1 - weight) + ra * weight) / 255,
+                     green: (bgG * (1 - weight) + ga * weight) / 255,
+                     blue: (bgB * (1 - weight) + ba * weight) / 255)
     }
 
     var body: some View {
         let covers = (themes.theme == .dark && darkerCourseCardWallpaper) ? Self.darkerCovers : themes.theme.covers
         let p = covers[abs(course.id) % covers.count]
-        let accentHex = themes.theme.westernHeadings ? 0xFFFFFF : themes.palette.accent
-        let isLight = themes.theme.scheme == .light
-        let coverBookColor = Self.bookColor(p0: p.0, p1: p.1, accent: accentHex, light: isLight, boost: 1.0)
-        let coverTextColor = Self.bookColor(p0: p.0, p1: p.1, accent: accentHex, light: isLight, boost: 1.25)
+        let coverBookColor = Self.bookColor(p0: p.0, p1: p.1, accent: themes.theme.westernHeadings ? 0xFFFFFF : themes.palette.accent)
         let tags = course.coverTags(timetable: timetable.data)
         ZStack(alignment: .bottomLeading) {
             LinearGradient(colors: [Color(hex: p.0), Color(hex: p.1)],
@@ -613,18 +607,18 @@ struct DefaultCover: View {
                 VStack(alignment: .leading, spacing: 0) {
                     Text(course.courseCode(timetable: timetable.data))
                         .font(BicsDisplayFont.available ? .custom(BicsDisplayFont.name, size: 48) : .system(size: 38, weight: .bold))
-                        .foregroundColor(coverTextColor)
+                        .foregroundColor(coverBookColor)
                         .lineLimit(1).minimumScaleFactor(0.5)
                     HStack(spacing: 6) {
                         ForEach(Array(tags.enumerated()), id: \.offset) { idx, tag in
                             if idx > 0 {
                                 Text("•")
                                     .font(.system(size: 13, weight: .medium))
-                                    .foregroundColor(coverTextColor.opacity(0.8))
+                                    .foregroundColor(coverBookColor.opacity(0.8))
                             }
                             Text(tag)
                                 .font(.system(size: 13, weight: .medium))
-                                .foregroundColor(coverTextColor)
+                                .foregroundColor(coverBookColor)
                         }
                     }
                     .lineLimit(1).minimumScaleFactor(0.5)
