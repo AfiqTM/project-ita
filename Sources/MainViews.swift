@@ -557,13 +557,36 @@ struct DefaultCover: View {
     @AppStorage("ui.darkerCourseCardWallpaper") private var darkerCourseCardWallpaper = false
 
     private static let darkerWallpapers: [(UInt32, UInt32, UInt32)] = [
-        (0x463120, 0x5D351B, 0x7A461E),
-        (0x483926, 0x634722, 0x785320),
-        (0x3A261F, 0x512A1B, 0x793721),
-        (0x3E2D1E, 0x58381C, 0x74431D),
-        (0x463522, 0x604321, 0x7C5122),
-        (0x3C281E, 0x542E1B, 0x70351D)
+        (0x463120, 0x5D351B, 0x7A461E), // 1. Burnt Amber / Bronze
+        (0x483926, 0x634722, 0x785320), // 2. Golden Ochre / Brass
+        (0x3A261F, 0x512A1B, 0x793721), // 3. Terracotta / Rust
+        (0x2F3624, 0x434E28, 0x5E6B2F), // 4. Warm Olive / Moss Gold
+        (0x3D2429, 0x572B31, 0x75353B), // 5. Deep Burgundy / Rosewood
+        (0x24313B, 0x2F4454, 0x3E5B70), // 6. Deep Slate Blue / Steel
+        (0x3B2E1E, 0x563F22, 0x735226), // 7. Antique Caramel / Walnut
+        (0x223632, 0x2D4D45, 0x3B695D), // 8. Deep Pine / Patina Teal
+        (0x3E281B, 0x5C351E, 0x804622), // 9. Copper / Cinnamon
+        (0x33283B, 0x483554, 0x614470), // 10. Muted Plum / Aubergine
+        (0x383322, 0x524927, 0x6E612D), // 11. Old Gold / Khaki Bronze
+        (0x3D2924, 0x59362C, 0x784535), // 12. Mahogany / Sienna
+        (0x28332B, 0x364A3B, 0x47634E), // 13. Forest Sage / Cypress
+        (0x422C1D, 0x613D20, 0x825024), // 14. Rich Honey / Cognac
+        (0x2B2B38, 0x3B3B50, 0x4E4E6B), // 15. Dusk Indigo / Charcoal Slate
+        (0x3F251E, 0x5E3022, 0x7E3D27), // 16. Brick / Ember Red-Brown
+        (0x342E25, 0x4D4231, 0x69583F), // 17. Espresso / Warm Taupe
+        (0x253438, 0x324B52, 0x41646E), // 18. Deep Petrol / Storm Teal
+        (0x45341E, 0x644922, 0x856027), // 19. Marigold / Warm Sand
+        (0x38242C, 0x52303D, 0x6E3E50)  // 20. Dark Mulberry / Wine
     ]
+
+    private var darkerWallpaperIndex: Int {
+        var h = UInt64(bitPattern: Int64(course.id)) &* 0x9E3779B97F4A7C15
+        for b in course.fullname.utf8 {
+            h = (h ^ UInt64(b)) &* 0x100000001B3
+        }
+        h ^= h >> 33
+        return Int(h % UInt64(Self.darkerWallpapers.count))
+    }
 
     var body: some View {
         let covers = themes.theme.covers
@@ -572,7 +595,7 @@ struct DefaultCover: View {
         let tags = course.coverTags(timetable: timetable.data)
         ZStack(alignment: .bottomLeading) {
             if themes.theme == .dark && darkerCourseCardWallpaper {
-                let w = Self.darkerWallpapers[abs(course.id) % Self.darkerWallpapers.count]
+                let w = Self.darkerWallpapers[darkerWallpaperIndex]
                 LinearGradient(
                     stops: [
                         .init(color: Color(hex: 0x050505), location: 0.00),
