@@ -588,7 +588,7 @@ struct DefaultCover: View {
         let accentHex = themes.theme.westernHeadings ? 0xFFFFFF : themes.palette.accent
         let isLight = themes.theme.scheme == .light
         let coverBookColor = Self.bookColor(p0: p.0, p1: p.1, accent: accentHex, light: isLight, boost: 1.0)
-        let coverTextColor = Self.bookColor(p0: p.0, p1: p.1, accent: accentHex, light: isLight, boost: 1.45)
+        let coverTextColor = Self.bookColor(p0: p.0, p1: p.1, accent: accentHex, light: isLight, boost: 1.25)
         let tags = course.coverTags(timetable: timetable.data)
         ZStack(alignment: .bottomLeading) {
             LinearGradient(colors: [Color(hex: p.0), Color(hex: p.1)],
