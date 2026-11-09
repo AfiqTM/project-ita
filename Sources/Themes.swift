@@ -399,12 +399,12 @@ enum RocksFont {
     static func ui(_ size: CGFloat) -> UIFont? { UIFont(name: name, size: size) }
 }
 
-/// Bics Display (Fonts/BicsDisplay-Traced.ttf): stencil display font used for course codes on course card covers.
+/// MADE Coachella Bold (Fonts/MADECoachella-Bold.otf): display serif font used for course codes on course card covers.
 enum BicsDisplayFont {
-    static let name = "BicsDisplay-Traced"
+    static let name = "MADECoachella-Bold"
 
     static func register() {
-        guard let url = Bundle.main.url(forResource: name, withExtension: "ttf") else { return }
+        guard let url = Bundle.main.url(forResource: name, withExtension: "otf") else { return }
         CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
     }
 
