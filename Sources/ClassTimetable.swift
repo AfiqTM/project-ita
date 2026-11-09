@@ -621,7 +621,7 @@ struct WidgetSettingsView: View {
                     if themes.theme == .dark {
                         toggleRow(
                             title: "Darker course card wallpaper",
-                            subtitle: "Use a dark-to-warm-amber gradient on course card covers.",
+                            subtitle: "Use a darker version of the default course card covers.",
                             isOn: $darkerCourseCardWallpaper,
                             showLine: false
                         )
