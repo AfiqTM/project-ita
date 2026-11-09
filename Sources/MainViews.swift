@@ -593,18 +593,18 @@ struct DefaultCover: View {
                 VStack(alignment: .leading, spacing: 0) {
                     Text(course.courseCode(timetable: timetable.data))
                         .font(BicsDisplayFont.available ? .custom(BicsDisplayFont.name, size: 45) : .system(size: 36, weight: .bold))
-                        .foregroundColor(baseColor.opacity(0.16))
+                        .foregroundColor(baseColor.opacity(0.38))
                         .lineLimit(1).minimumScaleFactor(0.5)
                     HStack(spacing: 6) {
                         ForEach(Array(tags.enumerated()), id: \.offset) { idx, tag in
                             if idx > 0 {
                                 Text("•")
                                     .font(.system(size: 12.5, weight: .medium))
-                                    .foregroundColor(baseColor.opacity(0.12))
+                                    .foregroundColor(baseColor.opacity(0.28))
                             }
                             Text(tag)
                                 .font(.system(size: 12.5, weight: .medium))
-                                .foregroundColor(baseColor.opacity(0.14))
+                                .foregroundColor(baseColor.opacity(0.34))
                         }
                     }
                     .lineLimit(1).minimumScaleFactor(0.5)
