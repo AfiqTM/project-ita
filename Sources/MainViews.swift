@@ -590,26 +590,25 @@ struct DefaultCover: View {
                     .lineLimit(1).minimumScaleFactor(0.5)
                     .padding(14)
             } else {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                VStack(alignment: .leading, spacing: 0) {
                     Text(course.courseCode(timetable: timetable.data))
-                        .foregroundColor(baseColor.opacity(0.92))
-                        .textGlow()
-                        .pixelHeading(16, normal: .system(size: 22, weight: .bold), pt: 22)
-                        .padding(.trailing, 5)
-                    ForEach(Array(tags.enumerated()), id: \.offset) { idx, tag in
-                        if idx > 0 {
-                            Text("•")
+                        .font(BicsDisplayFont.available ? .custom(BicsDisplayFont.name, size: 45) : .system(size: 36, weight: .bold))
+                        .foregroundColor(baseColor.opacity(0.25))
+                        .lineLimit(1).minimumScaleFactor(0.5)
+                    HStack(spacing: 6) {
+                        ForEach(Array(tags.enumerated()), id: \.offset) { idx, tag in
+                            if idx > 0 {
+                                Text("•")
+                                    .font(.system(size: 12.5, weight: .medium))
+                                    .foregroundColor(baseColor.opacity(0.18))
+                            }
+                            Text(tag)
                                 .font(.system(size: 12.5, weight: .medium))
-                                .foregroundColor(baseColor.opacity(0.65))
-                                .baselineOffset(1.5)
+                                .foregroundColor(baseColor.opacity(0.22))
                         }
-                        Text(tag)
-                            .font(.system(size: 12.5, weight: .medium))
-                            .foregroundColor(baseColor.opacity(0.82))
-                            .baselineOffset(1.5)
                     }
+                    .lineLimit(1).minimumScaleFactor(0.5)
                 }
-                .lineLimit(1).minimumScaleFactor(0.5)
                 .padding(.horizontal, 14)
                 .padding(.bottom, 9)
             }

@@ -399,6 +399,18 @@ enum RocksFont {
     static func ui(_ size: CGFloat) -> UIFont? { UIFont(name: name, size: size) }
 }
 
+/// Bics Display (Fonts/BicsDisplay-Traced.ttf): stencil display font used for course codes on course card covers.
+enum BicsDisplayFont {
+    static let name = "BicsDisplay-Traced"
+
+    static func register() {
+        guard let url = Bundle.main.url(forResource: name, withExtension: "ttf") else { return }
+        CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+    }
+
+    static var available: Bool { UIFont(name: name, size: 12) != nil }
+}
+
 /// The title face and the text face of the themes with `westernHeadings`: the sizes of the nav bar, tab bar and
 /// bar buttons are kept together here.
 struct FaceSpec {
