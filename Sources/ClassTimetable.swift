@@ -578,7 +578,9 @@ final class TimetableWidgetSettingsModel: ObservableObject {
 
 struct WidgetSettingsView: View {
     @ObservedObject private var model = TimetableWidgetSettingsModel.shared
+    @ObservedObject private var themes = ThemeStore.shared
     @AppStorage("ui.preferOldCourseCards") private var preferOldCourseCards = false
+    @AppStorage("ui.darkerCourseCardWallpaper") private var darkerCourseCardWallpaper = false
 
     private func sectionTitle(_ t: String) -> some View {
         Text(t).font(ThemeStore.shared.theme.isNotebook ? Theme.font(.subheadline) : Theme.font(.footnote).weight(.semibold))
@@ -614,8 +616,16 @@ struct WidgetSettingsView: View {
                         title: "Prefer old course cards",
                         subtitle: "Use the original main page course card layout and titles.",
                         isOn: $preferOldCourseCards,
-                        showLine: false
+                        showLine: themes.theme == .dark
                     )
+                    if themes.theme == .dark {
+                        toggleRow(
+                            title: "Darker course card wallpaper",
+                            subtitle: "Use a dark-to-warm-amber gradient on course card covers.",
+                            isOn: $darkerCourseCardWallpaper,
+                            showLine: false
+                        )
+                    }
                 }
                 .glowCard()
 

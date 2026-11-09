@@ -554,6 +554,16 @@ struct DefaultCover: View {
     @ObservedObject private var themes = ThemeStore.shared
     @ObservedObject private var timetable = TimetableManager.shared
     @AppStorage("ui.preferOldCourseCards") private var preferOldCourseCards = false
+    @AppStorage("ui.darkerCourseCardWallpaper") private var darkerCourseCardWallpaper = false
+
+    private static let darkerWallpapers: [(UInt32, UInt32, UInt32)] = [
+        (0x463120, 0x5D351B, 0x7A461E),
+        (0x483926, 0x634722, 0x785320),
+        (0x3A261F, 0x512A1B, 0x793721),
+        (0x3E2D1E, 0x58381C, 0x74431D),
+        (0x463522, 0x604321, 0x7C5122),
+        (0x3C281E, 0x542E1B, 0x70351D)
+    ]
 
     var body: some View {
         let covers = themes.theme.covers
@@ -561,8 +571,23 @@ struct DefaultCover: View {
         let baseColor = themes.theme.westernHeadings ? Color.white : Theme.accent
         let tags = course.coverTags(timetable: timetable.data)
         ZStack(alignment: .bottomLeading) {
-            LinearGradient(colors: [Color(hex: p.0), Color(hex: p.1)],
-                           startPoint: .topLeading, endPoint: .bottomTrailing)
+            if themes.theme == .dark && darkerCourseCardWallpaper {
+                let w = Self.darkerWallpapers[abs(course.id) % Self.darkerWallpapers.count]
+                LinearGradient(
+                    stops: [
+                        .init(color: Color(hex: 0x050505), location: 0.00),
+                        .init(color: Color(hex: 0x070605), location: 0.18),
+                        .init(color: Color(hex: w.0), location: 0.42),
+                        .init(color: Color(hex: w.1), location: 0.68),
+                        .init(color: Color(hex: w.2), location: 1.00)
+                    ],
+                    startPoint: UnitPoint(x: 0.0, y: 0.4),
+                    endPoint: UnitPoint(x: 1.0, y: 0.6)
+                )
+            } else {
+                LinearGradient(colors: [Color(hex: p.0), Color(hex: p.1)],
+                               startPoint: .topLeading, endPoint: .bottomTrailing)
+            }
             if themes.theme.isNotebook {
                 NotebookPattern(seed: course.id)
             } else {
