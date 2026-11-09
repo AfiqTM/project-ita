@@ -557,12 +557,12 @@ struct DefaultCover: View {
     @AppStorage("ui.darkerCourseCardWallpaper") private var darkerCourseCardWallpaper = false
 
     private static let darkerCovers: [(UInt32, UInt32)] = [
-        (0x0E0C09, 0x201A13),
-        (0x0B0D10, 0x192128),
-        (0x0E0B0D, 0x22171D),
-        (0x090E0B, 0x16221B),
-        (0x0D0B09, 0x292013),
-        (0x0B0B10, 0x1B1A29)
+        (0x13110D, 0x2A2219),
+        (0x0F1114, 0x202A33),
+        (0x130E11, 0x2C1E25),
+        (0x0D1310, 0x1B2B22),
+        (0x110F0C, 0x352A19),
+        (0x0F0F14, 0x232235)
     ]
 
     var body: some View {
