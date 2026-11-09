@@ -578,6 +578,7 @@ final class TimetableWidgetSettingsModel: ObservableObject {
 
 struct WidgetSettingsView: View {
     @ObservedObject private var model = TimetableWidgetSettingsModel.shared
+    @AppStorage("ui.preferOldCourseCards") private var preferOldCourseCards = false
 
     private func sectionTitle(_ t: String) -> some View {
         Text(t).font(ThemeStore.shared.theme.isNotebook ? Theme.font(.subheadline) : Theme.font(.footnote).weight(.semibold))
@@ -607,6 +608,17 @@ struct WidgetSettingsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
+                sectionTitle("Courses Tab")
+                VStack(spacing: 0) {
+                    toggleRow(
+                        title: "Prefer old course cards",
+                        subtitle: "Use the original main page course card layout and titles.",
+                        isOn: $preferOldCourseCards,
+                        showLine: false
+                    )
+                }
+                .glowCard()
+
                 sectionTitle("Timetable Widget")
                 VStack(spacing: 0) {
                     toggleRow(
@@ -627,7 +639,7 @@ struct WidgetSettingsView: View {
             .padding(16)
         }
         .background(Theme.bg.ignoresSafeArea())
-        .navigationTitle("Widget Settings")
+        .navigationTitle("UI Preference")
         .navigationBarTitleDisplayMode(.inline)
         .notebookBack()
     }

@@ -495,6 +495,7 @@ struct CourseCard: View {
     let course: Course
     @ObservedObject private var themes = ThemeStore.shared
     @ObservedObject private var timetable = TimetableManager.shared
+    @AppStorage("ui.preferOldCourseCards") private var preferOldCourseCards = false
 
     var body: some View {
         if themes.theme.isNotebook {
@@ -508,7 +509,7 @@ struct CourseCard: View {
         VStack(alignment: .leading, spacing: 0) {
             cover.frame(height: 110).frame(maxWidth: .infinity).clipped()
             VStack(alignment: .leading, spacing: 8) {
-                Text(course.cardTitle)
+                Text(preferOldCourseCards ? course.prettyFull : course.cardTitle)
                     .foregroundColor(Theme.txt)
                     .multilineTextAlignment(.leading)
                     .textGlow(radius: 3)
@@ -552,6 +553,7 @@ struct DefaultCover: View {
     let course: Course
     @ObservedObject private var themes = ThemeStore.shared
     @ObservedObject private var timetable = TimetableManager.shared
+    @AppStorage("ui.preferOldCourseCards") private var preferOldCourseCards = false
 
     var body: some View {
         let covers = themes.theme.covers
@@ -570,28 +572,37 @@ struct DefaultCover: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                     .padding(14)
             }
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(course.courseCode(timetable: timetable.data))
-                    .foregroundColor(baseColor.opacity(0.92))
+            if preferOldCourseCards {
+                Text(course.prettyShort ?? "")
+                    .foregroundColor(themes.theme.westernHeadings ? Color.white : Theme.accent.opacity(0.92))
                     .textGlow()
                     .pixelHeading(16, normal: .system(size: 22, weight: .bold), pt: 22)
-                    .padding(.trailing, 5)
-                ForEach(Array(tags.enumerated()), id: \.offset) { idx, tag in
-                    if idx > 0 {
-                        Text("•")
+                    .lineLimit(1).minimumScaleFactor(0.5)
+                    .padding(14)
+            } else {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(course.courseCode(timetable: timetable.data))
+                        .foregroundColor(baseColor.opacity(0.92))
+                        .textGlow()
+                        .pixelHeading(16, normal: .system(size: 22, weight: .bold), pt: 22)
+                        .padding(.trailing, 5)
+                    ForEach(Array(tags.enumerated()), id: \.offset) { idx, tag in
+                        if idx > 0 {
+                            Text("•")
+                                .font(.system(size: 12.5, weight: .medium))
+                                .foregroundColor(baseColor.opacity(0.65))
+                                .baselineOffset(1.5)
+                        }
+                        Text(tag)
                             .font(.system(size: 12.5, weight: .medium))
-                            .foregroundColor(baseColor.opacity(0.65))
+                            .foregroundColor(baseColor.opacity(0.82))
                             .baselineOffset(1.5)
                     }
-                    Text(tag)
-                        .font(.system(size: 12.5, weight: .medium))
-                        .foregroundColor(baseColor.opacity(0.82))
-                        .baselineOffset(1.5)
                 }
+                .lineLimit(1).minimumScaleFactor(0.5)
+                .padding(.horizontal, 14)
+                .padding(.bottom, 9)
             }
-            .lineLimit(1).minimumScaleFactor(0.5)
-            .padding(.horizontal, 14)
-            .padding(.bottom, 9)
         }
     }
 }
@@ -858,8 +869,8 @@ struct ProfileView: View {
                                    subtitle: themes.theme.name, showLine: true)
                     }
                     NavigationLink(value: OthersRoute.widgetSettings) {
-                        ProfileRow(icon: "rectangle.3.group", title: "Widget Settings",
-                                   subtitle: "Customise home-screen widgets", showLine: true)
+                        ProfileRow(icon: "rectangle.3.group", title: "UI Preference",
+                                   subtitle: "Course cards and home-screen widgets", showLine: true)
                     }
                     NavigationLink { SavedLoginView() } label: {
                         ProfileRow(icon: "key", title: "Saved login",
