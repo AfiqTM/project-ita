@@ -578,12 +578,10 @@ struct DefaultCover: View {
                     .padding(.trailing, 5)
                 ForEach(Array(tags.enumerated()), id: \.offset) { idx, tag in
                     if idx > 0 {
-                        // a thin line a little taller than the capitals, lifted slightly alongside Section / SEM so the
-                        // text sits in the middle of the separator while the course code stays on the baseline
-                        Rectangle()
-                            .fill(baseColor.opacity(0.45))
-                            .frame(width: 1, height: 13.5)
-                            .alignmentGuide(.firstTextBaseline) { d in d.height - 1.0 }
+                        Text("•")
+                            .font(.system(size: 12.5, weight: .medium))
+                            .foregroundColor(baseColor.opacity(0.65))
+                            .baselineOffset(1.5)
                     }
                     Text(tag)
                         .font(.system(size: 12.5, weight: .medium))
