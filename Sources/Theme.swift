@@ -567,6 +567,32 @@ enum WebTheme {
       .dropdown-item{color:#e6e6e6!important}
       .dropdown-item:hover,.dropdown-item:focus{background:#1c1c1c!important}
       hr{border-color:#1c1c1c!important}
+      /* quiz pages: attempt, summary and review */
+      .que .info{background:transparent!important;border:0!important;box-shadow:none!important}
+      .que .info .no,.que .info .qno{color:#fff!important;font-weight:700!important}
+      .que .info .state,.que .info .grade{color:#9a9a9a!important}
+      .que .info .questionflag,.que .info .questionflag label{color:#c9ad86!important}
+      .que .content{background:#0f0f0f!important;border:1px solid rgba(210,180,140,.22)!important;border-radius:6px!important;box-shadow:none!important}
+      .que .formulation,.que .qtext,.que .answer label,.que .answer .flex-fill{color:#e6e6e6!important}
+      .que .answer .answernumber{color:#e6e6e6!important}
+      .que .answer .form-check-input[type=radio],.que .answer input[type=radio]{background-color:#05070c!important;border:1.5px solid #3a4a6a!important}
+      .que .answer .form-check-input[type=checkbox],.que .answer input[type=checkbox]{background-color:#05070c!important;border:1.5px solid #3a4a6a!important}
+      .que .answer .form-check-input:checked{background-color:#D2B48C!important;border-color:#D2B48C!important}
+      .que .qtype_multichoice_clearchoice a,.que .qtype_multichoice_clearchoice button,.que .qtype_multichoice_clearchoice .btn-link{color:#D2B48C!important;font-weight:600!important;background:transparent!important;border:0!important}
+      .que .outcome,.que .specificfeedback,.que .generalfeedback,.que .rightanswer,.que .feedback,.que .comment{background:#0b0b0b!important;color:#e6e6e6!important;border-color:#1c1c1c!important}
+      .que.correct .info .state,.que .correct{color:#6fcf97!important}
+      .que.incorrect .info .state,.que .incorrect{color:#eb7d6b!important}
+      #quiz-timer,#quiz-timer-wrapper,#quiz-time-left{background:#0b0b0b!important;color:#e6e6e6!important;border-color:#1c1c1c!important;box-shadow:none!important}
+      #quiz-timer .btn,#quiz-timer-wrapper .btn,#quiz-timer a{background:#0b0b0b!important;color:#e6e6e6!important;border:1px solid #1c1c1c!important}
+      #mod_quiz_navblock,#mod_quiz_navblock .card-body,.mod_quiz-navblock{background:transparent!important;border:0!important}
+      .qn_buttons .qnbutton,#mod_quiz_navblock .qnbutton{background:#0b0b0b!important;color:#e6e6e6!important;border:0!important;border-radius:3px!important;box-shadow:none!important}
+      .qn_buttons .qnbutton .trafficlight,#mod_quiz_navblock .qnbutton .trafficlight{background:transparent!important}
+      .qn_buttons .qnbutton.answersaved,.qn_buttons .qnbutton.complete{box-shadow:inset 0 -3px 0 #D2B48C!important}
+      .qn_buttons .qnbutton.thispage{outline:1px solid #D2B48C!important}
+      .qn_buttons .qnbutton.flagged .thispageholder,.qn_buttons .qnbutton .flagged{color:#D2B48C!important}
+      .mod_quiz-next-nav,input.mod_quiz-next-nav,.submitbtns .btn-primary{background:#D2B48C!important;border-color:#D2B48C!important;color:#000!important}
+      .mod_quiz-prev-nav{background:#0b0b0b!important;color:#e6e6e6!important;border-color:#1c1c1c!important}
+      .quizinfo,.quizattempt,.quizreviewsummary th,.quizreviewsummary td{color:#e6e6e6!important;border-color:#1c1c1c!important}
       .navbar-brand,#page-footer,footer{display:none!important}
       *,*::before,*::after{transition:none!important}
       `;
