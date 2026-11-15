@@ -598,16 +598,17 @@ struct DefaultCover: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                     .padding(14)
             } else {
-                // new card style: a big, tilted book running off the top-right corner, kept faint behind the title
-                Color.clear
-                    .overlay(alignment: .topTrailing) {
-                        Image(systemName: "book.closed.fill")
-                            .font(.system(size: 140))
-                            .rotationEffect(.degrees(-8))
-                            .foregroundColor(Self.bookColor(p0: p.0, p1: p.1, accent: themes.theme.westernHeadings ? 0xFFFFFF : themes.palette.accent, weight: 0.05))
-                            .offset(x: 30, y: 40)
-                    }
-                    .clipped()
+                // new card style: a big, tilted book whose top-left corner starts 73% across and 20% down the cover,
+                // running off the right edge and the bottom, kept faint behind the title
+                GeometryReader { g in
+                    Image(systemName: "book.closed.fill")
+                        .font(.system(size: 140))
+                        .rotationEffect(.degrees(-8))
+                        .foregroundColor(Self.bookColor(p0: p.0, p1: p.1, accent: themes.theme.westernHeadings ? 0xFFFFFF : themes.palette.accent, weight: 0.05))
+                        .fixedSize()
+                        .position(x: g.size.width * 0.73 + 62, y: g.size.height * 0.20 + 70)
+                }
+                .clipped()
             }
             if preferOldCourseCards {
                 Text(course.prettyShort ?? "")
