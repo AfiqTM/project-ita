@@ -583,6 +583,8 @@ struct DefaultCover: View {
         let covers = (themes.theme == .dark && darkerCourseCardWallpaper) ? Self.darkerCovers : themes.theme.covers
         let p = covers[abs(course.id) % covers.count]
         let coverBookColor = Self.bookColor(p0: p.0, p1: p.1, accent: themes.theme.westernHeadings ? 0xFFFFFF : themes.palette.accent)
+        // the big code and the section / semester line are a stronger tint of the accent than the book icon (less see-through)
+        let titleColor = Self.bookColor(p0: p.0, p1: p.1, accent: themes.theme.westernHeadings ? 0xFFFFFF : themes.palette.accent, weight: 0.4)
         let tags = course.coverTags(timetable: timetable.data)
         ZStack(alignment: .bottomLeading) {
             LinearGradient(colors: [Color(hex: p.0), Color(hex: p.1)],
@@ -607,18 +609,18 @@ struct DefaultCover: View {
                 VStack(alignment: .leading, spacing: 0) {
                     Text(course.courseCode(timetable: timetable.data))
                         .font(BicsDisplayFont.available ? .custom(BicsDisplayFont.name, size: 48) : .system(size: 38, weight: .bold))
-                        .foregroundColor(coverBookColor)
+                        .foregroundColor(titleColor)
                         .lineLimit(1).minimumScaleFactor(0.5)
                     HStack(spacing: 6) {
                         ForEach(Array(tags.enumerated()), id: \.offset) { idx, tag in
                             if idx > 0 {
                                 Text("•")
                                     .font(.system(size: 13, weight: .medium))
-                                    .foregroundColor(coverBookColor.opacity(0.8))
+                                    .foregroundColor(titleColor.opacity(0.8))
                             }
                             Text(tag)
                                 .font(.system(size: 13, weight: .medium))
-                                .foregroundColor(coverBookColor)
+                                .foregroundColor(titleColor)
                         }
                     }
                     .lineLimit(1).minimumScaleFactor(0.5)
