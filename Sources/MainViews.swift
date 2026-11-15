@@ -582,8 +582,7 @@ struct DefaultCover: View {
     var body: some View {
         let covers = (themes.theme == .dark && darkerCourseCardWallpaper) ? Self.darkerCovers : themes.theme.covers
         let p = covers[abs(course.id) % covers.count]
-        let coverBookColor = Self.bookColor(p0: p.0, p1: p.1, accent: themes.theme.westernHeadings ? 0xFFFFFF : themes.palette.accent)
-        // the big code and the section / semester line: 30% accent over the cover (the book icon uses 16%)
+        // the big code and the section / semester line: 30% accent over the cover 
         let titleColor = Self.bookColor(p0: p.0, p1: p.1, accent: themes.theme.westernHeadings ? 0xFFFFFF : themes.palette.accent, weight: 0.3)
         let tags = course.coverTags(timetable: timetable.data)
         ZStack(alignment: .bottomLeading) {
@@ -591,12 +590,6 @@ struct DefaultCover: View {
                            startPoint: .topLeading, endPoint: .bottomTrailing)
             if themes.theme.isNotebook {
                 NotebookPattern(seed: course.id)
-            } else {
-                Image(systemName: "book.closed.fill")
-                    .font(.system(size: 64))
-                    .foregroundColor(coverBookColor)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                    .padding(14)
             }
             if preferOldCourseCards {
                 Text(course.prettyShort ?? "")
