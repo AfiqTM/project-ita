@@ -583,8 +583,8 @@ struct DefaultCover: View {
         let covers = (themes.theme == .dark && darkerCourseCardWallpaper) ? Self.darkerCovers : themes.theme.covers
         let p = covers[abs(course.id) % covers.count]
         let coverBookColor = Self.bookColor(p0: p.0, p1: p.1, accent: themes.theme.westernHeadings ? 0xFFFFFF : themes.palette.accent)
-        // the big code and the section / semester line: 30% see-through (70% accent over the cover), stronger than the book icon
-        let titleColor = Self.bookColor(p0: p.0, p1: p.1, accent: themes.theme.westernHeadings ? 0xFFFFFF : themes.palette.accent, weight: 0.7)
+        // the big code and the section / semester line: 30% accent over the cover (the book icon uses 16%)
+        let titleColor = Self.bookColor(p0: p.0, p1: p.1, accent: themes.theme.westernHeadings ? 0xFFFFFF : themes.palette.accent, weight: 0.3)
         let tags = course.coverTags(timetable: timetable.data)
         ZStack(alignment: .bottomLeading) {
             LinearGradient(colors: [Color(hex: p.0), Color(hex: p.1)],
