@@ -122,6 +122,7 @@ enum DevLog {
     /// (a DNS filter that blocks a host shows up as "cannot find host" / "DNS lookup failed" / timeout).
     static func network(_ c: DevChannel, _ error: Error, _ what: String) {
         let e = error as NSError
+        if e.domain == NSURLErrorDomain && e.code == NSURLErrorCancelled { return }   // cancelled by the app itself, not a failure
         var url: URL?
         if let u = e.userInfo[NSURLErrorFailingURLErrorKey] as? URL { url = u }
         else if let s = e.userInfo[NSURLErrorFailingURLStringErrorKey] as? String { url = URL(string: s) }

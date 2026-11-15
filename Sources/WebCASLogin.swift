@@ -79,6 +79,7 @@ final class WebCASLogin: NSObject, ObservableObject, WKNavigationDelegate {
         cfg.websiteDataStore = .nonPersistent()
         let wv = WKWebView(frame: CGRect(x: 0, y: 0, width: 390, height: 700), configuration: cfg)
         wv.navigationDelegate = self
+        pageView = wv
         wv.alpha = 0.01
         wv.isUserInteractionEnabled = false
         let window = UIApplication.shared.connectedScenes
@@ -231,13 +232,35 @@ final class WebCASLogin: NSObject, ObservableObject, WKNavigationDelegate {
             waitID += 1
             let id = waitID
             waiter = c
+            committed = false
             start()
+            // Don't wait for every image and file: once the new page is there and its HTML is parsed
+            // ("interactive"), carry on. A slow asset (pluginfile.php, fonts…) no longer fails the sign-in.
+            Task { [weak self] in
+                while self?.waitID == id, self?.waiter != nil {
+                    try? await Task.sleep(nanoseconds: 400_000_000)
+                    guard let self, self.waitID == id, self.waiter != nil else { return }
+                    guard self.committed, let wv = self.pageView else { continue }
+                    let st = await self.evalWithTimeout(wv, "return document.readyState;", seconds: 1)
+                    if self.waitID == id, self.waiter != nil, st == "interactive" || st == "complete" {
+                        if let u = wv.url, ["http", "https"].contains(u.scheme?.lowercased() ?? "") {
+                            DevLog.host(DevLog.label(u), .ok, "page ready")
+                        }
+                        self.resolveWait(true)
+                    }
+                }
+            }
             Task { [weak self] in
                 try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
                 if self?.waitID == id { self?.resolveWait(false) }
             }
         }
     }
+
+    private var committed = false
+    private weak var pageView: WKWebView?
+
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) { committed = true }
 
     private func resolveWait(_ ok: Bool) {
         let w = waiter

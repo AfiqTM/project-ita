@@ -109,6 +109,7 @@ final class AutoAttendance: ObservableObject {
     @Published var failedCourses: [String] = []    // subjects whose contents couldn't be loaded
     var userid = 0
     private var pushTask: Task<Void, Never>?
+    private var fetching = false
 
     private init() {
         if let d = UserDefaults.standard.data(forKey: Self.storeKey),
@@ -304,22 +305,37 @@ final class AutoAttendance: ObservableObject {
         catch { message = "Couldn't reach the server: \(error.localizedDescription)" }
     }
 
+    /// What the last sync left out (shown in the developer log)
+    private(set) var skipNotes: [String] = []
+
     private func payload() -> [[String: Any]] {
         let cal = Calendar.current
         var out: [[String: Any]] = []
+        var notes: [String] = []
+        let nowMs = Date().timeIntervalSince1970 * 1000
         for c in state.configs where c.enabled {
+            if c.sessions.isEmpty { notes.append("\(c.name): no upcoming session found on the attendance page") }
             for s in c.sessions {
                 let day = Date(timeIntervalSince1970: s.day)
                 let w = Self.window(c, s)
                 func at(_ m: Int) -> Double {
                     (cal.date(bySettingHour: m / 60, minute: m % 60, second: 0, of: day) ?? day).timeIntervalSince1970 * 1000
                 }
-                let from = at(w.0), to = at(w.1)
-                guard to > Date().timeIntervalSince1970 * 1000 else { continue }    // already over
+                var from = at(w.0)
+                let to = at(w.1)
+                let label = "\(c.name) \(DevLog.stamp(Date(timeIntervalSince1970: from / 1000))) to \(DevLog.stamp(Date(timeIntervalSince1970: to / 1000)))"
+                guard to > nowMs else { notes.append("SKIPPED \(label): window already over"); continue }
+                // switched on in the middle of the window: pick the moment from what is left of it, not from the past
+                if from < nowMs + 60_000 {
+                    let next = (nowMs / 300_000).rounded(.up) * 300_000      // next 5-minute mark
+                    from = min(max(next, nowMs + 60_000), to - 60_000)
+                    if from > at(w.0) { notes.append("shortened \(label): started \(DevLog.stamp(Date(timeIntervalSince1970: from / 1000)))") }
+                }
                 out.append(["key": "\(c.id)-\(Int(s.day))", "cmid": c.id, "course": c.name, "url": c.url,
                             "from": from, "to": to])
             }
         }
+        skipNotes = notes
         return out
     }
 
@@ -332,28 +348,53 @@ final class AutoAttendance: ObservableObject {
         }
     }
 
+    /// Remembers that the server may still hold this user's jobs (so a DELETE that failed is tried again later)
+    private var serverMayHaveJobs: Bool {
+        get { UserDefaults.standard.object(forKey: "aa.serverHasJobs") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "aa.serverHasJobs") }
+    }
+
+    /// One request, tried up to 3 times when the network drops it (timeouts, lost connection)
+    private func requestRetrying(_ path: String, method: String, query: [URLQueryItem] = [], body: Data? = nil) async throws -> Data {
+        var lastError: Error = APIError(message: "No answer")
+        for attempt in 0..<3 {
+            do { return try await request(path, method: method, query: query, body: body) }
+            catch let e as URLError where [.timedOut, .networkConnectionLost, .cannotConnectToHost, .dnsLookupFailed,
+                                          .cannotFindHost, .notConnectedToInternet].contains(e.code) {
+                lastError = e
+                if attempt < 2 { try? await Task.sleep(nanoseconds: UInt64(2 + attempt * 3) * 1_000_000_000) }
+            }
+        }
+        throw lastError
+    }
+
     func push() async {
         let uid = userid
         guard uid > 0, serverReady else { return }
         do {
             if !state.master || enabledCount == 0 {
-                _ = try await request("sync", method: "DELETE", query: [URLQueryItem(name: "userid", value: String(uid))])
                 jobs = []
                 message = state.master ? "Tick a subject to start." : "Auto attendance is off."
+                guard serverMayHaveJobs else { return }      // nothing there to remove: no request
+                _ = try await requestRetrying("sync", method: "DELETE", query: [URLQueryItem(name: "userid", value: String(uid))])
+                serverMayHaveJobs = false
                 return
             }
             let body: [String: Any] = ["userid": uid, "site": Site.url.absoluteString,
                                        "token": MoodleAPI.shared.token,
                                        "privateToken": MoodleAPI.shared.privateToken ?? "",
                                        "jobs": payload()]
-            _ = try await request("sync", method: "POST", body: try JSONSerialization.data(withJSONObject: body))
+            serverMayHaveJobs = true
+            _ = try await requestRetrying("sync", method: "POST", body: try JSONSerialization.data(withJSONObject: body))
             message = "Schedule sent to the server."
             await fetchStatus()
         } catch { message = "Couldn't update the server: \(error.localizedDescription)" }
     }
 
     func fetchStatus() async {
-        guard userid > 0, serverReady, state.master else { return }
+        guard userid > 0, serverReady, state.master, !fetching else { return }
+        fetching = true
+        defer { fetching = false }
         struct R: Decodable { var jobs: [AutoJobStatus]; var lastLogin: Double? }
         do {
             let d = try await request("status", query: [URLQueryItem(name: "userid", value: String(userid))])
@@ -387,9 +428,16 @@ final class AutoAttendance: ObservableObject {
             return "[\(DevLog.stamp(Date(timeIntervalSince1970: j.fireAt / 1000)))] \(mark) \(name) | window \(win) | \(j.msg ?? j.state)"
         }
         if lines.isEmpty { lines = ["No attempt yet: nothing has fired."] }
-        if let next = jobs.filter({ $0.state == "pending" }).min(by: { $0.fireAt < $1.fireAt }) {
-            lines.append("Next: \(DevLog.stamp(Date(timeIntervalSince1970: next.fireAt / 1000))) \(config(next.cmid)?.name ?? "cmid \(next.cmid)")")
+        let pending = jobs.filter { $0.state == "pending" }.sorted { $0.fireAt < $1.fireAt }
+        if pending.isEmpty { lines.append("UPCOMING: nothing queued on the server") }
+        else {
+            lines.append("UPCOMING (will try at):")
+            for j in pending {
+                let win = DevLog.stamp(Date(timeIntervalSince1970: j.from / 1000)) + " to " + DevLog.stamp(Date(timeIntervalSince1970: j.to / 1000))
+                lines.append("[\(DevLog.stamp(Date(timeIntervalSince1970: j.fireAt / 1000)))] \(config(j.cmid)?.name ?? "cmid \(j.cmid)") | window \(win)")
+            }
         }
+        if !skipNotes.isEmpty { lines.append("LEFT OUT OF LAST SYNC:"); lines += skipNotes.map { "  " + $0 } }
         DevLog.setSnapshot(.attendance, lines)
     }
 
