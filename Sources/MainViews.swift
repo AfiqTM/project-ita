@@ -602,10 +602,10 @@ struct DefaultCover: View {
                 Color.clear
                     .overlay(alignment: .topTrailing) {
                         Image(systemName: "book.closed.fill")
-                            .font(.system(size: 190))
+                            .font(.system(size: 140))
                             .rotationEffect(.degrees(-8))
-                            .foregroundColor(Self.bookColor(p0: p.0, p1: p.1, accent: themes.theme.westernHeadings ? 0xFFFFFF : themes.palette.accent))
-                            .offset(x: 36, y: -34)
+                            .foregroundColor(Self.bookColor(p0: p.0, p1: p.1, accent: themes.theme.westernHeadings ? 0xFFFFFF : themes.palette.accent, weight: 0.05))
+                            .offset(x: 30, y: -30)
                     }
                     .clipped()
             }
