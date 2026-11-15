@@ -591,12 +591,23 @@ struct DefaultCover: View {
             if themes.theme.isNotebook {
                 NotebookPattern(seed: course.id)
             } else if preferOldCourseCards {
-                // the book icon is only part of the old card style
+                // old card style: the small book icon, as it always was
                 Image(systemName: "book.closed.fill")
                     .font(.system(size: 64))
                     .foregroundColor(Self.bookColor(p0: p.0, p1: p.1, accent: themes.theme.westernHeadings ? 0xFFFFFF : themes.palette.accent))
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                     .padding(14)
+            } else {
+                // new card style: a big, tilted book running off the top-right corner, kept faint behind the title
+                Color.clear
+                    .overlay(alignment: .topTrailing) {
+                        Image(systemName: "book.closed.fill")
+                            .font(.system(size: 190))
+                            .rotationEffect(.degrees(-8))
+                            .foregroundColor(Self.bookColor(p0: p.0, p1: p.1, accent: themes.theme.westernHeadings ? 0xFFFFFF : themes.palette.accent))
+                            .offset(x: 36, y: -34)
+                    }
+                    .clipped()
             }
             if preferOldCourseCards {
                 Text(course.prettyShort ?? "")
