@@ -590,6 +590,13 @@ struct DefaultCover: View {
                            startPoint: .topLeading, endPoint: .bottomTrailing)
             if themes.theme.isNotebook {
                 NotebookPattern(seed: course.id)
+            } else if preferOldCourseCards {
+                // the book icon is only part of the old card style
+                Image(systemName: "book.closed.fill")
+                    .font(.system(size: 64))
+                    .foregroundColor(Self.bookColor(p0: p.0, p1: p.1, accent: themes.theme.westernHeadings ? 0xFFFFFF : themes.palette.accent))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                    .padding(14)
             }
             if preferOldCourseCards {
                 Text(course.prettyShort ?? "")
