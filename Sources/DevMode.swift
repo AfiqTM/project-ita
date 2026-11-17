@@ -377,11 +377,25 @@ struct DevAttendanceCard: View {
 // MARK: - Screen with all of them (opened with the > on the Dev mode row)
 
 struct DevLogsView: View {
+    @AppStorage(BicsDisplayFont.cleanKey) private var cleanFont = false
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 Text("Everything here is stored on this phone only. Tap and hold a log to select text, or use Copy. The same logs also show inside each tool.")
                     .font(Theme.font(.caption)).foregroundColor(Theme.muted)
+                VStack(alignment: .leading, spacing: 8) {
+                    Toggle(isOn: $cleanFont) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Course code font: BICS Display Clean v4").foregroundColor(Theme.txt).fontWeight(.semibold)
+                            Text("Off uses the usual font. Works with dev mode on or off.")
+                                .font(Theme.font(.caption)).foregroundColor(Theme.muted)
+                        }
+                    }
+                    .tint(Theme.accent)
+                }
+                .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+                .glowCard()
                 DevHostsCard()
                 DevLogCard(channel: .login)
                 DevAttendanceCard()

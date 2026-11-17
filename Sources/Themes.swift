@@ -399,17 +399,28 @@ enum RocksFont {
     static func ui(_ size: CGFloat) -> UIFont? { UIFont(name: name, size: size) }
 }
 
-/// BICS Display v2 (Fonts/BICS-Display-v2.ttf): the display face of the course codes on the course card covers
-/// and in the course header.
+/// MADE Coachella Bold (Fonts/MADECoachella-Bold.otf): display serif font used for course codes on course card covers.
 enum BicsDisplayFont {
-    static let name = "BICSDisplay-Regular"      // PostScript name inside the file
+    static let name = "MADECoachella-Bold"
+    /// BICS Display Clean v4 (Fonts/BICS-Display-Clean-v4.ttf): an alternative face, switched on in Dev mode settings
+    static let cleanName = "BICSDisplay-Regular"
+    static let cleanKey = "dev.bicsCleanFont"
 
     static func register() {
-        guard let url = Bundle.main.url(forResource: "BICS-Display-v2", withExtension: "ttf") else { return }
-        CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+        if let url = Bundle.main.url(forResource: name, withExtension: "otf") {
+            CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+        }
+        if let url = Bundle.main.url(forResource: "BICS-Display-Clean-v4", withExtension: "ttf") {
+            CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+        }
     }
 
-    static var available: Bool { UIFont(name: name, size: 12) != nil }
+    /// The face in use: MADE Coachella, or Clean v4 when it is switched on (and installed)
+    static var activeName: String {
+        UserDefaults.standard.bool(forKey: cleanKey) && UIFont(name: cleanName, size: 12) != nil ? cleanName : name
+    }
+
+    static var available: Bool { UIFont(name: activeName, size: 12) != nil }
 }
 
 /// The title face and the text face of the themes with `westernHeadings`: the sizes of the nav bar, tab bar and

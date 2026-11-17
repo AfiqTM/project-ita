@@ -563,6 +563,7 @@ struct DefaultCover: View {
     @ObservedObject private var timetable = TimetableManager.shared
     @AppStorage("ui.preferOldCourseCards") private var preferOldCourseCards = false
     @AppStorage("ui.darkerCourseCardWallpaper") private var darkerCourseCardWallpaper = false
+    @AppStorage(BicsDisplayFont.cleanKey) private var cleanFont = false   // redraws when the font option changes
     @AppStorage(CoursePreviewStore.strengthKey) private var titleStrength = CoursePreviewStore.defaultStrength
 
     private static let darkerCovers: [(UInt32, UInt32)] = [
@@ -629,7 +630,7 @@ struct DefaultCover: View {
             } else {
                 VStack(alignment: .leading, spacing: 0) {
                     Text(course.courseCode(timetable: timetable.data))
-                        .font(BicsDisplayFont.available ? .custom(BicsDisplayFont.name, size: 48) : .system(size: 38, weight: .bold))
+                        .font(BicsDisplayFont.available ? .custom(BicsDisplayFont.activeName, size: 48) : .system(size: 38, weight: .bold))
                         .foregroundColor(titleColor)
                         .lineLimit(1).minimumScaleFactor(0.5)
                     HStack(spacing: 6) {
