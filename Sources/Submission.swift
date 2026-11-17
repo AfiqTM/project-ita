@@ -1156,7 +1156,7 @@ struct AssignmentView: View {
         if let t = status?.lastattempt?.shown?.timemodified, t > 0, ["submitted", "draft"].contains(subStatus) {
             let f = DateFormatter()
             f.locale = Locale(identifier: "en_US_POSIX")
-            f.dateFormat = "d MMM yyyy, h:mm a"       // 12 Nov 2026, 11:59 PM
+            f.dateFormat = "d MMM yyyy 'at' h:mm a"       // 12 Nov 2026 at 11:59 PM
             submission = (subStatus == "draft" ? "Draft saved on " : "Submitted on ")
                 + f.string(from: Date(timeIntervalSince1970: TimeInterval(t)))
         }
