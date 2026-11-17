@@ -1,20 +1,3 @@
-        case .all:
-            // newest day first; on one day what was submitted comes before what was missed or is still open
-            return l.sorted { x, y in
-                if x.eventDate != y.eventDate {
-                    if x.eventDate == 0 { return false }
-                    if y.eventDate == 0 { return true }
-                    let cal = Calendar.current
-                    let dx = cal.startOfDay(for: Date(timeIntervalSince1970: TimeInterval(x.eventDate)))
-                    let dy = cal.startOfDay(for: Date(timeIntervalSince1970: TimeInterval(y.eventDate)))
-                    if dx != dy { return dx > dy }
-                }
-                if (x.submittedAt > 0) != (y.submittedAt > 0) { return x.submittedAt > 0 }
-                return x.eventDate > y.eventDate
-            }
-        case .submitted:
-            // most recently submitted first
-            return l.sorted { $0.submittedAt != $1.submittedAt ? $0.submittedAt > $1.submittedAt : $0.due > $1.due }
 import SwiftUI
 
 // MARK: - Shared colours / pill
@@ -198,14 +181,23 @@ final class AssignmentsModel: ObservableObject {
         let n = now
         let l = items.filter { $0.matches(f, now: n, limit: lim) }
         switch f {
-        case .all, .submitted:
-            // most recently submitted first; whatever isn't submitted comes after, soonest due first
+        case .all:
+            // newest day first; on one day what was submitted comes before what was missed or is still open
             return l.sorted { x, y in
-                if x.submittedAt != y.submittedAt { return x.submittedAt > y.submittedAt }
-                if x.due == 0 { return false }
-                if y.due == 0 { return true }
-                return x.due < y.due
+                if x.eventDate != y.eventDate {
+                    if x.eventDate == 0 { return false }
+                    if y.eventDate == 0 { return true }
+                    let cal = Calendar.current
+                    let dx = cal.startOfDay(for: Date(timeIntervalSince1970: TimeInterval(x.eventDate)))
+                    let dy = cal.startOfDay(for: Date(timeIntervalSince1970: TimeInterval(y.eventDate)))
+                    if dx != dy { return dx > dy }
+                }
+                if (x.submittedAt > 0) != (y.submittedAt > 0) { return x.submittedAt > 0 }
+                return x.eventDate > y.eventDate
             }
+        case .submitted:
+            // most recently submitted first
+            return l.sorted { $0.submittedAt != $1.submittedAt ? $0.submittedAt > $1.submittedAt : $0.due > $1.due }
         case .todo:
             // soonest first, no-due-date last
             return l.sorted { x, y in
