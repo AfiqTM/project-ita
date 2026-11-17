@@ -423,9 +423,16 @@ struct CoursesView: View {
                     }
                 }
             }
-            .padding(.horizontal, 16)      // starts at the page margin, scrolls to the screen edge
+            .padding(.leading, 16)         // starts at the page margin, scrolls to the screen edge
+            .padding(.trailing, 36)        // the last filter ends clear of the edge fade
         }
         .padding(.horizontal, -16)
+        // soft fade at the right edge: shows there is more to scroll instead of cutting a word off
+        .mask(
+            LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.9),
+                                   .init(color: .clear, location: 1)],
+                           startPoint: .leading, endPoint: .trailing)
+        )
     }
 
     private func load() async {
