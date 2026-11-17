@@ -1,3 +1,20 @@
+        case .all:
+            // newest day first; on one day what was submitted comes before what was missed or is still open
+            return l.sorted { x, y in
+                if x.eventDate != y.eventDate {
+                    if x.eventDate == 0 { return false }
+                    if y.eventDate == 0 { return true }
+                    let cal = Calendar.current
+                    let dx = cal.startOfDay(for: Date(timeIntervalSince1970: TimeInterval(x.eventDate)))
+                    let dy = cal.startOfDay(for: Date(timeIntervalSince1970: TimeInterval(y.eventDate)))
+                    if dx != dy { return dx > dy }
+                }
+                if (x.submittedAt > 0) != (y.submittedAt > 0) { return x.submittedAt > 0 }
+                return x.eventDate > y.eventDate
+            }
+        case .submitted:
+            // most recently submitted first
+            return l.sorted { $0.submittedAt != $1.submittedAt ? $0.submittedAt > $1.submittedAt : $0.due > $1.due }
 import SwiftUI
 
 // MARK: - Shared colours / pill
@@ -77,6 +94,9 @@ struct AssignItem: Identifiable {
     var submitted: Bool { subStatus == "submitted" || graded }
     /// When the student last handed it in (0 = not submitted, or the time isn't known)
     var submittedAt: Int { submitted ? (status?.lastattempt?.shown?.timemodified ?? 0) : 0 }
+    /// The day an item sits under in "All": the day it was submitted, else its due day (so a missed one shares a day
+    /// with what was handed in on that day). 0 = nothing to place it by.
+    var eventDate: Int { submittedAt > 0 ? submittedAt : due }
 
     func overdue(_ now: Int) -> Bool { !submitted && due > 0 && due < now }
 
@@ -132,10 +152,13 @@ final class AssignmentsModel: ObservableObject {
                 var title = i.due == 0
                     ? "No due date"
                     : Self.dayTitle.string(from: Date(timeIntervalSince1970: TimeInterval(i.due)))
-                if f == .all || f == .submitted {   // these lists are ordered by submission, so it is grouped that way too
+                if f == .all {   // placed by the day it was submitted, or else the day it was due
+                    title = i.eventDate == 0 ? "No due date"
+                        : Self.dayTitle.string(from: Date(timeIntervalSince1970: TimeInterval(i.eventDate)))
+                } else if f == .submitted {
                     title = i.submittedAt > 0
-                        ? "Submitted " + Self.dayTitle.string(from: Date(timeIntervalSince1970: TimeInterval(i.submittedAt)))
-                        : (i.submitted ? "Submitted" : "Not submitted")
+                        ? Self.dayTitle.string(from: Date(timeIntervalSince1970: TimeInterval(i.submittedAt)))
+                        : "Submitted"
                 }
                 if let last = out.last, last.0 == title { out[out.count - 1].1.append(i) } else { out.append((title, [i])) }
             }
