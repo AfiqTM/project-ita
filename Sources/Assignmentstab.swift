@@ -138,10 +138,6 @@ final class AssignmentsModel: ObservableObject {
                 if f == .all {   // placed by the day it was submitted, or else the day it was due
                     title = i.eventDate == 0 ? "No due date"
                         : Self.dayTitle.string(from: Date(timeIntervalSince1970: TimeInterval(i.eventDate)))
-                } else if f == .submitted {
-                    title = i.submittedAt > 0
-                        ? Self.dayTitle.string(from: Date(timeIntervalSince1970: TimeInterval(i.submittedAt)))
-                        : "Submitted"
                 }
                 if let last = out.last, last.0 == title { out[out.count - 1].1.append(i) } else { out.append((title, [i])) }
             }
@@ -195,9 +191,6 @@ final class AssignmentsModel: ObservableObject {
                 if (x.submittedAt > 0) != (y.submittedAt > 0) { return x.submittedAt > 0 }
                 return x.eventDate > y.eventDate
             }
-        case .submitted:
-            // most recently submitted first
-            return l.sorted { $0.submittedAt != $1.submittedAt ? $0.submittedAt > $1.submittedAt : $0.due > $1.due }
         case .todo:
             // soonest first, no-due-date last
             return l.sorted { x, y in
@@ -205,7 +198,7 @@ final class AssignmentsModel: ObservableObject {
                 if y.due == 0 { return true }
                 return x.due < y.due
             }
-        case .overdue:
+        case .overdue, .submitted:
             return l.sorted { $0.due > $1.due }
         }
     }
