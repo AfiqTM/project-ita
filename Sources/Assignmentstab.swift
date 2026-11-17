@@ -132,7 +132,7 @@ final class AssignmentsModel: ObservableObject {
                 var title = i.due == 0
                     ? "No due date"
                     : Self.dayTitle.string(from: Date(timeIntervalSince1970: TimeInterval(i.due)))
-                if f == .all {   // this list is ordered by submission, so it is grouped that way too
+                if f == .all || f == .submitted {   // these lists are ordered by submission, so it is grouped that way too
                     title = i.submittedAt > 0
                         ? "Submitted " + Self.dayTitle.string(from: Date(timeIntervalSince1970: TimeInterval(i.submittedAt)))
                         : (i.submitted ? "Submitted" : "Not submitted")
@@ -175,7 +175,7 @@ final class AssignmentsModel: ObservableObject {
         let n = now
         let l = items.filter { $0.matches(f, now: n, limit: lim) }
         switch f {
-        case .all:
+        case .all, .submitted:
             // most recently submitted first; whatever isn't submitted comes after, soonest due first
             return l.sorted { x, y in
                 if x.submittedAt != y.submittedAt { return x.submittedAt > y.submittedAt }
@@ -190,7 +190,7 @@ final class AssignmentsModel: ObservableObject {
                 if y.due == 0 { return true }
                 return x.due < y.due
             }
-        case .overdue, .submitted:
+        case .overdue:
             return l.sorted { $0.due > $1.due }
         }
     }
