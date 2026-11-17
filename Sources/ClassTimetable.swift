@@ -581,6 +581,7 @@ struct WidgetSettingsView: View {
     @ObservedObject private var themes = ThemeStore.shared
     @AppStorage("ui.preferOldCourseCards") private var preferOldCourseCards = false
     @AppStorage("ui.darkerCourseCardWallpaper") private var darkerCourseCardWallpaper = false
+    @AppStorage(CoursePreviewStore.strengthKey) private var titleStrength = CoursePreviewStore.defaultStrength
 
     private func sectionTitle(_ t: String) -> some View {
         Text(t).font(ThemeStore.shared.theme.isNotebook ? Theme.font(.subheadline) : Theme.font(.footnote).weight(.semibold))
@@ -623,11 +624,33 @@ struct WidgetSettingsView: View {
                             title: "Darker course card wallpaper",
                             subtitle: "Use a darker version of the default course card covers.",
                             isOn: $darkerCourseCardWallpaper,
-                            showLine: false
+                            showLine: !preferOldCourseCards
                         )
+                    }
+                    if !preferOldCourseCards {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("Title text strength")
+                                    .foregroundColor(Theme.txt).fontWeight(.semibold).textGlow(radius: 3)
+                                Spacer()
+                                Text("\(Int((titleStrength * 100).rounded()))%")
+                                    .font(Theme.font(.footnote)).foregroundColor(Theme.muted)
+                            }
+                            Slider(value: $titleStrength, in: 0.05...1, step: 0.05).tint(Theme.accent)
+                            Text("Lower is more see-through. The course code and section on the cover use this.")
+                                .font(Theme.font(.caption)).foregroundColor(Theme.muted)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .padding(ThemeStore.shared.theme.isNotebook ? 16 : 14)
                     }
                 }
                 .glowCard()
+
+                if !preferOldCourseCards {
+                    sectionTitle("Preview")
+                    CourseCard(course: CoursePreviewStore.sample())
+                        .allowsHitTesting(false)
+                }
 
                 sectionTitle("Timetable Widget")
                 VStack(spacing: 0) {

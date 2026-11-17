@@ -456,6 +456,7 @@ struct CoursesView: View {
             }
             courses = list
             favOverride = [:]
+            if filter != .hidden, let top = list.first { CoursePreviewStore.remember(top) }
         } catch {
             if !(error is CancellationError), (error as? URLError)?.code != .cancelled {
                 self.error = error.localizedDescription
@@ -562,6 +563,7 @@ struct DefaultCover: View {
     @ObservedObject private var timetable = TimetableManager.shared
     @AppStorage("ui.preferOldCourseCards") private var preferOldCourseCards = false
     @AppStorage("ui.darkerCourseCardWallpaper") private var darkerCourseCardWallpaper = false
+    @AppStorage(CoursePreviewStore.strengthKey) private var titleStrength = CoursePreviewStore.defaultStrength
 
     private static let darkerCovers: [(UInt32, UInt32)] = [
         (0x13110D, 0x2A2219),
@@ -589,8 +591,8 @@ struct DefaultCover: View {
     var body: some View {
         let covers = (themes.theme == .dark && darkerCourseCardWallpaper) ? Self.darkerCovers : themes.theme.covers
         let p = covers[abs(course.id) % covers.count]
-        // the big code and the section / semester line: 30% accent over the cover 
-        let titleColor = Self.bookColor(p0: p.0, p1: p.1, accent: themes.theme.westernHeadings ? 0xFFFFFF : themes.palette.accent, weight: 0.3)
+        // the big code and the section / semester line: accent over the cover, strength set in UI Preference (default 30%) 
+        let titleColor = Self.bookColor(p0: p.0, p1: p.1, accent: themes.theme.westernHeadings ? 0xFFFFFF : themes.palette.accent, weight: min(max(titleStrength, 0.05), 1))
         let tags = course.coverTags(timetable: timetable.data)
         ZStack(alignment: .bottomLeading) {
             LinearGradient(colors: [Color(hex: p.0), Color(hex: p.1)],
@@ -1289,5 +1291,29 @@ final class TabBadgeProbe: UIViewController {
         if item.badgeColor != color { item.badgeColor = color }
         item.setBadgeTextAttributes([.foregroundColor: text], for: .normal)
         item.setBadgeTextAttributes([.foregroundColor: text], for: .selected)
+    }
+}
+
+
+// The top subject of the Courses page, kept so UI Preference can show a sample card made from it
+enum CoursePreviewStore {
+    static let strengthKey = "ui.courseTitleStrength"
+    static let defaultStrength = 0.3
+    private static let key = "ui.previewCourse"
+    private struct Saved: Codable { var id: Int; var fullname: String; var shortname: String? }
+
+    static func remember(_ c: Course) {
+        let v = Saved(id: c.id, fullname: c.fullname, shortname: c.shortname)
+        if let d = try? JSONEncoder().encode(v) { UserDefaults.standard.set(d, forKey: key) }
+    }
+
+    /// A made-up card (50% done, no photo, not starred) with the user's top subject's name and code
+    static func sample() -> Course {
+        if let d = UserDefaults.standard.data(forKey: key), let v = try? JSONDecoder().decode(Saved.self, from: d) {
+            return Course(id: v.id, fullname: v.fullname, shortname: v.shortname, progress: 50,
+                          isfavourite: false, hidden: false, courseimage: nil)
+        }
+        return Course(id: 1, fullname: "SEM1 BICS 1306 Section 05 Digital & Embedded Systems", shortname: nil,
+                      progress: 50, isfavourite: false, hidden: false, courseimage: nil)
     }
 }
