@@ -178,3 +178,124 @@ private struct AttendanceSubmitWeb: UIViewRepresentable {
         }
     }
 }
+
+
+// MARK: - Submitting without opening the page
+//
+// Does what the site's own page does, but in the background: opens the session's submit form, picks "Present"
+// and sends it, then checks the form is gone. Anything it can't finish by itself (a password, several choices,
+// a closed session) is reported so the screen can fall back to the page.
+
+enum AttendanceSubmitResult {
+    case done
+    case needsYou(String)       // open the page and finish it by hand
+    case failed(String)
+}
+
+enum AttendanceBackgroundSubmit {
+    static func submit(_ link: AttSubmitLink, userid: Int) async -> AttendanceSubmitResult {
+        guard let html = await MoodleAPI.shared.fetchHTML(link.url, userid: userid) else {
+            return .failed("Couldn't open the session. Check your connection or sign in again.")
+        }
+        guard let form = parse(html, base: link.url) else {
+            return .needsYou("Nothing to submit on that page (it may be closed or already taken).")
+        }
+        if form.password { return .needsYou("This session needs a password.") }
+        guard let status = form.status else { return .needsYou("This session needs you to choose a status.") }
+
+        var fields = form.fields
+        fields.append(("status", status))
+        var req = URLRequest(url: form.action)
+        req.httpMethod = "POST"
+        req.timeoutInterval = 25
+        req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "content-type")
+        var allowed = CharacterSet.alphanumerics
+        allowed.insert(charactersIn: "-._~")
+        req.httpBody = fields.map { k, v in
+            (k.addingPercentEncoding(withAllowedCharacters: allowed) ?? k) + "="
+                + (v.addingPercentEncoding(withAllowedCharacters: allowed) ?? v)
+        }.joined(separator: "&").data(using: .utf8)
+        do {
+            let (_, r) = try await MoodleAPI.session.data(for: req)
+            if let c = (r as? HTTPURLResponse)?.statusCode, c >= 400 { return .failed("The site answered \(c).") }
+            if (r.url?.path ?? "").contains("/login/") { return .failed("You're signed out. Sign in again and retry.") }
+        } catch {
+            return .failed("Couldn't send it: \(error.localizedDescription)")
+        }
+        // taken only if the form is no longer offered
+        if let after = await MoodleAPI.shared.fetchHTML(link.url, userid: userid, allowAutologin: false),
+           parse(after, base: link.url) != nil {
+            return .failed("Sent, but the site still shows the form.")
+        }
+        return .done
+    }
+
+    private struct Form { var action: URL; var fields: [(String, String)]; var status: String?; var password: Bool }
+
+    private static func attr(_ tag: String, _ name: String) -> String? {
+        guard let re = try? NSRegularExpression(pattern: "\\b\(name)=\"([^\"]*)\"", options: .caseInsensitive),
+              let m = re.firstMatch(in: tag, range: NSRange(tag.startIndex..., in: tag)),
+              let r = Range(m.range(at: 1), in: tag) else { return nil }
+        return String(tag[r])
+    }
+
+    private static func parse(_ html: String, base: URL) -> Form? {
+        guard let fre = try? NSRegularExpression(
+                pattern: "<form[^>]*action=\"([^\"]*attendance\\.php[^\"]*)\"[^>]*>([\\s\\S]*?)</form>",
+                options: .caseInsensitive),
+              let m = fre.firstMatch(in: html, range: NSRange(html.startIndex..., in: html)),
+              let ar = Range(m.range(at: 1), in: html), let ir = Range(m.range(at: 2), in: html),
+              let action = URL(string: String(html[ar]).decodedEntities, relativeTo: base)?.absoluteURL
+        else { return nil }
+        let inner = String(html[ir])
+        guard inner.range(of: "name=\"status\"", options: .caseInsensitive) != nil else { return nil }
+
+        var form = Form(action: action, fields: [], status: nil, password: false)
+        form.password = inner.range(of: "name=\"studentpassword\"", options: .caseInsensitive) != nil
+        var firstRadio: String?
+        guard let ire = try? NSRegularExpression(pattern: "<input\\b[^>]*>", options: .caseInsensitive) else { return nil }
+        for im in ire.matches(in: inner, range: NSRange(inner.startIndex..., in: inner)) {
+            guard let tr = Range(im.range, in: inner) else { continue }
+            let tag = String(inner[tr])
+            guard let name = attr(tag, "name") else { continue }
+            let type = (attr(tag, "type") ?? "text").lowercased()
+            let value = (attr(tag, "value") ?? "").decodedEntities
+            if type == "hidden" { form.fields.append((name, value)) }
+            else if type == "submit" { if name != "cancel" { form.fields.append((name, value.isEmpty ? "Submit" : value)) } }
+            else if type == "radio" && name == "status" {
+                if firstRadio == nil { firstRadio = value }
+                var label = ""
+                if let id = attr(tag, "id"),
+                   let lre = try? NSRegularExpression(pattern: "<label[^>]*for=\"\(id)\"[^>]*>([\\s\\S]*?)</label>", options: .caseInsensitive),
+                   let lm = lre.firstMatch(in: inner, range: NSRange(inner.startIndex..., in: inner)),
+                   let lr = Range(lm.range(at: 1), in: inner) { label = String(inner[lr]) }
+                if label.isEmpty {   // the text right after the radio
+                    let tail = inner[tr.upperBound...].prefix(120)
+                    label = String(tail)
+                }
+                if form.status == nil, label.range(of: "present", options: .caseInsensitive) != nil { form.status = value }
+            }
+        }
+        if form.status == nil, let only = firstRadio,
+           inner.components(separatedBy: "name=\"status\"").count == 2 { form.status = only }   // a single choice
+        return form
+    }
+}
+
+/// A small confirmation that slides in at the top of the screen and goes away by itself
+struct AppToast: View {
+    let text: String
+    var ok = true
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: ok ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                .foregroundColor(ok ? Theme.accent : Theme.muted)
+            Text(text).font(Theme.font(.footnote).weight(.semibold)).foregroundColor(Theme.txt)
+        }
+        .padding(.horizontal, 14).padding(.vertical, 9)
+        .background(Theme.surface2)
+        .clipShape(Capsule())
+        .overlay(Capsule().stroke(Theme.line))
+        .shadow(color: .black.opacity(0.25), radius: 8, y: 3)
+    }
+}

@@ -536,7 +536,7 @@ extension LastAttempt {
         return submission
     }
 }
-struct Sub: Decodable { let status: String?; let plugins: [SubPlugin]? }
+struct Sub: Decodable { let status: String?; let plugins: [SubPlugin]?; let timemodified: Int? }
 struct SubPlugin: Decodable { let type: String?; let fileareas: [FileArea]?; let editorfields: [EditorField]? }
 struct FileArea: Decodable { let area: String?; let files: [FileRef]? }
 struct FileRef: Decodable, Identifiable {

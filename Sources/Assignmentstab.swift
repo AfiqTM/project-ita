@@ -75,6 +75,8 @@ struct AssignItem: Identifiable {
     var grade: String { (status?.feedback?.gradefordisplay ?? "").plainText }
     var graded: Bool { status?.lastattempt?.gradingstatus == "graded" || !grade.isEmpty }
     var submitted: Bool { subStatus == "submitted" || graded }
+    /// When the student last handed it in (0 = not submitted, or the time isn't known)
+    var submittedAt: Int { submitted ? (status?.lastattempt?.shown?.timemodified ?? 0) : 0 }
 
     func overdue(_ now: Int) -> Bool { !submitted && due > 0 && due < now }
 
@@ -127,9 +129,14 @@ final class AssignmentsModel: ObservableObject {
             c[f] = l.count
             var out: [(String, [AssignItem])] = []
             for i in l {
-                let title = i.due == 0
+                var title = i.due == 0
                     ? "No due date"
                     : Self.dayTitle.string(from: Date(timeIntervalSince1970: TimeInterval(i.due)))
+                if f == .all {   // this list is ordered by submission, so it is grouped that way too
+                    title = i.submittedAt > 0
+                        ? "Submitted " + Self.dayTitle.string(from: Date(timeIntervalSince1970: TimeInterval(i.submittedAt)))
+                        : (i.submitted ? "Submitted" : "Not submitted")
+                }
                 if let last = out.last, last.0 == title { out[out.count - 1].1.append(i) } else { out.append((title, [i])) }
             }
             g[f] = out
@@ -168,7 +175,15 @@ final class AssignmentsModel: ObservableObject {
         let n = now
         let l = items.filter { $0.matches(f, now: n, limit: lim) }
         switch f {
-        case .todo, .all:
+        case .all:
+            // most recently submitted first; whatever isn't submitted comes after, soonest due first
+            return l.sorted { x, y in
+                if x.submittedAt != y.submittedAt { return x.submittedAt > y.submittedAt }
+                if x.due == 0 { return false }
+                if y.due == 0 { return true }
+                return x.due < y.due
+            }
+        case .todo:
             // soonest first, no-due-date last
             return l.sorted { x, y in
                 if x.due == 0 { return false }

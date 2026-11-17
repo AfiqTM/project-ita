@@ -530,6 +530,8 @@ struct AttendanceView: View {
     @State private var retries = 0
     @State private var submitLinks: [AttSubmitLink] = []     // sessions open for the student's own submission
     @State private var submitting: AttSubmitLink?
+    @State private var sending = false                      // a background submission is running
+    @State private var toast: (text: String, ok: Bool)?
     @State private var marks: [String: String] = AttMarkStore.load()     // own marks, only on this iPhone
     @ObservedObject private var net = OfflineMonitor.shared
 
@@ -575,6 +577,9 @@ struct AttendanceView: View {
         .navigationTitle(module.name)
         .navigationBarTitleDisplayMode(.inline)
         .notebookBack()
+        .overlay(alignment: .top) {
+            if let t = toast { AppToast(text: t.text, ok: t.ok).padding(.top, 8).transition(.move(edge: .top).combined(with: .opacity)) }
+        }
         .refreshable { await loadSummary() }
         .navigationDestination(isPresented: Binding(get: { submitting != nil }, set: { if !$0 { submitting = nil } })) {
             if let l = submitting { AttendanceSubmitView(link: l, courseName: module.name) }
@@ -635,7 +640,7 @@ struct AttendanceView: View {
             VStack(alignment: .leading, spacing: 10) {
                 Text("SELF-SUBMISSION").font(Theme.font(.caption)).foregroundColor(Theme.muted)
                 ForEach(submitLinks) { l in
-                    Button { submitting = l } label: {
+                    Button { Task { await submitInBackground([l]) } } label: {
                         HStack(spacing: 12) {
                             Image(systemName: "checkmark.circle.fill").font(Theme.font(.title3))
                             VStack(alignment: .leading, spacing: 2) {
@@ -643,7 +648,8 @@ struct AttendanceView: View {
                                 if !l.title.isEmpty { Text(l.title).font(Theme.font(.caption)).opacity(0.8) }
                             }
                             Spacer(minLength: 0)
-                            Image(systemName: "chevron.right").font(Theme.font(.caption))
+                            if sending { ProgressView().tint(Theme.onAccent) }
+                            else { Image(systemName: "chevron.right").font(Theme.font(.caption)) }
                         }
                         .foregroundColor(Theme.onAccent)
                         .padding(14).frame(maxWidth: .infinity, alignment: .leading)
@@ -651,10 +657,52 @@ struct AttendanceView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     }
                     .buttonStyle(.plain)
+                    .disabled(sending)
+                }
+                if submitLinks.count > 1 {
+                    Button { Task { await submitInBackground(submitLinks) } } label: {
+                        Text("Submit all (\(submitLinks.count))").fontWeight(.semibold)
+                            .foregroundColor(Theme.accent)
+                            .frame(maxWidth: .infinity).padding(12)
+                            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Theme.accent))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(sending)
                 }
             }
             .padding(16).frame(maxWidth: .infinity, alignment: .leading)
             .glowCard()
+        }
+    }
+
+    /// Sends the sessions one after the other without leaving this screen. A session that needs the user (password,
+    /// a choice) opens the site's page instead; the rest are still sent.
+    private func submitInBackground(_ links: [AttSubmitLink]) async {
+        guard !sending else { return }
+        sending = true
+        var done = 0, firstProblem: String?, manual: AttSubmitLink?
+        for l in links {
+            switch await AttendanceBackgroundSubmit.submit(l, userid: uid) {
+            case .done: done += 1
+            case .needsYou(let m): if manual == nil { manual = l }; firstProblem = firstProblem ?? m
+            case .failed(let m): firstProblem = firstProblem ?? m
+            }
+        }
+        sending = false
+        if done > 0 {
+            show(done == 1 ? "Attendance submitted" : "\(done) attendances submitted", ok: true)
+            await loadSummary()
+        } else if let m = firstProblem {
+            show(m, ok: false)
+        }
+        if done == 0, let l = manual { submitting = l }     // finish it by hand on the site's page
+    }
+
+    private func show(_ text: String, ok: Bool) {
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { toast = (text, ok) }
+        Task {
+            try? await Task.sleep(nanoseconds: 2_600_000_000)
+            withAnimation(.easeOut(duration: 0.25)) { toast = nil }
         }
     }
 
