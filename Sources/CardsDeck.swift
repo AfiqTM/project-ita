@@ -113,8 +113,6 @@ struct DeckCardFace: View {
 
                 // contactless mark and chip, top right
                 HStack(spacing: w * 0.035) {
-                    Image(systemName: "wave.3.right").font(.system(size: w * 0.055, weight: .regular))
-                        .foregroundColor(Color.white.opacity(0.75))
                     chip(w)
                 }
                 .position(x: w * 0.74, y: h * 0.13)
@@ -179,13 +177,11 @@ struct DeckScene: View {
         Canvas(opaque: !overlayOnly, rendersAsynchronously: true) { ctx, size in
             if overlayOnly {
                 drawReflection(&ctx, size)
-                drawRing(&ctx, size)
             } else {
                 drawSky(&ctx, size)
                 drawSea(&ctx, size)
                 drawPool(&ctx, size)
                 drawReflection(&ctx, size)
-                drawRing(&ctx, size)
                 drawVignette(&ctx, size)
             }
         } symbols: {
