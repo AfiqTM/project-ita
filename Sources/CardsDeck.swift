@@ -381,7 +381,8 @@ struct CourseDeckView: View {
     @ObservedObject private var timetable = TimetableManager.shared
     @State private var front = 0
     @State private var dragX: CGFloat = 0
-    @State private var busy = false
+    @State private var pendingStep: (() -> Void)?     // second half of a swipe that is still waiting to start
+    @State private var stepToken = 0
     @State private var palFrom = DeckPalette.ember
     @State private var palTo = DeckPalette.ember
     @State private var switchStart = Date.distantPast
@@ -556,11 +557,11 @@ struct CourseDeckView: View {
     private func drag(_ L: Layout) -> some Gesture {
         DragGesture(minimumDistance: 12)
             .onChanged { v in
-                guard !busy, courses.count > 0 else { return }
+                guard courses.count > 0 else { return }
+                flush()                      // a new swipe never waits: finish the previous one's next step now
                 dragX = v.translation.width * 0.95
             }
             .onEnded { v in
-                guard !busy else { return }
                 let dx = v.translation.width
                 let predicted = v.predictedEndTranslation.width
                 if courses.count > 1 && (abs(dx) > 70 || abs(predicted) > 170) {
@@ -579,24 +580,41 @@ struct CourseDeckView: View {
     /// to the front, and the old front drops back one place.
     private func advance(toRight: Bool, _ L: Layout) {
         let n = courses.count
-        busy = true
+        flush()
         if !toRight {
-            withAnimation(.easeOut(duration: 0.22)) { dragX = -L.cardW * 0.8 }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.24) {
+            withAnimation(.easeOut(duration: 0.18)) { dragX = -L.cardW * 0.8 }
+            later(0.2) {
                 let next = (front + 1) % n
                 goTo(next)
                 withAnimation(backSpring) { front = next; dragX = 0 }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { busy = false }
             }
         } else {
-            withAnimation(.easeOut(duration: 0.24)) { dragX = L.W * 0.3 }     // pulled right out of the stack
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.26) {
+            withAnimation(.easeOut(duration: 0.2)) { dragX = L.W * 0.3 }     // pulled right out of the stack
+            later(0.22) {
                 let prev = (front - 1 + n) % n
                 goTo(prev)
                 withAnimation(backSpring) { front = prev; dragX = 0 }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { busy = false }
             }
         }
+    }
+
+    /// Runs the second half of a swipe after a short moment, or at once if the next swipe starts first
+    private func later(_ delay: Double, _ step: @escaping () -> Void) {
+        stepToken += 1
+        let token = stepToken
+        pendingStep = step
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            guard token == stepToken, let s = pendingStep else { return }
+            pendingStep = nil
+            s()
+        }
+    }
+
+    private func flush() {
+        guard let s = pendingStep else { return }
+        pendingStep = nil
+        stepToken += 1
+        s()
     }
 
     // MARK: text around the scene (the video's page text, rewritten for the subject on top)
