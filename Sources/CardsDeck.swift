@@ -1,4 +1,5 @@
 import SwiftUI
+import MetalKit
 
 // MARK: - "Cards" theme: the Courses page as a stack of metal cards floating over dusk water
 //
@@ -170,17 +171,23 @@ struct DeckScene: View {
     let cardH: CGFloat
     let face: DeckCardFace?       // the front card, drawn upside down in the water
     let reflX: CGFloat            // where that reflection sits (follows the card when it is dragged)
+    var overlayOnly = false       // true when the GPU water (DeckWaterView) draws the sky and sea: only the ring and reflection here
 
     private func c(_ hex: UInt32, _ a: Double = 1) -> Color { Color(hex: hex).opacity(a) }
 
     var body: some View {
-        Canvas(opaque: true, rendersAsynchronously: true) { ctx, size in
-            drawSky(&ctx, size)
-            drawSea(&ctx, size)
-            drawPool(&ctx, size)
-            drawReflection(&ctx, size)
-            drawRing(&ctx, size)
-            drawVignette(&ctx, size)
+        Canvas(opaque: !overlayOnly, rendersAsynchronously: true) { ctx, size in
+            if overlayOnly {
+                drawReflection(&ctx, size)
+                drawRing(&ctx, size)
+            } else {
+                drawSky(&ctx, size)
+                drawSea(&ctx, size)
+                drawPool(&ctx, size)
+                drawReflection(&ctx, size)
+                drawRing(&ctx, size)
+                drawVignette(&ctx, size)
+            }
         } symbols: {
             if let f = face {
                 f.frame(width: cardW, height: cardH).tag(0)
@@ -476,9 +483,24 @@ struct CourseDeckView: View {
         let t = date.timeIntervalSinceReferenceDate
         let pal = palette(at: date)
         let bob = CGFloat(sin(t * 0.9)) * 5
-        DeckScene(pal: pal, time: t, horizon: L.horizon, cardX: L.cardX, cardTop: L.cardTop + bob,
-                  cardW: L.cardW, cardH: L.cardH, face: frontFace(pal), reflX: L.cardX + (dragX < 0 ? dragX * 0.9 : 0))
-            .frame(width: L.W, height: L.H)
+        let rx = L.cardX + (dragX < 0 ? dragX * 0.9 : 0)
+        if DeckMetalCore.shared != nil {
+            // sky and sea on the GPU (smooth at the full frame rate); the ring and the card's reflection on top
+            ZStack(alignment: .topLeading) {
+                DeckWaterView(params: DeckWaterParams(width: L.W, height: L.H, horizon: L.horizon, cardX: L.cardX,
+                                                      cardBottom: L.cardTop + L.cardH, cardW: L.cardW,
+                                                      from: palFrom, to: palTo,
+                                                      switchAgo: date.timeIntervalSince(switchStart)))
+                    .frame(width: L.W, height: L.H)
+                DeckScene(pal: pal, time: t, horizon: L.horizon, cardX: L.cardX, cardTop: L.cardTop + bob,
+                          cardW: L.cardW, cardH: L.cardH, face: frontFace(pal), reflX: rx, overlayOnly: true)
+                    .frame(width: L.W, height: L.H)
+            }
+        } else {
+            DeckScene(pal: pal, time: t, horizon: L.horizon, cardX: L.cardX, cardTop: L.cardTop + bob,
+                      cardW: L.cardW, cardH: L.cardH, face: frontFace(pal), reflX: rx)
+                .frame(width: L.W, height: L.H)
+        }
     }
 
     @ViewBuilder private func cardsLayer(_ L: Layout, _ t: Double) -> some View {
@@ -731,5 +753,240 @@ struct CourseDeckView: View {
         }
         .padding(.horizontal, 20)
         .frame(width: L.W, alignment: .leading)
+    }
+}
+
+
+// MARK: - The water on the GPU
+//
+// A fragment shader paints the whole sky and sea every frame: the sea is a perspective plane whose waves come from
+// stretched noise (so they run in long horizontal streaks, thin at the horizon and wide near you), it mirrors the sky
+// with more mirror near the horizon (Fresnel), glitters in a column under the glow, and carries the dark pool and the
+// rings that spread from under the card. It is compiled when first needed; if that fails (or there is no GPU) the
+// Canvas version above is used instead.
+
+enum DeckMetal {
+    static let source = """
+    #include <metal_stdlib>
+    using namespace metal;
+
+    struct VOut { float4 pos [[position]]; float2 uv; };
+
+    vertex VOut deckVertex(uint vid [[vertex_id]]) {
+        float2 p = float2(float((vid << 1) & 2u), float(vid & 2u));
+        VOut o;
+        o.pos = float4(p * 2.0 - 1.0, 0.0, 1.0);
+        o.uv = float2(p.x, 1.0 - p.y);
+        return o;
+    }
+
+    float hash21(float2 p) {
+        p = fract(p * float2(123.34, 456.21));
+        p += dot(p, p + 45.32);
+        return fract(p.x * p.y);
+    }
+
+    float vnoise(float2 p) {
+        float2 i = floor(p);
+        float2 f = fract(p);
+        f = f * f * (3.0 - 2.0 * f);
+        float a = hash21(i);
+        float b = hash21(i + float2(1.0, 0.0));
+        float c = hash21(i + float2(0.0, 1.0));
+        float d = hash21(i + float2(1.0, 1.0));
+        return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+    }
+
+    float fbm(float2 p) {
+        float s = 0.0;
+        float a = 0.5;
+        for (int i = 0; i < 4; i++) {
+            s += a * vnoise(p);
+            p = p * 2.03 + float2(17.1, 9.2);
+            a *= 0.5;
+        }
+        return s;
+    }
+
+    float3 pc(constant float *u, int o, float k) {
+        float3 a = float3(u[o], u[o + 1], u[o + 2]);
+        float3 b = float3(u[o + 15], u[o + 16], u[o + 17]);
+        return mix(a, b, k);
+    }
+
+    float3 skyCol(float h, float3 top, float3 mid, float3 glow) {
+        float3 c = mix(top, mid, smoothstep(0.0, 0.75, h));
+        return mix(c, glow, smoothstep(0.6, 1.0, h) * 0.95);
+    }
+
+    fragment float4 deckFragment(VOut in [[stage_in]], constant float *u [[buffer(0)]]) {
+        float2 res = float2(u[1], u[2]);
+        float2 px = in.uv * res;
+        float t = u[0];
+        float H = u[3];
+        float cx = u[4];
+        float base = u[5];
+        float cw = u[6];
+        float k = u[7];
+        float3 skyTop = pc(u, 8, k);
+        float3 skyMid = pc(u, 11, k);
+        float3 glow = pc(u, 14, k);
+        float3 seaTop = pc(u, 17, k);
+        float3 seaBot = pc(u, 20, k);
+        float3 col;
+
+        if (px.y < H) {
+            float h = px.y / H;
+            col = skyCol(h, skyTop, skyMid, glow);
+            float d = length((px - float2(cx, H)) / (res.x * 0.8));
+            col += glow * 0.5 * (1.0 - smoothstep(0.0, 1.0, d));
+            float cell = 18.0;
+            float2 g = floor(px / cell);
+            float r = hash21(g);
+            float2 c = (g + 0.2 + 0.6 * float2(hash21(g + 3.1), hash21(g + 7.7))) * cell;
+            float star = step(0.97, r) * smoothstep(1.5, 0.0, length(px - c));
+            star *= (0.5 + 0.5 * sin(t * 1.1 + r * 80.0)) * (1.0 - smoothstep(0.4, 0.7, h));
+            col += star * 0.7;
+        } else {
+            float dy = px.y - H;
+            float depth = clamp(dy / max(res.y - H, 1.0), 0.0, 1.0);
+            float z = 160.0 / (dy + 8.0);
+            float wx = (px.x - cx) * z / 90.0;
+            float wz = z;
+            float n1 = fbm(float2(wx * 0.8 + t * 0.04, wz * 1.5 - t * 0.30));
+            float n2 = vnoise(float2(wx * 1.8 - t * 0.08, wz * 5.5 + t * 0.55));
+            float hgt = n1 * 0.65 + n2 * 0.35;
+            float band = 0.5 + 0.5 * sin(wz * 7.0 + hgt * 7.0 - t * 0.9);
+
+            // the sea mirrors the sky, shaken by the waves
+            float ry = H - dy * 0.85 + (hgt - 0.5) * (6.0 + 40.0 * depth);
+            float3 refl = skyCol(clamp(ry / H, 0.0, 1.0), skyTop, skyMid, glow);
+            float fres = 0.14 + 0.8 * pow(1.0 - depth, 2.2);
+            float3 deep = mix(seaTop, seaBot, smoothstep(0.0, 0.8, depth));
+            col = mix(deep, refl, fres * (0.45 + 0.55 * band));
+            col *= 1.0 - 0.5 * smoothstep(0.6, 1.0, 1.0 - band) * (0.35 + 0.65 * depth);
+
+            // glitter and light under the glow
+            float w = exp(-pow((px.x - cx) / (cw * (0.3 + depth * 1.6)), 2.0));
+            float sp = smoothstep(0.74, 0.92, vnoise(float2(wx * 9.0, wz * 24.0 + t * 1.3)));
+            sp *= 0.5 + 0.5 * sin(t * 3.0 + hgt * 40.0);
+            col += glow * 1.2 * sp * w * (1.0 - 0.5 * depth);
+            col += glow * 0.22 * w * (1.0 - depth);
+            col += glow * 0.55 * exp(-dy * 0.35);
+
+            // the dark pool under the card and the rings that spread from it
+            float2 pq = (px - float2(cx, base + cw * 0.05)) / float2(cw * 0.66, cw * 0.11);
+            float pool = 1.0 - smoothstep(0.35, 1.0, dot(pq, pq));
+            col = mix(col, col * 0.1, pool * 0.8);
+            float2 rq = (px - float2(cx, base + cw * 0.06)) / float2(cw, cw * 0.17);
+            float rr = length(rq) + (hgt - 0.5) * 0.05;
+            float ph = fract(rr * 1.05 - t * 0.16);
+            float ring = smoothstep(0.0, 0.08, ph) * (1.0 - smoothstep(0.08, 0.4, ph));
+            float rfade = (1.0 - smoothstep(0.4, 2.6, rr)) * step(0.45, rr);
+            col *= 1.0 - 0.6 * ring * rfade;
+        }
+
+        float2 q = (in.uv - float2(0.5, 0.45)) * float2(1.0, res.y / res.x);
+        col *= 1.0 - 0.55 * smoothstep(0.45, 1.05, length(q));
+        return float4(clamp(col, 0.0, 1.0), 1.0);
+    }
+    """
+}
+
+final class DeckMetalCore {
+    static let shared: DeckMetalCore? = DeckMetalCore()
+    let device: MTLDevice
+    let queue: MTLCommandQueue
+    let pipeline: MTLRenderPipelineState
+
+    init?() {
+        guard let d = MTLCreateSystemDefaultDevice(), let q = d.makeCommandQueue(),
+              let lib = try? d.makeLibrary(source: DeckMetal.source, options: nil),
+              let vf = lib.makeFunction(name: "deckVertex"),
+              let ff = lib.makeFunction(name: "deckFragment") else { return nil }
+        let desc = MTLRenderPipelineDescriptor()
+        desc.vertexFunction = vf
+        desc.fragmentFunction = ff
+        desc.colorAttachments[0].pixelFormat = .bgra8Unorm
+        guard let ps = try? d.makeRenderPipelineState(descriptor: desc) else { return nil }
+        device = d
+        queue = q
+        pipeline = ps
+    }
+}
+
+/// What the shader needs from the page (all sizes in points)
+struct DeckWaterParams {
+    var width: CGFloat = 0, height: CGFloat = 0
+    var horizon: CGFloat = 0, cardX: CGFloat = 0, cardBottom: CGFloat = 0, cardW: CGFloat = 0
+    var from = DeckPalette.ember, to = DeckPalette.ember
+    var switchAgo: Double = 10          // seconds since the finish last changed
+}
+
+final class DeckWaterRenderer: NSObject, MTKViewDelegate {
+    let core: DeckMetalCore
+    var params = DeckWaterParams()
+    var stamp = CACurrentMediaTime()
+    private let epoch = Date().timeIntervalSinceReferenceDate
+
+    init(core: DeckMetalCore) { self.core = core }
+
+    func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
+
+    private func rgb(_ hex: UInt32) -> [Float] {
+        [Float((hex >> 16) & 0xFF) / 255, Float((hex >> 8) & 0xFF) / 255, Float(hex & 0xFF) / 255]
+    }
+
+    private func colors(_ p: DeckPalette) -> [Float] {
+        rgb(p.skyTop) + rgb(p.skyMid) + rgb(p.glow) + rgb(p.seaTop) + rgb(p.seaBottom)
+    }
+
+    func draw(in view: MTKView) {
+        guard let drawable = view.currentDrawable, let pass = view.currentRenderPassDescriptor,
+              let cb = core.queue.makeCommandBuffer(), let enc = cb.makeRenderCommandEncoder(descriptor: pass) else { return }
+        let sc = Float(view.contentScaleFactor)
+        let now = Date().timeIntervalSinceReferenceDate
+        let bob = Float(sin(now * 0.9)) * 5                       // the card bobs, and the pool under it with it
+        let ago = params.switchAgo + (CACurrentMediaTime() - stamp)
+        let raw = min(max(ago / 1.1, 0), 1)
+        let k = Float(raw * raw * (3 - 2 * raw))
+
+        var u: [Float] = [Float(now - epoch), Float(params.width) * sc, Float(params.height) * sc,
+                          Float(params.horizon) * sc, Float(params.cardX) * sc, (Float(params.cardBottom) + bob) * sc,
+                          Float(params.cardW) * sc, k]
+        u += colors(params.from)
+        u += colors(params.to)
+
+        enc.setRenderPipelineState(core.pipeline)
+        enc.setFragmentBytes(u, length: u.count * MemoryLayout<Float>.size, index: 0)
+        enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+        enc.endEncoding()
+        cb.present(drawable)
+        cb.commit()
+    }
+}
+
+struct DeckWaterView: UIViewRepresentable {
+    var params: DeckWaterParams
+
+    func makeCoordinator() -> DeckWaterRenderer {
+        DeckWaterRenderer(core: DeckMetalCore.shared!)      // only created when DeckMetalCore.shared exists
+    }
+
+    func makeUIView(context: Context) -> MTKView {
+        let v = MTKView(frame: .zero, device: DeckMetalCore.shared?.device)
+        v.delegate = context.coordinator
+        v.colorPixelFormat = .bgra8Unorm
+        v.preferredFramesPerSecond = 60
+        v.framebufferOnly = true
+        v.isOpaque = true
+        v.isUserInteractionEnabled = false
+        context.coordinator.params = params
+        return v
+    }
+
+    func updateUIView(_ v: MTKView, context: Context) {
+        context.coordinator.params = params
+        context.coordinator.stamp = CACurrentMediaTime()
     }
 }
