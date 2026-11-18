@@ -388,8 +388,6 @@ struct CourseDeckView: View {
     @ObservedObject private var timetable = TimetableManager.shared
     @State private var front = 0
     @State private var dragX: CGFloat = 0
-    @State private var pendingStep: (() -> Void)?     // second half of a swipe that is still waiting to start
-    @State private var stepToken = 0
     @State private var palFrom = DeckPalette.ember
     @State private var palTo = DeckPalette.ember
     @State private var switchStart = Date.distantPast
@@ -594,7 +592,6 @@ struct CourseDeckView: View {
         DragGesture(minimumDistance: 12)
             .onChanged { v in
                 guard courses.count > 0 else { return }
-                flush()                      // a new swipe never waits: finish the previous one's next step now
                 dragX = v.translation.width * 0.95
             }
             .onEnded { v in
@@ -608,49 +605,16 @@ struct CourseDeckView: View {
             }
     }
 
-    private let backSpring = Animation.spring(response: 0.8, dampingFraction: 0.82)
+    private let backSpring = Animation.spring(response: 0.5, dampingFraction: 0.84)
 
-    /// Right to left: the front card slides out to the left (still in view), then swings round behind the stack
-    /// to the back while the next one comes forward.
-    /// Left to right (the way back): the card at the back is pulled out to the left, then comes in over the others
-    /// to the front, and the old front drops back one place.
+    /// One movement, no pause: right to left sends the front card straight round to the back of the stack (from
+    /// wherever your finger left it) while the next one comes forward; left to right brings the back card straight to
+    /// the front. A new swipe can start at any moment and takes over from where the cards are.
     private func advance(toRight: Bool, _ L: Layout) {
         let n = courses.count
-        flush()
-        if !toRight {
-            withAnimation(.easeOut(duration: 0.18)) { dragX = -L.cardW * 0.8 }
-            later(0.2) {
-                let next = (front + 1) % n
-                goTo(next)
-                withAnimation(backSpring) { front = next; dragX = 0 }
-            }
-        } else {
-            withAnimation(.easeOut(duration: 0.2)) { dragX = L.W * 0.3 }     // pulled right out of the stack
-            later(0.22) {
-                let prev = (front - 1 + n) % n
-                goTo(prev)
-                withAnimation(backSpring) { front = prev; dragX = 0 }
-            }
-        }
-    }
-
-    /// Runs the second half of a swipe after a short moment, or at once if the next swipe starts first
-    private func later(_ delay: Double, _ step: @escaping () -> Void) {
-        stepToken += 1
-        let token = stepToken
-        pendingStep = step
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-            guard token == stepToken, let s = pendingStep else { return }
-            pendingStep = nil
-            s()
-        }
-    }
-
-    private func flush() {
-        guard let s = pendingStep else { return }
-        pendingStep = nil
-        stepToken += 1
-        s()
+        let target = toRight ? (front - 1 + n) % n : (front + 1) % n
+        goTo(target)
+        withAnimation(backSpring) { front = target; dragX = 0 }
     }
 
     // MARK: text around the scene (the video's page text, rewritten for the subject on top)
