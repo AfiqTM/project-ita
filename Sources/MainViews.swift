@@ -251,7 +251,7 @@ struct CoursesView: View {
 
     var body: some View {
         ScrollViewReader { proxy in
-            list
+            content
                 // tapping the Courses tab again while the list is showing: back to the top
                 .onReceive(NotificationCenter.default.publisher(for: .coursesScrollToTop)) { _ in
                     searchFocused = false
@@ -342,6 +342,27 @@ struct CoursesView: View {
             if let c = openCourse { CourseDetailView(course: c) }
         }
         .refreshable { await load(); await loadAll() }
+    }
+
+    /// Cards theme: the courses as a stack of floating cards (CardsDeck.swift) instead of the list
+    private var deck: some View {
+        CourseDeckView(courses: courses, loading: loading, name: firstTwoNames,
+                       starred: { favOverride[$0.id] ?? $0.isfavourite ?? false },
+                       onOpen: { openCourse = $0 },
+                       onStar: { c in Task { await toggleStar(c) } },
+                       onHide: { c in Task { await toggleHide(c) } })
+            .toolbar(.hidden, for: .navigationBar)
+            .noBottomEdgeEffect()
+            .navigationDestination(isPresented: Binding(get: { openCourse != nil },
+                                                        set: { if !$0 { openCourse = nil } })) {
+                if let c = openCourse { CourseDetailView(course: c) }
+            }
+    }
+
+    private var content: some View {
+        Group {
+            if ThemeStore.shared.theme == .cards { deck } else { list }
+        }
         .task(id: filter) {
             await OfflineCache.paintFromCache { await load() }   // last download first, instantly
             await load()                                          // then the online version

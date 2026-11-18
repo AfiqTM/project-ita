@@ -14,7 +14,7 @@ import CoreText
 // happens and then faded out.
 
 enum AppTheme: String, CaseIterable, Identifiable {
-    case dark, light, terminal, retro, redDead, notebook, notebookDark
+    case dark, light, terminal, retro, redDead, notebook, notebookDark, cards
 
     var id: String { rawValue }
 
@@ -36,6 +36,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
         case .redDead: return "Red Dead Redemption 2"
         case .notebook: return "Notebook \u{B7} Light"
         case .notebookDark: return "Notebook \u{B7} Dark"
+        case .cards: return "Cards"
         }
     }
 
@@ -48,6 +49,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
         case .redDead: return "Rockstar-poster look: black and red, stencil-style caps headings, flat cards with a red banner strip."
         case .notebook: return "Neo-brutalist: near-white page, thick black outlines, solid block shadows, soft yellow accent and a rounded geometric font."
         case .notebookDark: return "Notebook after dark: charcoal page, light outlines and block shadows, a white accent and the same rounded font."
+        case .cards: return "Your subjects as a stack of floating metal cards over dusk water. Swipe to send the front card to the back; the sky, sea and card finish change with it."
         }
     }
 
@@ -76,6 +78,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
         case .redDead: return .redDead
         case .notebook: return .notebook
         case .notebookDark: return .notebookDark
+        case .cards: return .dark
         }
     }
 
@@ -90,7 +93,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
     /// Gradients for courses without an image, picked per course
     var covers: [(UInt32, UInt32)] {
         switch self {
-        case .dark:
+        case .dark, .cards:
             return [(0x1b1712, 0x3a2f22), (0x14181c, 0x2c3a46), (0x1a1417, 0x3d2a33),
                     (0x121a16, 0x263b2f), (0x181510, 0x4a3a22), (0x15151c, 0x302f4a)]
         case .light:
@@ -126,6 +129,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
         case .redDead: return -0.4
         case .notebook: return -0.2
         case .notebookDark: return -0.2
+        case .cards: return -0.2
         }
     }
     var coverSaturation: Double {
@@ -180,7 +184,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
 /// The cards on the Themes screen. Default and Notebook each hold a dark and a light look, picked with a switch on the
 /// card (dark on the left, light on the right); the others are a single look.
 enum ThemeFamily: String, CaseIterable, Identifiable {
-    case standard, terminal, retro, redDead, notebook
+    case standard, terminal, retro, redDead, notebook, cards
 
     var id: String { rawValue }
 
@@ -194,6 +198,7 @@ enum ThemeFamily: String, CaseIterable, Identifiable {
         case .retro: all = [.retro]
         case .redDead: all = [.redDead]
         case .notebook: all = [.notebookDark, .notebook]
+        case .cards: all = [.cards]
         }
         return all.filter { !$0.isArchived }
     }
@@ -208,6 +213,7 @@ enum ThemeFamily: String, CaseIterable, Identifiable {
         case .retro: return "Retro"
         case .redDead: return "Red Dead Redemption 2"
         case .notebook: return "Notebook"
+        case .cards: return "Cards"
         }
     }
 
@@ -244,7 +250,7 @@ enum AppIcon {
         case .terminal: return "AppIcon-Terminal"
         case .retro: return "AppIcon-Retro"
         case .redDead: return "AppIcon-RedDead"
-        case .notebook, .notebookDark: return nil      // no icon of its own yet: the main (dark) icon
+        case .notebook, .notebookDark, .cards: return nil      // no icon of its own yet: the main (dark) icon
         }
     }
 
@@ -736,7 +742,7 @@ private struct ThemeCard: View {
                                                   : .system(size: 20, weight: .semibold)
         case .notebook: return JakartaFont.available ? .custom(JakartaFont.bold, size: 20, relativeTo: .body)   // same font as the course names
                                                      : .system(size: 20, weight: .semibold)
-        case .standard: return .system(size: 20, weight: .semibold)
+        case .standard, .cards: return .system(size: 20, weight: .semibold)
         }
     }
 
