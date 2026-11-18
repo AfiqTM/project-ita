@@ -504,7 +504,8 @@ struct CourseDeckView: View {
             return sl == 0 ? (dragX, 0) : (0, max(Double(sl) - p, 0))
         }
         if dragX > 0 {
-            return sl == n - 1 ? (-L.W * CGFloat(1 - p), Double(n - 1) * (1 - p)) : (0, Double(sl) + p)
+            // out of the back of the stack to the left (a half-turn of a sine), then in over the others to the front
+            return sl == n - 1 ? (-L.cardW * 0.8 * CGFloat(sin(p * Double.pi)), Double(n - 1) * (1 - p)) : (0, Double(sl) + p)
         }
         return (0, Double(sl))
     }
@@ -518,6 +519,9 @@ struct CourseDeckView: View {
             let lk = look(pl.eff, L)
             let pal = finish(i)
             let mover = isFront && dragX < 0
+            // the card coming back stays behind the others until it has been pulled out to the side
+            let pullP = min(Double(max(dragX, 0)) / Double(L.W * 0.6), 1)
+            let z: Double = (dragX > 0 && sl == n - 1 && n > 1) ? (pullP > 0.45 ? Double(n + 1) : 0) : Double(n - sl)
             let sway = isFront ? sin(t * 0.55) * 7 : sin(t * 0.55 + Double(sl)) * 3
             let sway2 = isFront ? sin(t * 0.4 + 1) * 3 : 0
             let tiltDrag = mover ? Double(dragX) / Double(L.W) * 40 : 0
@@ -534,7 +538,7 @@ struct CourseDeckView: View {
                 .offset(x: L.cardX - L.cardW / 2 + lk.dx + pl.x,
                         y: L.cardTop + lk.dy + (isFront ? bob : bob * 0.5))
                 .opacity(lk.opacity)
-                .zIndex(Double(n - sl))
+                .zIndex(z)
                 .onTapGesture { if isFront { onOpen(c) } }
                 .contextMenu {
                     if isFront {
@@ -567,26 +571,31 @@ struct CourseDeckView: View {
             }
     }
 
-    private let backSpring = Animation.spring(response: 0.72, dampingFraction: 0.8)
+    private let backSpring = Animation.spring(response: 0.8, dampingFraction: 0.82)
 
-    /// Right to left: the front card slides out to the left, then travels round behind the stack to the back while the
-    /// next one comes forward. Left to right: the card at the back slides in from the left and takes the front.
+    /// Right to left: the front card slides out to the left (still in view), then swings round behind the stack
+    /// to the back while the next one comes forward.
+    /// Left to right (the way back): the card at the back is pulled out to the left, then comes in over the others
+    /// to the front, and the old front drops back one place.
     private func advance(toRight: Bool, _ L: Layout) {
         let n = courses.count
         busy = true
         if !toRight {
-            withAnimation(.easeIn(duration: 0.2)) { dragX = -L.W * 1.05 }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            withAnimation(.easeOut(duration: 0.22)) { dragX = -L.cardW * 0.8 }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.24) {
                 let next = (front + 1) % n
                 goTo(next)
                 withAnimation(backSpring) { front = next; dragX = 0 }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { busy = false }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { busy = false }
             }
         } else {
-            let prev = (front - 1 + n) % n
-            goTo(prev)
-            withAnimation(backSpring) { front = prev; dragX = 0 }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { busy = false }
+            withAnimation(.easeOut(duration: 0.24)) { dragX = L.W * 0.3 }     // pulled right out of the stack
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.26) {
+                let prev = (front - 1 + n) % n
+                goTo(prev)
+                withAnimation(backSpring) { front = prev; dragX = 0 }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { busy = false }
+            }
         }
     }
 
