@@ -174,7 +174,7 @@ struct DeckScene: View {
     private func c(_ hex: UInt32, _ a: Double = 1) -> Color { Color(hex: hex).opacity(a) }
 
     var body: some View {
-        Canvas { ctx, size in
+        Canvas(opaque: true, rendersAsynchronously: true) { ctx, size in
             drawSky(&ctx, size)
             drawSea(&ctx, size)
             drawPool(&ctx, size)
@@ -194,7 +194,7 @@ struct DeckScene: View {
         guard face != nil, let sym = ctx.resolveSymbol(id: 0) else { return }
         let top = cardTop + cardH + 6
         let reach = cardH * 0.6
-        let strip: CGFloat = 3
+        let strip: CGFloat = 4
         var y: CGFloat = 0
         while y < reach {
             let k = Double(y / reach)                   // 0 at the card, 1 deep down
@@ -225,7 +225,7 @@ struct DeckScene: View {
             seed = seed &* 6364136223846793005 &+ 1442695040888963407
             return Double((seed >> 33) & 0xFFFF) / 65535.0
         }
-        for i in 0..<46 {
+        for i in 0..<30 {
             let x = rnd() * Double(size.width)
             let y = rnd() * Double(horizon) * 0.62
             let a = 0.18 + 0.22 * (0.5 + 0.5 * sin(time * 1.1 + Double(i) * 1.7))
@@ -250,8 +250,8 @@ struct DeckScene: View {
                                                   startRadius: 0, endRadius: size.width * 0.65))
 
         // wavy bands
-        let count = 58
-        let step: CGFloat = 8
+        let count = 36
+        let step: CGFloat = 12
         for j in 0..<count {
             let d = pow(Double(j) / Double(count), 1.85)
             let y = horizon + CGFloat(d) * seaH
@@ -288,7 +288,7 @@ struct DeckScene: View {
             seed = seed &* 6364136223846793005 &+ 1442695040888963407
             return Double((seed >> 33) & 0xFFFF) / 65535.0
         }
-        for i in 0..<90 {
+        for i in 0..<48 {
             let u = pow(rnd(), 1.5)
             let y = horizon + CGFloat(u) * seaH * 0.9
             let spread = (0.18 + CGFloat(u) * 1.0) * cardW * 1.2
@@ -352,7 +352,7 @@ struct DeckScene: View {
                 let p = CGPoint(x: x + wob, y: ry)
                 if startedB { below.addLine(to: p) } else { below.move(to: p); startedB = true }
             }
-            a -= 0.02
+            a -= 0.04
         }
         ctx.stroke(above, with: .color(c(pal.glow, 0.35)), lineWidth: 4)
         ctx.stroke(above, with: .color(Color.black.opacity(0.88)), lineWidth: 1.8)
@@ -440,10 +440,8 @@ struct CourseDeckView: View {
         GeometryReader { g in
             let L = layout(g)
             ZStack(alignment: .topLeading) {
-                TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { tl in
-                    sceneAndCards(L, tl.date)
-                }
-                .frame(width: L.W, height: L.H)
+                sceneAndCards(L)
+                    .frame(width: L.W, height: L.H)
                 .contentShape(Rectangle())
                 .gesture(drag(L))
                 textLayer(L)
@@ -460,20 +458,37 @@ struct CourseDeckView: View {
         }
     }
 
-    @ViewBuilder private func sceneAndCards(_ L: Layout, _ date: Date) -> some View {
-        let t = date.timeIntervalSinceReferenceDate
-        let pal = palette(at: date)
-        let bob = CGFloat(sin(t * 0.9)) * 5
+    /// The water scene redraws 30 times a second; the cards (cheap, just moving) run at the full screen rate
+    @ViewBuilder private func sceneAndCards(_ L: Layout) -> some View {
         ZStack(alignment: .topLeading) {
-            DeckScene(pal: pal, time: t, horizon: L.horizon, cardX: L.cardX, cardTop: L.cardTop + bob,
-                      cardW: L.cardW, cardH: L.cardH, face: frontFace(pal), reflX: L.cardX + (dragX < 0 ? dragX * 0.9 : 0))
-                .frame(width: L.W, height: L.H)
+            TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { tl in
+                sceneLayer(L, tl.date)
+            }
             if !courses.isEmpty {
-                ForEach(Array(courses.enumerated()), id: \.element.id) { i, c in
-                    cardView(i, c, L, t, bob)
+                TimelineView(.animation) { tl in
+                    cardsLayer(L, tl.date.timeIntervalSinceReferenceDate)
                 }
             }
         }
+    }
+
+    @ViewBuilder private func sceneLayer(_ L: Layout, _ date: Date) -> some View {
+        let t = date.timeIntervalSinceReferenceDate
+        let pal = palette(at: date)
+        let bob = CGFloat(sin(t * 0.9)) * 5
+        DeckScene(pal: pal, time: t, horizon: L.horizon, cardX: L.cardX, cardTop: L.cardTop + bob,
+                  cardW: L.cardW, cardH: L.cardH, face: frontFace(pal), reflX: L.cardX + (dragX < 0 ? dragX * 0.9 : 0))
+            .frame(width: L.W, height: L.H)
+    }
+
+    @ViewBuilder private func cardsLayer(_ L: Layout, _ t: Double) -> some View {
+        let bob = CGFloat(sin(t * 0.9)) * 5
+        ZStack(alignment: .topLeading) {
+            ForEach(Array(courses.enumerated()), id: \.element.id) { i, c in
+                cardView(i, c, L, t, bob)
+            }
+        }
+        .frame(width: L.W, height: L.H, alignment: .topLeading)
     }
 
     private func frontFace(_ pal: DeckPalette) -> DeckCardFace? {
@@ -527,15 +542,14 @@ struct CourseDeckView: View {
             let sway2 = isFront ? sin(t * 0.4 + 1) * 3 : 0
             let tiltDrag = mover ? Double(dragX) / Double(L.W) * 40 : 0
             let spin = mover ? Double(dragX) / Double(L.W) * 14 : 0
-            DeckCardFace(pal: pal, code: c.headerCode, label: label(c), value: value(c), sheen: sin(t * 0.55) * 0.8)
+            DeckCardFace(pal: pal, code: c.headerCode, label: label(c), value: value(c))
                 .frame(width: L.cardW, height: L.cardH)
                 .scaleEffect(lk.scale)
                 .brightness(-lk.dim)
-                .blur(radius: lk.blur)
                 .rotation3DEffect(.degrees(sway + tiltDrag), axis: (x: 0, y: 1, z: 0), perspective: 0.5)
                 .rotation3DEffect(.degrees(sway2), axis: (x: 1, y: 0, z: 0), perspective: 0.5)
                 .rotationEffect(.degrees(lk.rot + spin))
-                .shadow(color: Color.black.opacity(isFront ? 0.45 : 0.25), radius: isFront ? 18 : 8, y: 10)
+                .shadow(color: Color.black.opacity(isFront ? 0.4 : 0), radius: isFront ? 14 : 0, y: 8)
                 .offset(x: L.cardX - L.cardW / 2 + lk.dx + pl.x,
                         y: L.cardTop + lk.dy + (isFront ? bob : bob * 0.5))
                 .opacity(lk.opacity)
@@ -714,24 +728,6 @@ struct CourseDeckView: View {
             }
             .animation(.spring(response: 0.4, dampingFraction: 0.8), value: front)
             Spacer(minLength: 0)
-            Button { onOpen(c) } label: {
-                HStack(spacing: 8) {
-                    DeckCardFace(pal: pal, code: "", label: "", value: "")
-                        .frame(width: 26, height: 36)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(c.headerCode).font(deckFont(10)).foregroundColor(.white)
-                        Text("\(pal.name.uppercased()) \u{00B7} \(label(c))").font(mono(7.5)).foregroundColor(Color.white.opacity(0.55))
-                        Text("Open \u{203A}").font(deckFont(9)).foregroundColor(.black)
-                            .padding(.horizontal, 8).padding(.vertical, 3)
-                            .background(Color.white).clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
-                    }
-                }
-                .padding(6)
-                .background(Color.black.opacity(0.38))
-                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.white.opacity(0.14), lineWidth: 0.6))
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            }
-            .buttonStyle(.plain)
         }
         .padding(.horizontal, 20)
         .frame(width: L.W, alignment: .leading)
