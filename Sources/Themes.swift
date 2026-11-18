@@ -204,7 +204,15 @@ enum ThemeFamily: String, CaseIterable, Identifiable {
     }
 
     /// The cards the Themes screen shows
-    static var listed: [ThemeFamily] { allCases.filter { !$0.variants.isEmpty } }
+    /// Cards is hidden until it is switched on in Dev tools (it stays listed while it is the theme in use)
+    static let showCardsKey = "dev.showCardsTheme"
+    static var listed: [ThemeFamily] {
+        allCases.filter { f in
+            guard !f.variants.isEmpty else { return false }
+            if f == .cards { return UserDefaults.standard.bool(forKey: showCardsKey) || ThemeStore.shared.theme == .cards }
+            return true
+        }
+    }
 
     var name: String {
         switch self {

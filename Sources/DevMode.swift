@@ -378,6 +378,7 @@ struct DevAttendanceCard: View {
 
 struct DevLogsView: View {
     @AppStorage(BicsDisplayFont.cleanKey) private var cleanFont = false
+    @AppStorage(ThemeFamily.showCardsKey) private var showCards = false
 
     var body: some View {
         ScrollView {
@@ -389,6 +390,18 @@ struct DevLogsView: View {
                         VStack(alignment: .leading, spacing: 3) {
                             Text("Course code font: BICS Display Clean v4").foregroundColor(Theme.txt).fontWeight(.semibold)
                             Text("Off uses the usual font. Works with dev mode on or off.")
+                                .font(Theme.font(.caption)).foregroundColor(Theme.muted)
+                        }
+                    }
+                    .tint(Theme.accent)
+                }
+                .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+                .glowCard()
+                VStack(alignment: .leading, spacing: 8) {
+                    Toggle(isOn: $showCards) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Show the Cards theme in Themes").foregroundColor(Theme.txt).fontWeight(.semibold)
+                            Text("Off keeps it hidden from the Themes tab. Works with dev mode on or off.")
                                 .font(Theme.font(.caption)).foregroundColor(Theme.muted)
                         }
                     }
