@@ -66,6 +66,16 @@ struct CoursesHome: View {
     var body: some View {
         GeometryReader { geo in
             let top = windowTopInset > 0 ? windowTopInset : geo.safeAreaInsets.top
+            if ThemeStore.shared.theme == .cards {
+                // Cards theme: no Noticeboard page, so a right swipe belongs to the deck
+                CoursesView()
+                    .safeAreaInset(edge: .top, spacing: 0) { Color.clear.frame(height: top) }
+                    .safeAreaInset(edge: .bottom, spacing: 0) { Color.clear.frame(height: tabBarClearance) }
+                    .ignoresSafeArea(.container, edges: [.top, .bottom])
+                    .frame(width: geo.size.width, height: max(geo.size.height, windowHeight), alignment: .top)
+                    .toolbar(.hidden, for: .navigationBar)
+                    .background(Theme.bg.ignoresSafeArea())
+            } else {
             TabView(selection: $page) {
                 DailyInfoView()
                     .safeAreaInset(edge: .top, spacing: 0) { Color.clear.frame(height: top) }
@@ -99,6 +109,7 @@ struct CoursesHome: View {
                     .frame(height: top + 8)
                     .ignoresSafeArea(.container, edges: .top)
                     .allowsHitTesting(false)
+            }
             }
         }
         // the container itself no longer follows the safe area, so its size stays the same when the tab bar hides / shows

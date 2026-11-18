@@ -9,6 +9,13 @@ import SwiftUI
 // (ember -> violet -> aqua). Here every subject is a card: they stack behind the front one, and a swipe sends the
 // front card to the back of the stack while the next one comes forward.
 
+// MARK: Font (Plus Jakarta Sans, bundled; the system font when it isn't there)
+
+func deckFont(_ size: CGFloat, bold: Bool = true) -> Font {
+    guard JakartaFont.available else { return .system(size: size, weight: bold ? .semibold : .regular) }
+    return .custom(bold ? JakartaFont.bold : JakartaFont.medium, size: size)
+}
+
 // MARK: Palettes (one per finish)
 
 struct DeckPalette {
@@ -118,13 +125,13 @@ struct DeckCardFace: View {
 
                 // bottom: name left, label and value right
                 Text(code)
-                    .font(.system(size: w * 0.115, weight: .regular))
+                    .font(deckFont(w * 0.105, bold: false))
                     .foregroundColor(Color.white.opacity(0.88))
                     .lineLimit(1).minimumScaleFactor(0.5)
                     .frame(width: w * 0.5, alignment: .leading)
                     .position(x: w * 0.08 + w * 0.25, y: h * 0.915)
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text(label).font(.system(size: w * 0.036, weight: .regular)).tracking(0.6)
+                    Text(label).font(deckFont(w * 0.034, bold: false)).tracking(0.6)
                         .foregroundColor(Color.white.opacity(0.5))
                     Text(value).font(.system(size: w * 0.05, weight: .regular, design: .monospaced))
                         .foregroundColor(Color.white.opacity(0.62))
@@ -161,6 +168,8 @@ struct DeckScene: View {
     let cardTop: CGFloat
     let cardW: CGFloat
     let cardH: CGFloat
+    let face: DeckCardFace?       // the front card, drawn upside down in the water
+    let reflX: CGFloat            // where that reflection sits (follows the card when it is dragged)
 
     private func c(_ hex: UInt32, _ a: Double = 1) -> Color { Color(hex: hex).opacity(a) }
 
@@ -169,8 +178,34 @@ struct DeckScene: View {
             drawSky(&ctx, size)
             drawSea(&ctx, size)
             drawPool(&ctx, size)
+            drawReflection(&ctx, size)
             drawRing(&ctx, size)
             drawVignette(&ctx, size)
+        } symbols: {
+            if let f = face {
+                f.frame(width: cardW, height: cardH).tag(0)
+            }
+        }
+    }
+
+    /// The card in the water: the picture is cut into thin strips, each shifted sideways by a travelling wave, and it
+    /// fades with depth, so the reflection ripples like real water instead of sitting there as a flipped copy.
+    private func drawReflection(_ ctx: inout GraphicsContext, _ size: CGSize) {
+        guard face != nil, let sym = ctx.resolveSymbol(id: 0) else { return }
+        let top = cardTop + cardH + 6
+        let reach = cardH * 0.6
+        let strip: CGFloat = 3
+        var y: CGFloat = 0
+        while y < reach {
+            let k = Double(y / reach)                   // 0 at the card, 1 deep down
+            let wob = CGFloat(sin(Double(y) * 0.16 + time * 2.4) + 0.5 * sin(Double(y) * 0.37 - time * 3.1)) * CGFloat(1.2 + k * 5)
+            var l = ctx
+            l.clip(to: Path(CGRect(x: 0, y: top + y, width: size.width, height: strip + 0.5)))
+            l.opacity = 0.62 * pow(1 - k, 1.5)
+            l.translateBy(x: reflX + wob, y: top)
+            l.scaleBy(x: 1, y: -1)
+            l.draw(sym, at: CGPoint(x: 0, y: -cardH / 2))
+            y += strip
         }
     }
 
@@ -199,32 +234,80 @@ struct DeckScene: View {
         }
     }
 
-    // flat sea: gradient, a bright line on the horizon and bands that drift
+    // the sea: it mirrors the sky (bright at the horizon, deep and dark near you), its surface is made of wavy bands that
+    // grow with distance, and light glitters on it in a column under the glow
     private func drawSea(_ ctx: inout GraphicsContext, _ size: CGSize) {
         let seaH = size.height - horizon
         let sea = CGRect(x: 0, y: horizon, width: size.width, height: seaH)
-        let colors: [Color] = [c(pal.seaTop), c(pal.seaTop, 0.55), c(pal.seaBottom)]
-        ctx.fill(Path(sea), with: .linearGradient(Gradient(colors: colors),
+        let colors: [Color] = [c(pal.glow, 0.85), c(pal.seaTop), c(pal.seaTop, 0.5), c(pal.seaBottom)]
+        let stops: [Gradient.Stop] = [.init(color: colors[0], location: 0), .init(color: colors[1], location: 0.10),
+                                      .init(color: colors[2], location: 0.45), .init(color: colors[3], location: 1)]
+        ctx.fill(Path(sea), with: .linearGradient(Gradient(stops: stops),
                                                   startPoint: CGPoint(x: 0, y: horizon), endPoint: CGPoint(x: 0, y: size.height)))
-        // sun / sky light lying on the water under the card
-        let lightColors: [Color] = [c(pal.glow, 0.45), c(pal.glow, 0)]
+        let lightColors: [Color] = [c(pal.glow, 0.5), c(pal.glow, 0)]
         ctx.fill(Path(sea), with: .radialGradient(Gradient(colors: lightColors),
-                                                  center: CGPoint(x: cardX, y: horizon + 6),
-                                                  startRadius: 0, endRadius: size.width * 0.6))
-        // ripple bands: thin near the horizon, thicker and darker toward the viewer
-        let count = 54
+                                                  center: CGPoint(x: cardX, y: horizon + 4),
+                                                  startRadius: 0, endRadius: size.width * 0.65))
+
+        // wavy bands
+        let count = 58
+        let step: CGFloat = 8
         for j in 0..<count {
-            let d = pow(Double(j) / Double(count), 1.9)
+            let d = pow(Double(j) / Double(count), 1.85)
             let y = horizon + CGFloat(d) * seaH
-            let thick = 0.8 + CGFloat(d) * 7
-            let wave = sin(time * 0.9 + Double(j) * 0.83)
-            let shift = CGFloat(sin(time * 0.35 + Double(j) * 0.5)) * 14
-            let dark = Path(CGRect(x: -20 + shift, y: y, width: size.width + 40, height: thick))
-            ctx.fill(dark, with: .color(Color.black.opacity(0.10 + 0.16 * d + 0.06 * wave)))
-            let lit = Path(CGRect(x: -20 - shift, y: y + thick, width: size.width + 40, height: max(0.6, thick * 0.35)))
-            ctx.fill(lit, with: .color(c(pal.glow, max(0, 0.16 - 0.10 * d + 0.05 * wave))))
+            let thick = 0.7 + CGFloat(d) * 8
+            let amp = 0.2 + CGFloat(d) * 3.4
+            let freq = 0.030 + 0.030 * (1 - d)
+            let ph = time * (0.45 + 0.5 * d) + Double(j) * 1.7
+            var upper: [CGPoint] = []
+            var x: CGFloat = -12
+            while x < size.width + 12 {
+                let wave = CGFloat(sin(Double(x) * freq + ph) + 0.45 * sin(Double(x) * freq * 2.3 - ph * 1.4))
+                upper.append(CGPoint(x: x, y: y + amp * wave))
+                x += step
+            }
+            var band = Path()
+            band.move(to: upper[0])
+            for pt in upper.dropFirst() { band.addLine(to: pt) }
+            for pt in upper.reversed() {
+                let wave = CGFloat(sin(Double(pt.x) * freq + ph + 0.9))
+                band.addLine(to: CGPoint(x: pt.x, y: pt.y + thick + amp * 0.4 * wave))
+            }
+            band.closeSubpath()
+            let flick = sin(time * 0.8 + Double(j) * 0.9)
+            ctx.fill(band, with: .color(Color.black.opacity(0.10 + 0.22 * d + 0.05 * flick)))
+            var crest = Path()
+            crest.move(to: upper[0])
+            for pt in upper.dropFirst() { crest.addLine(to: pt) }
+            ctx.stroke(crest, with: .color(c(pal.glow, max(0, 0.30 - 0.20 * d + 0.07 * flick))), lineWidth: max(0.5, thick * 0.28))
         }
-        ctx.fill(Path(CGRect(x: 0, y: horizon - 0.5, width: size.width, height: 1.2)), with: .color(c(pal.glow, 0.7)))
+
+        // glitter on the water, thickest under the glow
+        var seed: UInt64 = 104729
+        func rnd() -> Double {
+            seed = seed &* 6364136223846793005 &+ 1442695040888963407
+            return Double((seed >> 33) & 0xFFFF) / 65535.0
+        }
+        for i in 0..<90 {
+            let u = pow(rnd(), 1.5)
+            let y = horizon + CGFloat(u) * seaH * 0.9
+            let spread = (0.18 + CGFloat(u) * 1.0) * cardW * 1.2
+            let x = cardX + CGFloat(rnd() - 0.5) * 2 * spread
+            let w = 2 + CGFloat(u) * 18
+            let h = 0.7 + CGFloat(u) * 1.8
+            let tw = sin(time * (2.0 + rnd() * 3.0) + Double(i) * 1.9)
+            let a = max(0, tw) * (0.65 - 0.4 * u)
+            ctx.fill(Path(roundedRect: CGRect(x: x - w / 2, y: y, width: w, height: h), cornerRadius: h / 2),
+                     with: .color(Color.white.opacity(a * 0.8)))
+            ctx.fill(Path(roundedRect: CGRect(x: x - w, y: y - 0.5, width: w * 2, height: h + 1), cornerRadius: h),
+                     with: .color(c(pal.glow, a * 0.35)))
+        }
+        // haze and the bright line on the horizon
+        let hazeColors: [Color] = [c(pal.glow, 0.45), c(pal.glow, 0)]
+        ctx.fill(Path(CGRect(x: 0, y: horizon - 14, width: size.width, height: 30)),
+                 with: .linearGradient(Gradient(colors: [hazeColors[1], hazeColors[0], hazeColors[1]]),
+                                       startPoint: CGPoint(x: 0, y: horizon - 14), endPoint: CGPoint(x: 0, y: horizon + 16)))
+        ctx.fill(Path(CGRect(x: 0, y: horizon - 0.5, width: size.width, height: 1.2)), with: .color(c(pal.glow, 0.75)))
     }
 
     // the dark pool under the card and the rings that spread from it
@@ -299,7 +382,6 @@ struct CourseDeckView: View {
     @State private var front = 0
     @State private var dragX: CGFloat = 0
     @State private var busy = false
-    @State private var hiddenID: Int?
     @State private var palFrom = DeckPalette.ember
     @State private var palTo = DeckPalette.ember
     @State private var switchStart = Date.distantPast
@@ -383,10 +465,9 @@ struct CourseDeckView: View {
         let bob = CGFloat(sin(t * 0.9)) * 5
         ZStack(alignment: .topLeading) {
             DeckScene(pal: pal, time: t, horizon: L.horizon, cardX: L.cardX, cardTop: L.cardTop + bob,
-                      cardW: L.cardW, cardH: L.cardH)
+                      cardW: L.cardW, cardH: L.cardH, face: frontFace(pal), reflX: L.cardX + (dragX < 0 ? dragX * 0.9 : 0))
                 .frame(width: L.W, height: L.H)
             if !courses.isEmpty {
-                reflection(L, pal, t, bob)
                 ForEach(Array(courses.enumerated()), id: \.element.id) { i, c in
                     cardView(i, c, L, t, bob)
                 }
@@ -394,25 +475,17 @@ struct CourseDeckView: View {
         }
     }
 
-    // the front card upside down in the water, faded and a little shaky
-    @ViewBuilder private func reflection(_ L: Layout, _ pal: DeckPalette, _ t: Double, _ bob: CGFloat) -> some View {
+    private func frontFace(_ pal: DeckPalette) -> DeckCardFace? {
+        guard !courses.isEmpty else { return nil }
         let c = courses[min(front, courses.count - 1)]
-        DeckCardFace(pal: pal, code: c.headerCode, label: label(c), value: value(c))
-            .frame(width: L.cardW, height: L.cardH)
-            .scaleEffect(x: 1, y: -1)
-            .mask(LinearGradient(colors: [Color.black.opacity(0.5), Color.black.opacity(0)], startPoint: .top, endPoint: UnitPoint(x: 0.5, y: 0.55)))
-            .blur(radius: 2.2)
-            .offset(x: L.cardX - L.cardW / 2 + dragX * 0.9 + CGFloat(sin(t * 3.1)) * 1.6,
-                    y: L.cardTop + L.cardH + 8 - bob)
-            .opacity(0.55)
-            .allowsHitTesting(false)
+        return DeckCardFace(pal: pal, code: c.headerCode, label: label(c), value: value(c))
     }
 
     private struct SlotLook { var scale: CGFloat; var dy: CGFloat; var dx: CGFloat; var rot: Double; var opacity: Double; var dim: Double; var blur: CGFloat }
 
     /// How a card looks at a (possibly fractional) place in the stack: 0 = front, 1 = right behind it, ...
     private func look(_ s: Double, _ L: Layout) -> SlotLook {
-        let k = min(max(s, 0), 4)
+        let k = min(max(s, 0), 5)
         let scale = 1 - 0.085 * k
         let step = L.cardH * 0.068
         let dy = -(1 - scale) * L.cardH / 2 - CGFloat(k) * step
@@ -421,18 +494,34 @@ struct CourseDeckView: View {
                         opacity: max(0, 1 - 0.2 * k), dim: 0.12 * k, blur: CGFloat(0.7 * k))
     }
 
+    /// Where a card is while a finger is down. Finger moving left: the front card goes with it and the others come
+    /// forward. Finger moving right: the card at the back slides in from the left, over the others.
+    private func placement(slot sl: Int, _ L: Layout) -> (x: CGFloat, eff: Double) {
+        let n = courses.count
+        if n < 2 { return (dragX * 0.25, 0) }
+        let p = min(abs(Double(dragX)) / Double(L.W * 0.6), 1)
+        if dragX < 0 {
+            return sl == 0 ? (dragX, 0) : (0, max(Double(sl) - p, 0))
+        }
+        if dragX > 0 {
+            return sl == n - 1 ? (-L.W * CGFloat(1 - p), Double(n - 1) * (1 - p)) : (0, Double(sl) + p)
+        }
+        return (0, Double(sl))
+    }
+
     @ViewBuilder private func cardView(_ i: Int, _ c: Course, _ L: Layout, _ t: Double, _ bob: CGFloat) -> some View {
         let sl = slot(of: i)
-        if sl <= 4 {
+        let n = courses.count
+        if sl <= 5 || sl == n - 1 {
             let isFront = sl == 0
-            let progress = min(abs(Double(dragX)) / Double(L.W * 0.5), 1)
-            let eff = isFront ? 0.0 : max(Double(sl) - progress, 0)
-            let lk = look(eff, L)
+            let pl = placement(slot: sl, L)
+            let lk = look(pl.eff, L)
             let pal = finish(i)
+            let mover = isFront && dragX < 0
             let sway = isFront ? sin(t * 0.55) * 7 : sin(t * 0.55 + Double(sl)) * 3
             let sway2 = isFront ? sin(t * 0.4 + 1) * 3 : 0
-            let tiltDrag = isFront ? Double(dragX) / Double(L.W) * 40 : 0
-            let hidden = hiddenID == c.id
+            let tiltDrag = mover ? Double(dragX) / Double(L.W) * 40 : 0
+            let spin = mover ? Double(dragX) / Double(L.W) * 14 : 0
             DeckCardFace(pal: pal, code: c.headerCode, label: label(c), value: value(c), sheen: sin(t * 0.55) * 0.8)
                 .frame(width: L.cardW, height: L.cardH)
                 .scaleEffect(lk.scale)
@@ -440,13 +529,12 @@ struct CourseDeckView: View {
                 .blur(radius: lk.blur)
                 .rotation3DEffect(.degrees(sway + tiltDrag), axis: (x: 0, y: 1, z: 0), perspective: 0.5)
                 .rotation3DEffect(.degrees(sway2), axis: (x: 1, y: 0, z: 0), perspective: 0.5)
-                .rotationEffect(.degrees(lk.rot + (isFront ? Double(dragX) / Double(L.W) * 14 : 0)))
+                .rotationEffect(.degrees(lk.rot + spin))
                 .shadow(color: Color.black.opacity(isFront ? 0.45 : 0.25), radius: isFront ? 18 : 8, y: 10)
-                .offset(x: L.cardX - L.cardW / 2 + lk.dx + (isFront ? dragX : 0),
+                .offset(x: L.cardX - L.cardW / 2 + lk.dx + pl.x,
                         y: L.cardTop + lk.dy + (isFront ? bob : bob * 0.5))
-                .opacity(hidden ? 0 : lk.opacity)
-                .zIndex(Double(courses.count - sl))
-                .animation(.spring(response: 0.62, dampingFraction: 0.78), value: front)
+                .opacity(lk.opacity)
+                .zIndex(Double(n - sl))
                 .onTapGesture { if isFront { onOpen(c) } }
                 .contextMenu {
                     if isFront {
@@ -479,30 +567,26 @@ struct CourseDeckView: View {
             }
     }
 
-    /// Swipe left: the front card flies off and slips to the back of the stack, the next one comes forward.
-    /// Swipe right: the card at the back comes forward again (the way back).
+    private let backSpring = Animation.spring(response: 0.72, dampingFraction: 0.8)
+
+    /// Right to left: the front card slides out to the left, then travels round behind the stack to the back while the
+    /// next one comes forward. Left to right: the card at the back slides in from the left and takes the front.
     private func advance(toRight: Bool, _ L: Layout) {
         let n = courses.count
         busy = true
         if !toRight {
-            let id = courses[front % n].id
-            withAnimation(.easeIn(duration: 0.2)) { dragX = -L.W * 1.15 }
+            withAnimation(.easeIn(duration: 0.2)) { dragX = -L.W * 1.05 }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                var t = Transaction()
-                t.disablesAnimations = true
-                withTransaction(t) { hiddenID = id; dragX = 0 }
-                DispatchQueue.main.async {
-                    let next = (front + 1) % n
-                    goTo(next)
-                    withAnimation(.spring(response: 0.62, dampingFraction: 0.78)) { front = next; hiddenID = nil }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { busy = false }
-                }
+                let next = (front + 1) % n
+                goTo(next)
+                withAnimation(backSpring) { front = next; dragX = 0 }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { busy = false }
             }
         } else {
             let prev = (front - 1 + n) % n
             goTo(prev)
-            withAnimation(.spring(response: 0.62, dampingFraction: 0.78)) { dragX = 0; front = prev }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { busy = false }
+            withAnimation(backSpring) { front = prev; dragX = 0 }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { busy = false }
         }
     }
 
@@ -535,7 +619,7 @@ struct CourseDeckView: View {
                 // top row: mark and name left, count right
                 HStack(spacing: 7) {
                     CrestMark().fill(Color.white).frame(width: 15, height: 12)
-                    Text("iTa\u{2019}leem").font(.system(size: 13, weight: .semibold)).foregroundColor(.white)
+                    Text("iTa\u{2019}leem").font(deckFont(13)).foregroundColor(.white)
                     Spacer(minLength: 0)
                     Text("\(courses.count) subjects").font(mono(10)).foregroundColor(Color.white.opacity(0.6))
                 }
@@ -551,7 +635,7 @@ struct CourseDeckView: View {
                 .padding(.leading, 20).offset(y: L.top + 52)
 
                 Text("Swipe the card to bring the next subject forward. Tap it to open.")
-                    .font(.system(size: 10.5)).lineSpacing(2).multilineTextAlignment(.trailing)
+                    .font(deckFont(10.5, bold: false)).lineSpacing(2).multilineTextAlignment(.trailing)
                     .foregroundColor(Color.white.opacity(0.68))
                     .frame(width: 150, alignment: .trailing)
                     .frame(width: L.W - 20, alignment: .trailing)
@@ -563,13 +647,23 @@ struct CourseDeckView: View {
                         .font(mono(8)).tracking(0.8).foregroundColor(Color.white.opacity(0.5))
                         .padding(.horizontal, 5).padding(.vertical, 2)
                         .overlay(Rectangle().stroke(Color.white.opacity(0.25), lineWidth: 0.6))
-                    Text(c.subjectName)
-                        .font(.system(size: 36, weight: .semibold)).tracking(-1.3)
-                        .foregroundColor(.white)
-                        .lineLimit(2).minimumScaleFactor(0.55).lineSpacing(-4)
-                        .frame(width: L.W - 40, alignment: .leading)
-                        .id(c.id)
-                        .transition(.opacity)
+                    HStack(alignment: .top, spacing: 8) {
+                        Text(c.subjectName)
+                            .font(deckFont(34)).tracking(-1.2)
+                            .foregroundColor(.white)
+                            .lineLimit(2).minimumScaleFactor(0.55).lineSpacing(-4)
+                        Text(c.coverTags(timetable: timetable.data).first ?? "Public")
+                            .font(deckFont(10)).foregroundColor(.white)
+                            .padding(.horizontal, 8).padding(.vertical, 3)
+                            .background(Color.white.opacity(0.16))
+                            .overlay(Capsule().stroke(Color.white.opacity(0.3), lineWidth: 0.6))
+                            .clipShape(Capsule())
+                            .padding(.top, 6)
+                            .fixedSize()
+                    }
+                    .frame(width: L.W - 40, alignment: .leading)
+                    .id(c.id)
+                    .transition(.opacity)
                 }
                 .padding(.leading, 20)
                 .offset(y: L.headlineBottom - 92)
@@ -598,9 +692,9 @@ struct CourseDeckView: View {
                     DeckCardFace(pal: pal, code: "", label: "", value: "")
                         .frame(width: 26, height: 36)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(c.headerCode).font(.system(size: 10, weight: .semibold)).foregroundColor(.white)
+                        Text(c.headerCode).font(deckFont(10)).foregroundColor(.white)
                         Text("\(pal.name.uppercased()) \u{00B7} \(label(c))").font(mono(7.5)).foregroundColor(Color.white.opacity(0.55))
-                        Text("Open \u{203A}").font(.system(size: 9, weight: .semibold)).foregroundColor(.black)
+                        Text("Open \u{203A}").font(deckFont(9)).foregroundColor(.black)
                             .padding(.horizontal, 8).padding(.vertical, 3)
                             .background(Color.white).clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
                     }
