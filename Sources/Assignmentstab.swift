@@ -68,6 +68,7 @@ enum AssignmentMark: String, CaseIterable {
     case groupmate = "Submitted by Groupmate"
 
     static func key(uid: Int, id: Int) -> String { "assignment.mark.\(uid).\(id)" }
+    static func dateKey(for key: String) -> String { key + ".markedAt" }
     static let changed = Notification.Name("assignmentMarkChanged")
 }
 
@@ -78,6 +79,7 @@ struct AssignItem: Identifiable {
     let status: StatusResp?
 
     var mark: AssignmentMark?
+    var markedAt = 0
     var id: Int { a.id }
     var due: Int { a.duedate ?? 0 }
     var subStatus: String { status?.lastattempt?.shown?.status ?? "" }
@@ -85,8 +87,9 @@ struct AssignItem: Identifiable {
     var graded: Bool { status?.lastattempt?.gradingstatus == "graded" || !grade.isEmpty }
     var submitted: Bool { subStatus == "submitted" || graded }
     var complete: Bool { submitted || mark != nil }
-    /// The submission time reported by Moodle, or 0 if it is unknown.
+    /// Personal marks use the tap time. Moodle submissions use the recorded hand-in time.
     var submittedAt: Int {
+        if !submitted, mark != nil, markedAt > 0 { return markedAt }
         guard complete, let attempt = status?.lastattempt else { return 0 }
         let records = mark == .groupmate
             ? [attempt.teamsubmission, attempt.shown]
@@ -157,10 +160,10 @@ final class AssignmentsModel: ObservableObject {
                 if f == .all {   // placed by the day it was submitted, or else the day it was due
                     title = i.eventDate == 0 ? "No due date"
                         : Self.dayTitle.string(from: Date(timeIntervalSince1970: TimeInterval(i.eventDate)))
-                } else if f == .submitted {   // ordered by submission, so grouped by it: "Submitted <day>"
+                } else if f == .submitted {
                     let timestamp = i.submittedAt
                     title = timestamp > 0
-                        ? "Submitted " + Self.dayTitle.string(from: Date(timeIntervalSince1970: TimeInterval(timestamp)))
+                        ? Self.dayTitle.string(from: Date(timeIntervalSince1970: TimeInterval(timestamp)))
                         : "Submitted (date unavailable)"
                 }
                 if let last = out.last, last.0 == title { out[out.count - 1].1.append(i) } else { out.append((title, [i])) }
@@ -184,6 +187,7 @@ final class AssignmentsModel: ObservableObject {
             var item = original
             let key = AssignmentMark.key(uid: uid, id: item.id)
             item.mark = UserDefaults.standard.string(forKey: key).flatMap(AssignmentMark.init(rawValue:))
+            item.markedAt = UserDefaults.standard.integer(forKey: AssignmentMark.dateKey(for: key))
             return item
         }
     }

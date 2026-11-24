@@ -1702,9 +1702,11 @@ extension String {
 
 private struct AssignmentMarkMenu: View {
     @AppStorage private var value: String
+    @AppStorage private var markedAt: Int
 
     init(key: String) {
         _value = AppStorage(wrappedValue: "", key)
+        _markedAt = AppStorage(wrappedValue: 0, AssignmentMark.dateKey(for: key))
     }
 
     var body: some View {
@@ -1724,6 +1726,7 @@ private struct AssignmentMarkMenu: View {
     }
 
     private func set(_ label: String) {
+        markedAt = label.isEmpty ? 0 : Int(Date().timeIntervalSince1970)
         value = label
         NotificationCenter.default.post(name: AssignmentMark.changed, object: nil)
     }
