@@ -19,6 +19,10 @@ struct RootView: View {
     // Kept here (not inside the tabs) so they survive when the tabs are rebuilt for a new theme:
     // the selected tab and, in Others, the screen that is open (Others > Themes)
     @ObservedObject private var themes = ThemeStore.shared
+    @ObservedObject private var notifications = NotificationManager.shared
+    @State private var tasksPath: [Int] = []
+    @State private var coursesPath: [Bool] = []
+    @State private var navigationReset = UUID()
     @State private var tab = 0
     @State private var othersPath: [OthersRoute] = []
     /// The tab selection; tapping the tab that is already open sends Courses back to its main list
@@ -54,17 +58,61 @@ struct RootView: View {
         return true
     }
 
+    private func routeNotification(_ id: String) {
+        ToolPresenter.shared.close()
+        MessagesPresenter.shared.isOpen = false
+        if id.hasPrefix("due.assign."), let assignment = Int(id.dropFirst("due.assign.".count)) {
+            tab = 1
+            navigationReset = UUID()
+            tasksPath = [assignment]
+        } else if id.hasPrefix("due.todo.") {
+            tab = 0
+            ToolPresenter.shared.open(.todo)
+        } else if id.hasPrefix("daily.class.") {
+            tab = 0
+            coursesPath = [true]
+        } else if id.hasPrefix("msg.") {
+            MessagesPresenter.shared.open()
+        } else if id.hasPrefix("alert.") {
+            navigationReset = UUID()
+            tab = 2
+        } else if id == "sync.sent" {
+            othersPath = []
+            tab = 4
+        } else if id.hasPrefix("queue.") {
+            tasksPath = []
+            navigationReset = UUID()
+            tab = 1
+        }
+    }
+
     var body: some View {
         TabView(selection: selection) {
-            NavigationStack { CoursesHome() }   // My courses, swipe right for Noticeboard (DailyInfoView.swift)
+            NavigationStack(path: $coursesPath) {
+                CoursesHome().navigationDestination(for: Bool.self) { _ in DailyInfoView() }
+            }   // My courses, swipe right for Noticeboard (DailyInfoView.swift)
                 .background(TabBadgeTint(color: Theme.uiAccent, text: Theme.uiOnAccent))   // accent badges (TabBadgeTint.swift)
                 .tabItem { Label("Courses", systemImage: "books.vertical") }
                 .tag(0)
-            NavigationStack { AssignmentsTabView(model: assignments) }
+            NavigationStack(path: $tasksPath) {
+                AssignmentsTabView(model: assignments)
+                    .navigationDestination(for: Int.self) { id in
+                        if let item = assignments.items.first(where: { $0.id == id }) {
+                            AssignmentView(courseId: item.courseId, module: item.module)
+                        } else if assignments.loading {
+                            ProgressView().tint(Theme.accent)
+                        } else {
+                            Text(assignments.error ?? "This assignment is unavailable.")
+                                .foregroundColor(Theme.muted).padding()
+                        }
+                    }
+            }
+            .id(navigationReset)
                 .tabItem { Label("Tasks", systemImage: "checklist") }
                 .badge(assignments.badgeCount)   // to-do items due inside the range chosen in the tab
                 .tag(1)
             NavigationStack { AlertsView(badge: notifs) }
+                .id(navigationReset)
                 .tabItem { Label("Alerts", systemImage: "bell") }
                 .badge(notifs.count)   // unread notifications
                 .tag(2)
@@ -119,6 +167,16 @@ struct RootView: View {
         .onReceive(NotificationCenter.default.publisher(for: .offlineQueueSent)) { _ in
             guard let uid = app.site?.userid else { return }
             Task { await assignments.load(uid: uid) }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: AssignmentMark.changed)) { _ in
+            guard let uid = app.site?.userid else { return }
+            assignments.items = assignments.marked(assignments.items, uid: uid)
+            NotificationManager.shared.scheduleAssignments(assignments.items)
+        }
+        .task(id: notifications.tappedIdentifier) {
+            guard let identifier = notifications.tappedIdentifier else { return }
+            notifications.tappedIdentifier = nil
+            routeNotification(identifier)
         }
         .onReceive(NotificationCenter.default.publisher(for: .openTasksTab)) { _ in
             tab = 1
@@ -584,7 +642,6 @@ struct DefaultCover: View {
     @ObservedObject private var timetable = TimetableManager.shared
     @AppStorage("ui.preferOldCourseCards") private var preferOldCourseCards = false
     @AppStorage("ui.darkerCourseCardWallpaper") private var darkerCourseCardWallpaper = false
-    @AppStorage(BicsDisplayFont.cleanKey) private var cleanFont = false   // redraws when the font option changes
     @AppStorage(CoursePreviewStore.strengthKey) private var titleStrength = CoursePreviewStore.defaultStrength
 
     private static let darkerCovers: [(UInt32, UInt32)] = [
@@ -657,7 +714,7 @@ struct DefaultCover: View {
                     HStack(spacing: 6) {
                         ForEach(Array(tags.enumerated()), id: \.offset) { idx, tag in
                             if idx > 0 {
-                                Text("•")
+                                Text("â€¢")
                                     .font(.system(size: 13, weight: .medium))
                                     .foregroundColor(titleColor.opacity(0.8))
                             }
@@ -857,8 +914,8 @@ struct ProfileView: View {
 
     private var savedLoginSubtitle: String {
         guard SavedLogin.shared.hasSaved else { return "Sign in again automatically" }
-        if SavedLogin.shared.badCredentials { return "Password rejected · update it" }
-        return SavedLogin.shared.enabled ? "On · \(SavedLoginStore.load()?.user ?? "")" : "Saved · automatic sign-in off"
+        if SavedLogin.shared.badCredentials { return "Password rejected Â· update it" }
+        return SavedLogin.shared.enabled ? "On Â· \(SavedLoginStore.load()?.user ?? "")" : "Saved Â· automatic sign-in off"
     }
 
     private func sectionTitle(_ t: String) -> some View {
@@ -907,18 +964,18 @@ struct ProfileView: View {
                     }
                     NavigationLink { AutoAttendanceView() } label: {
                         ProfileRow(icon: "checkmark.circle", title: "Auto Attendance",
-                                   subtitle: autoAtt.state.master ? "On · \(autoAtt.enabledCount) subject\(autoAtt.enabledCount == 1 ? "" : "s")" : "Off",
+                                   subtitle: autoAtt.state.master ? "On Â· \(autoAtt.enabledCount) subject\(autoAtt.enabledCount == 1 ? "" : "s")" : "Off",
                                    showLine: true)
                     }
                     NavigationLink { TimetableView() } label: {
                         ProfileRow(icon: "calendar", title: "Class Timetable",
-                                   subtitle: timetable.data.map { "\($0.title) · \($0.codes.count) subjects" } ?? "Upload your registration slip PDF",
+                                   subtitle: timetable.data.map { "\($0.title) Â· \($0.codes.count) subjects" } ?? "Upload your registration slip PDF",
                                    showLine: true)
                     }
                     NavigationLink { StudyPlanTrackerView() } label: {
                         ProfileRow(icon: "calendar.badge.checkmark", title: "Study Plan Tracker",
                                    subtitle: studyPlan.plan == nil ? "Upload your study plan PDF"
-                                       : "\(Int((studyPlan.percent * 100).rounded()))% · \(Int(studyPlan.creditsTaken)) of \(Int(studyPlan.totalRequired)) credits",
+                                       : "\(Int((studyPlan.percent * 100).rounded()))% Â· \(Int(studyPlan.creditsTaken)) of \(Int(studyPlan.totalRequired)) credits",
                                    showLine: true)
                     }
                     NavigationLink { SemesterResourcesView() } label: {

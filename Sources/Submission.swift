@@ -1059,6 +1059,9 @@ struct AssignmentView: View {
                 if let error { Text(error).font(Theme.font(.footnote)).foregroundColor(Theme.muted) }
                 if let a = assign {
                     infoCard(a)
+                    if uid > 0 && !AssignItem(a: a, courseId: courseId, courseName: "", status: status).submitted {
+                        AssignmentMarkMenu(key: AssignmentMark.key(uid: uid, id: a.id))
+                    }
                     if let intro = a.intro?.linkedText, !intro.characters.isEmpty {
                         Text(intro).foregroundColor(Theme.txt).tint(Theme.accent)
                             .padding(16).frame(maxWidth: .infinity, alignment: .leading)
@@ -1694,5 +1697,34 @@ extension String {
             out += AttributedString(t.substring(from: pos))
         }
         return out
+    }
+}
+
+private struct AssignmentMarkMenu: View {
+    @AppStorage private var value: String
+
+    init(key: String) {
+        _value = AppStorage(wrappedValue: "", key)
+    }
+
+    var body: some View {
+        Menu {
+            ForEach(AssignmentMark.allCases, id: \.self) { mark in
+                Button(mark.rawValue) { set(mark.rawValue) }
+            }
+            if !value.isEmpty { Button("Clear mark") { set("") } }
+        } label: {
+            Label(value.isEmpty ? "Mark as done" : value,
+                  systemImage: value.isEmpty ? "circle" : "checkmark.circle.fill")
+                .font(Theme.font(.subheadline).weight(.semibold))
+                .foregroundColor(value.isEmpty ? Theme.accent : Tone.green)
+                .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+                .glowCard()
+        }
+    }
+
+    private func set(_ label: String) {
+        value = label
+        NotificationCenter.default.post(name: AssignmentMark.changed, object: nil)
     }
 }

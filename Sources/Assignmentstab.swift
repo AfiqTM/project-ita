@@ -63,33 +63,43 @@ enum AssignRange: String, CaseIterable, Identifiable {
 
 // MARK: - Model
 
+enum AssignmentMark: String, CaseIterable {
+    case done = "Done"
+    case groupmate = "Submitted by Groupmate"
+
+    static func key(uid: Int, id: Int) -> String { "assignment.mark.\(uid).\(id)" }
+    static let changed = Notification.Name("assignmentMarkChanged")
+}
+
 struct AssignItem: Identifiable {
     let a: Assign
     let courseId: Int
     let courseName: String
     let status: StatusResp?
 
+    var mark: AssignmentMark?
     var id: Int { a.id }
     var due: Int { a.duedate ?? 0 }
     var subStatus: String { status?.lastattempt?.shown?.status ?? "" }
     var grade: String { (status?.feedback?.gradefordisplay ?? "").plainText }
     var graded: Bool { status?.lastattempt?.gradingstatus == "graded" || !grade.isEmpty }
     var submitted: Bool { subStatus == "submitted" || graded }
+    var complete: Bool { submitted || mark != nil }
     /// When the student last handed it in (0 = not submitted, or the time isn't known)
     var submittedAt: Int { submitted ? (status?.lastattempt?.shown?.timemodified ?? 0) : 0 }
     /// The day an item sits under in "All": the day it was submitted, else its due day (so a missed one shares a day
     /// with what was handed in on that day). 0 = nothing to place it by.
     var eventDate: Int { submittedAt > 0 ? submittedAt : due }
 
-    func overdue(_ now: Int) -> Bool { !submitted && due > 0 && due < now }
+    func overdue(_ now: Int) -> Bool { !complete && due > 0 && due < now }
 
     // To do = not submitted, not overdue, due date inside the chosen window.
     // Items without a due date only appear under "All".
     func matches(_ f: AssignFilter, now: Int, limit: Int) -> Bool {
         switch f {
-        case .todo: return !submitted && !overdue(now) && due > 0 && due <= limit
+        case .todo: return !complete && !overdue(now) && due > 0 && due <= limit
         case .overdue: return overdue(now)
-        case .submitted: return submitted
+        case .submitted: return complete
         case .all: return true
         }
     }
@@ -141,7 +151,7 @@ final class AssignmentsModel: ObservableObject {
                 } else if f == .submitted {   // ordered by submission, so grouped by it: "Submitted <day>"
                     title = i.submittedAt > 0
                         ? "Submitted " + Self.dayTitle.string(from: Date(timeIntervalSince1970: TimeInterval(i.submittedAt)))
-                        : "Submitted"
+                        : "Completed"
                 }
                 if let last = out.last, last.0 == title { out[out.count - 1].1.append(i) } else { out.append((title, [i])) }
             }
@@ -159,6 +169,15 @@ final class AssignmentsModel: ObservableObject {
         }
         TasksStore.save(TasksSnapshot(items: todoTasks, updated: Date()))
     }
+    func marked(_ list: [AssignItem], uid: Int) -> [AssignItem] {
+        list.map { original in
+            var item = original
+            let key = AssignmentMark.key(uid: uid, id: item.id)
+            item.mark = UserDefaults.standard.string(forKey: key).flatMap(AssignmentMark.init(rawValue:))
+            return item
+        }
+    }
+
     private var running = false
 
     init() {
@@ -259,9 +278,9 @@ final class AssignmentsModel: ObservableObject {
                 }
                 out.append(contentsOf: part)
             }
-            items = out
+            items = marked(out, uid: uid)
             if !OfflineCache.cacheOnly {
-                NotificationManager.shared.scheduleAssignments(out)   // not from the first paint: statuses may be missing
+                NotificationManager.shared.scheduleAssignments(items)   // not from the first paint: statuses may be missing
                 syncWidget()
             }
         } catch {
@@ -418,6 +437,8 @@ struct AssignmentsTabView: View {
             StatusPill(text: i.grade.isEmpty ? "Graded" : "Graded: \(i.grade)", color: Tone.blue)
         } else if i.submitted {
             StatusPill(text: "Submitted", color: Tone.green)
+        } else if let mark = i.mark {
+            StatusPill(text: mark.rawValue, color: Tone.green)
         } else if i.overdue(now) {
             StatusPill(text: "Overdue", color: Tone.red)
         } else if i.subStatus == "draft" {

@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import UserNotifications
 import BackgroundTasks
@@ -10,7 +11,7 @@ import BackgroundTasks
 //     plus a BGAppRefreshTask in the background, whose timing iOS decides)
 
 @MainActor
-final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
+final class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterDelegate {
     static let shared = NotificationManager()
 
     /// Must match an entry in Info.plist > "Permitted background task scheduler identifiers"
@@ -42,13 +43,22 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
         handler([.banner, .list, .sound])
     }
 
+    @Published var tappedIdentifier: String?
+
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                            didReceive response: UNNotificationResponse) async {
+        guard response.actionIdentifier == UNNotificationDefaultActionIdentifier else { return }
+        let identifier = response.notification.request.identifier
+        await MainActor.run { self.tappedIdentifier = identifier }
+    }
+
     // MARK: 1 + 2. Deadline reminders
 
     func scheduleTodos(_ items: [TodoItem]) {
         let entries = items.filter { $0.completedAt == nil }.map {
             Entry(id: "todo.\($0.id.uuidString)",
                   title: "To-do due within 24 hours",
-                  body: [$0.title, $0.courseName].compactMap { $0 }.joined(separator: " · "),
+                  body: [$0.title, $0.courseName].compactMap { $0 }.joined(separator: " Â· "),
                   due: $0.due)
         }
         Task { await schedule(prefix: "due.todo.", entries) }
@@ -56,11 +66,11 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
 
     func scheduleAssignments(_ items: [AssignItem]) {
         let entries = items
-            .filter { $0.status != nil && !$0.submitted && $0.due > 0 }   // status == nil: couldn't load, don't guess
+            .filter { $0.status != nil && !$0.complete && $0.due > 0 }   // status == nil: couldn't load, don't guess
             .map {
                 Entry(id: "assign.\($0.a.id)",
                       title: "Assignment due within 24 hours",
-                      body: [$0.a.name, $0.courseName].filter { !$0.isEmpty }.joined(separator: " · "),
+                      body: [$0.a.name, $0.courseName].filter { !$0.isEmpty }.joined(separator: " Â· "),
                       due: Date(timeIntervalSince1970: TimeInterval($0.due)))
             }
         Task { await schedule(prefix: "due.assign.", entries) }
@@ -93,7 +103,7 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
             }
             let c = UNMutableNotificationContent()
             c.title = e.title
-            c.body = e.body + " · due " + e.due.formatted(date: .abbreviated, time: .shortened)
+            c.body = e.body + " Â· due " + e.due.formatted(date: .abbreviated, time: .shortened)
             c.sound = .default
             let req = UNNotificationRequest(identifier: prefix + e.id.split(separator: ".", maxSplits: 1).last.map(String.init)!,
                                             content: c,
@@ -138,19 +148,19 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
                 switch it.kind {
                 case .cancelled:
                     c.title = "Class cancelled"
-                    c.body = "\(it.course) · was at \(time). No need to go."
+                    c.body = "\(it.course) Â· was at \(time). No need to go."
                 case .online:
                     c.title = "Online class in 1 hour"
-                    c.body = "\(it.course) · \(time)" + (it.venue.map { " · \($0)" } ?? "")
+                    c.body = "\(it.course) Â· \(time)" + (it.venue.map { " Â· \($0)" } ?? "")
                 case .venue:
-                    c.title = "Class in 1 hour · new venue"
-                    c.body = "\(it.course) · \(time)" + (it.venue.map { " · \($0)" } ?? "")
+                    c.title = "Class in 1 hour Â· new venue"
+                    c.body = "\(it.course) Â· \(time)" + (it.venue.map { " Â· \($0)" } ?? "")
                 case .rescheduled:
                     c.title = "Rescheduled class in 1 hour"
-                    c.body = "\(it.course) · \(time)" + (it.venue.map { " · \($0)" } ?? "")
+                    c.body = "\(it.course) Â· \(time)" + (it.venue.map { " Â· \($0)" } ?? "")
                 default:
                     c.title = "Class in 1 hour"
-                    c.body = "\(it.course) · \(time)"
+                    c.body = "\(it.course) Â· \(time)"
                 }
                 c.sound = .default
                 let fire = it.start.addingTimeInterval(-3600).timeIntervalSince(Date())

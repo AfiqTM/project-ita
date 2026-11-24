@@ -416,9 +416,8 @@ enum RocksFont {
 /// MADE Coachella Bold (Fonts/MADECoachella-Bold.otf): display serif font used for course codes on course card covers.
 enum BicsDisplayFont {
     static let name = "MADECoachella-Bold"
-    /// BICS Display Clean v4 (Fonts/BICS-Display-Clean-v4.ttf): an alternative face, switched on in Dev mode settings
+    /// BICS Display Clean v4 (Fonts/BICS-Display-Clean-v4.ttf): the default course-code face
     static let cleanName = "BICSDisplay-Regular"
-    static let cleanKey = "dev.bicsCleanFont"
 
     static func register() {
         if let url = Bundle.main.url(forResource: name, withExtension: "otf") {
@@ -429,9 +428,8 @@ enum BicsDisplayFont {
         }
     }
 
-    /// The face in use: MADE Coachella, or Clean v4 when it is switched on (and installed)
     static var activeName: String {
-        UserDefaults.standard.bool(forKey: cleanKey) && UIFont(name: cleanName, size: 12) != nil ? cleanName : name
+        UIFont(name: cleanName, size: 12) != nil ? cleanName : name
     }
 
     static var available: Bool { UIFont(name: activeName, size: 12) != nil }

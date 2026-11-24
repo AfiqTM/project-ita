@@ -285,7 +285,6 @@ struct CourseHeaderView: View {
     @StateObject private var lecturers: CourseLecturers
     @ObservedObject private var themes = ThemeStore.shared
     @AppStorage("ui.preferOldCourseCards") private var preferOldCourseCards = false
-    @AppStorage(BicsDisplayFont.cleanKey) private var cleanFont = false   // redraws when the font option changes
 
     init(course: Course) {
         self.course = course
