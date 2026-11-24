@@ -714,7 +714,7 @@ struct DefaultCover: View {
                     HStack(spacing: 6) {
                         ForEach(Array(tags.enumerated()), id: \.offset) { idx, tag in
                             if idx > 0 {
-                                Text("â€¢")
+                                Text("•")
                                     .font(.system(size: 13, weight: .medium))
                                     .foregroundColor(titleColor.opacity(0.8))
                             }
@@ -914,8 +914,8 @@ struct ProfileView: View {
 
     private var savedLoginSubtitle: String {
         guard SavedLogin.shared.hasSaved else { return "Sign in again automatically" }
-        if SavedLogin.shared.badCredentials { return "Password rejected Â· update it" }
-        return SavedLogin.shared.enabled ? "On Â· \(SavedLoginStore.load()?.user ?? "")" : "Saved Â· automatic sign-in off"
+        if SavedLogin.shared.badCredentials { return "Password rejected · update it" }
+        return SavedLogin.shared.enabled ? "On · \(SavedLoginStore.load()?.user ?? "")" : "Saved · automatic sign-in off"
     }
 
     private func sectionTitle(_ t: String) -> some View {
@@ -964,18 +964,18 @@ struct ProfileView: View {
                     }
                     NavigationLink { AutoAttendanceView() } label: {
                         ProfileRow(icon: "checkmark.circle", title: "Auto Attendance",
-                                   subtitle: autoAtt.state.master ? "On Â· \(autoAtt.enabledCount) subject\(autoAtt.enabledCount == 1 ? "" : "s")" : "Off",
+                                   subtitle: autoAtt.state.master ? "On · \(autoAtt.enabledCount) subject\(autoAtt.enabledCount == 1 ? "" : "s")" : "Off",
                                    showLine: true)
                     }
                     NavigationLink { TimetableView() } label: {
                         ProfileRow(icon: "calendar", title: "Class Timetable",
-                                   subtitle: timetable.data.map { "\($0.title) Â· \($0.codes.count) subjects" } ?? "Upload your registration slip PDF",
+                                   subtitle: timetable.data.map { "\($0.title) · \($0.codes.count) subjects" } ?? "Upload your registration slip PDF",
                                    showLine: true)
                     }
                     NavigationLink { StudyPlanTrackerView() } label: {
                         ProfileRow(icon: "calendar.badge.checkmark", title: "Study Plan Tracker",
                                    subtitle: studyPlan.plan == nil ? "Upload your study plan PDF"
-                                       : "\(Int((studyPlan.percent * 100).rounded()))% Â· \(Int(studyPlan.creditsTaken)) of \(Int(studyPlan.totalRequired)) credits",
+                                       : "\(Int((studyPlan.percent * 100).rounded()))% · \(Int(studyPlan.creditsTaken)) of \(Int(studyPlan.totalRequired)) credits",
                                    showLine: true)
                     }
                     NavigationLink { SemesterResourcesView() } label: {

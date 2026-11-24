@@ -58,7 +58,7 @@ final class NotificationManager: NSObject, ObservableObject, UNUserNotificationC
         let entries = items.filter { $0.completedAt == nil }.map {
             Entry(id: "todo.\($0.id.uuidString)",
                   title: "To-do due within 24 hours",
-                  body: [$0.title, $0.courseName].compactMap { $0 }.joined(separator: " Â· "),
+                  body: [$0.title, $0.courseName].compactMap { $0 }.joined(separator: " · "),
                   due: $0.due)
         }
         Task { await schedule(prefix: "due.todo.", entries) }
@@ -70,7 +70,7 @@ final class NotificationManager: NSObject, ObservableObject, UNUserNotificationC
             .map {
                 Entry(id: "assign.\($0.a.id)",
                       title: "Assignment due within 24 hours",
-                      body: [$0.a.name, $0.courseName].filter { !$0.isEmpty }.joined(separator: " Â· "),
+                      body: [$0.a.name, $0.courseName].filter { !$0.isEmpty }.joined(separator: " · "),
                       due: Date(timeIntervalSince1970: TimeInterval($0.due)))
             }
         Task { await schedule(prefix: "due.assign.", entries) }
@@ -103,7 +103,7 @@ final class NotificationManager: NSObject, ObservableObject, UNUserNotificationC
             }
             let c = UNMutableNotificationContent()
             c.title = e.title
-            c.body = e.body + " Â· due " + e.due.formatted(date: .abbreviated, time: .shortened)
+            c.body = e.body + " · due " + e.due.formatted(date: .abbreviated, time: .shortened)
             c.sound = .default
             let req = UNNotificationRequest(identifier: prefix + e.id.split(separator: ".", maxSplits: 1).last.map(String.init)!,
                                             content: c,
@@ -148,19 +148,19 @@ final class NotificationManager: NSObject, ObservableObject, UNUserNotificationC
                 switch it.kind {
                 case .cancelled:
                     c.title = "Class cancelled"
-                    c.body = "\(it.course) Â· was at \(time). No need to go."
+                    c.body = "\(it.course) · was at \(time). No need to go."
                 case .online:
                     c.title = "Online class in 1 hour"
-                    c.body = "\(it.course) Â· \(time)" + (it.venue.map { " Â· \($0)" } ?? "")
+                    c.body = "\(it.course) · \(time)" + (it.venue.map { " · \($0)" } ?? "")
                 case .venue:
-                    c.title = "Class in 1 hour Â· new venue"
-                    c.body = "\(it.course) Â· \(time)" + (it.venue.map { " Â· \($0)" } ?? "")
+                    c.title = "Class in 1 hour · new venue"
+                    c.body = "\(it.course) · \(time)" + (it.venue.map { " · \($0)" } ?? "")
                 case .rescheduled:
                     c.title = "Rescheduled class in 1 hour"
-                    c.body = "\(it.course) Â· \(time)" + (it.venue.map { " Â· \($0)" } ?? "")
+                    c.body = "\(it.course) · \(time)" + (it.venue.map { " · \($0)" } ?? "")
                 default:
                     c.title = "Class in 1 hour"
-                    c.body = "\(it.course) Â· \(time)"
+                    c.body = "\(it.course) · \(time)"
                 }
                 c.sound = .default
                 let fire = it.start.addingTimeInterval(-3600).timeIntervalSince(Date())
