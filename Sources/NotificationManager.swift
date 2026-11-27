@@ -48,7 +48,9 @@ final class NotificationManager: NSObject, ObservableObject, UNUserNotificationC
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
                                             didReceive response: UNNotificationResponse) async {
         guard response.actionIdentifier == UNNotificationDefaultActionIdentifier else { return }
-        let identifier = response.notification.request.identifier
+        let request = response.notification.request
+        let url = request.content.userInfo[AlertActivityDestination.notificationKey] as? String
+        let identifier = url.map { "due.activity.\($0)" } ?? request.identifier
         await MainActor.run { self.tappedIdentifier = identifier }
     }
 
@@ -260,7 +262,10 @@ final class NotificationManager: NSObject, ObservableObject, UNUserNotificationC
         for n in fresh.suffix(5) {
             let copy = AlertCopy(n)
             if copy.isFormatted {
-                await post(id: "alert.\(n.id)", title: copy.title, body: copy.message.plainText)
+                let activities = copy.activities
+                let destination = activities.count == 1 ? activities.first?.destination : nil
+                await post(id: "alert.\(n.id)", title: copy.title, body: copy.message.plainText,
+                           activityURL: destination?.url)
                 continue
             }
             // Moodle often sends the same sentence as both "subject" and "smallmessage":
@@ -303,10 +308,11 @@ final class NotificationManager: NSObject, ObservableObject, UNUserNotificationC
     /// A plain notification shown right away (used when offline changes have been sent)
     func notify(id: String, title: String, body: String) async { await post(id: id, title: title, body: body) }
 
-    private func post(id: String, title: String, body: String) async {
+    private func post(id: String, title: String, body: String, activityURL: URL? = nil) async {
         let c = UNMutableNotificationContent()
         c.title = title
         c.body = String(body.prefix(160))
+        if let activityURL { c.userInfo[AlertActivityDestination.notificationKey] = activityURL.absoluteString }
         c.sound = .default
         try? await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: id, content: c, trigger: nil))
     }

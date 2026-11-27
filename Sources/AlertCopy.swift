@@ -6,10 +6,13 @@ struct AlertCopy {
     var activities: [Activity] = []
     var isFormatted = true
 
-    struct Activity {
+    struct Activity: Identifiable {
+        var id: String { (href ?? "") + "|" + line }
         let name: String
         var course: String?
         var href: String?
+
+        var destination: AlertActivityDestination? { href.flatMap(AlertActivityDestination.init) }
 
         var line: String {
             let subject = course.map { Course.cleanSubject($0.replacingOccurrences(of: "_", with: " ")) }
@@ -34,8 +37,11 @@ struct AlertCopy {
             title = upcoming.count == 1 ? "You have an upcoming activity due" : "You have upcoming activities due"
             message = upcoming.map(\.line).joined(separator: "\n")
         } else if notification.component == "mod_forum" || subject.range(of: Self.coursePrefix, options: .regularExpression) != nil {
-            title = subject.isEmpty ? "Alert" : subject.replacingOccurrences(of: Self.coursePrefix, with: "$1:", options: .regularExpression)
-            message = original.replacingOccurrences(of: Self.postedInCourse, with: "$1", options: .regularExpression)
+            let headline = subject.replacingOccurrences(of: Self.coursePrefix, with: "$1:", options: .regularExpression)
+            let detail = original.replacingOccurrences(of: Self.postedInCourse, with: "$1", options: .regularExpression)
+            let announcement = detail.plainText.range(of: #"(?i)\bposted in\s+(?:Announcements|News forum)\s*:"#, options: .regularExpression) != nil
+            title = headline.isEmpty ? "Alert" : (announcement ? "New Announcement " + headline : headline)
+            message = Self.cleanAuthor(detail)
         } else {
             title = subject.isEmpty ? "Alert" : subject
             message = original
@@ -45,6 +51,18 @@ struct AlertCopy {
 
     private static let coursePrefix = #"^([A-Z]{2,6}\s*\d{3,4})(?:[_\s]+\d{1,3})?[_\s]+SEM\s*\d+\s*:"#
     private static let postedInCourse = #"(?i)(\bposted in\s+)[A-Z]{2,6}\s*\d{3,4}(?:[_\s]+\d{1,3})?[_\s]+SEM\s*\d+\s*:\s*"#
+
+    private static func cleanAuthor(_ message: String) -> String {
+        guard let posted = message.range(of: #"(?i)\s+posted in\s+"#, options: .regularExpression) else { return message }
+        let author = String(message[..<posted.lowerBound]).plainText
+            .replacingOccurrences(of: #"\s+\d+\s*$"#, with: "", options: .regularExpression)
+        guard !author.isEmpty else { return message }
+        let displayName = author == author.uppercased() ? author.capitalized : author
+        let escaped = displayName.replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+        return escaped + message[posted.lowerBound...]
+    }
 
     private static func upcoming(_ notification: Notif) -> [Activity] {
         for source in [notification.fullmessagehtml, notification.fullmessage, notification.smallmessage] {
@@ -81,5 +99,22 @@ struct AlertCopy {
             }
         }
         return result
+    }
+}
+
+struct AlertActivityDestination: Hashable {
+    static let notificationKey = "activityURL"
+    let cmid: Int
+    let url: URL
+
+    init?(_ href: String) {
+        guard let url = AppLinks.resolve(href),
+              url.scheme == Site.url.scheme, url.host == Site.url.host, url.port == Site.url.port,
+              url.path.hasPrefix("/mod/"), url.path.hasSuffix("/view.php"),
+              let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems,
+              let id = query.first(where: { $0.name == "id" })?.value.flatMap({ Int($0) }), id > 0
+        else { return nil }
+        self.cmid = id
+        self.url = url
     }
 }

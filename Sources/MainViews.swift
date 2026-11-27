@@ -8,6 +8,11 @@ extension Notification.Name {
     static let openTasksTab = Notification.Name("openTasksTab")
 }
 
+private enum TasksRoute: Hashable {
+    case assignment(Int)
+    case activity(AlertActivityDestination)
+}
+
 struct RootView: View {
     @EnvironmentObject var app: AppState
     @Environment(\.scenePhase) private var scenePhase
@@ -20,7 +25,7 @@ struct RootView: View {
     // the selected tab and, in Others, the screen that is open (Others > Themes)
     @ObservedObject private var themes = ThemeStore.shared
     @ObservedObject private var notifications = NotificationManager.shared
-    @State private var tasksPath: [Int] = []
+    @State private var tasksPath: [TasksRoute] = []
     @State private var coursesPath: [Bool] = []
     @State private var navigationReset = UUID()
     @State private var tab = 0
@@ -58,13 +63,20 @@ struct RootView: View {
         return true
     }
 
+    private func openTask(_ route: TasksRoute) {
+        tab = 1
+        navigationReset = UUID()
+        tasksPath = [route]
+    }
+
     private func routeNotification(_ id: String) {
         ToolPresenter.shared.close()
         MessagesPresenter.shared.isOpen = false
         if id.hasPrefix("due.assign."), let assignment = Int(id.dropFirst("due.assign.".count)) {
-            tab = 1
-            navigationReset = UUID()
-            tasksPath = [assignment]
+            openTask(.assignment(assignment))
+        } else if id.hasPrefix("due.activity."),
+                  let activity = AlertActivityDestination(String(id.dropFirst("due.activity.".count))) {
+            openTask(.activity(activity))
         } else if id.hasPrefix("due.todo.") {
             tab = 0
             ToolPresenter.shared.open(.todo)
@@ -86,6 +98,17 @@ struct RootView: View {
         }
     }
 
+    @ViewBuilder private func assignmentDestination(_ id: Int) -> some View {
+        if let item = assignments.items.first(where: { $0.id == id }) {
+            AssignmentView(courseId: item.courseId, module: item.module)
+        } else if assignments.loading {
+            ProgressView().tint(Theme.accent)
+        } else {
+            Text(assignments.error ?? "This assignment is unavailable.")
+                .foregroundColor(Theme.muted).padding()
+        }
+    }
+
     var body: some View {
         TabView(selection: selection) {
             NavigationStack(path: $coursesPath) {
@@ -96,22 +119,26 @@ struct RootView: View {
                 .tag(0)
             NavigationStack(path: $tasksPath) {
                 AssignmentsTabView(model: assignments)
-                    .navigationDestination(for: Int.self) { id in
-                        if let item = assignments.items.first(where: { $0.id == id }) {
-                            AssignmentView(courseId: item.courseId, module: item.module)
-                        } else if assignments.loading {
-                            ProgressView().tint(Theme.accent)
-                        } else {
-                            Text(assignments.error ?? "This assignment is unavailable.")
-                                .foregroundColor(Theme.muted).padding()
+                    .navigationDestination(for: TasksRoute.self) { route in
+                        switch route {
+                        case .activity(let activity):
+                            if let item = assignments.items.first(where: { $0.a.cmid == activity.cmid }) {
+                                AssignmentView(courseId: item.courseId, module: item.module)
+                            } else {
+                                ModuleLoaderView(cmid: activity.cmid, url: activity.url, title: "Activity")
+                            }
+                        case .assignment(let id):
+                            assignmentDestination(id)
                         }
                     }
             }
             .id(navigationReset)
                 .tabItem { Label("Tasks", systemImage: "checklist") }
-                .badge(assignments.badgeCount)   // to-do items due inside the range chosen in the tab
+                .badge(assignments.badgeCount)
                 .tag(1)
-            NavigationStack { AlertsView(badge: notifs) }
+            NavigationStack {
+                AlertsView(badge: notifs) { openTask(.activity($0)) }
+            }
                 .id(navigationReset)
                 .tabItem { Label("Alerts", systemImage: "bell") }
                 .badge(notifs.count)   // unread notifications
@@ -783,6 +810,9 @@ extension Notif {
 
 struct AlertsView: View {
     @ObservedObject var badge: NotifBadgeModel
+    let openActivity: (AlertActivityDestination) -> Void
+    @State private var activityChoices: [AlertCopy.Activity] = []
+    @State private var choosingActivity = false
     @EnvironmentObject var app: AppState
     @State private var items: [Notif] = []
     @State private var readIds: Set<Int> = []
@@ -804,7 +834,8 @@ struct AlertsView: View {
                 if let error { Text(error).font(Theme.font(.footnote)).foregroundColor(Theme.muted) }
                 ForEach(items) { n in
                     let copy = AlertCopy(n)
-                    let preview = alertPreview(copy)
+                    let preview = copy.activities.isEmpty ? copy.message.linkedText : AttributedString(copy.message)
+                    let activities = copy.activities.filter { $0.destination != nil }
                     let hasLinks = preview.runs.contains { $0.link != nil }
                     let message = Text(preview).font(Theme.font(.caption)).foregroundColor(Theme.muted).lineLimit(copy.activities.isEmpty ? 3 : nil)
                     let card = VStack(alignment: .leading, spacing: 4) {
@@ -817,9 +848,22 @@ struct AlertsView: View {
                     .contentShape(Rectangle())
 
                     VStack(alignment: .leading, spacing: 4) {
-                        if let d = n.discussionId {
+                        if !activities.isEmpty {
+                            Button {
+                                Task { await markRead(n) }
+                                if activities.count == 1, let destination = activities.first?.destination {
+                                    openActivity(destination)
+                                } else {
+                                    activityChoices = activities
+                                    choosingActivity = true
+                                }
+                            } label: {
+                                card.padding(14).contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        } else if let d = n.discussionId {
                             // Announcements / forum posts open inside the app, not the website
-                            NavigationLink { PostsView(discussionId: d, title: n.subject ?? "Announcement") } label: { card }
+                            NavigationLink { PostsView(discussionId: d, title: copy.title) } label: { card }
                                 .buttonStyle(.plain)
                                 .simultaneousGesture(TapGesture().onEnded { Task { await markRead(n) } })
                         } else if let cm = n.cmid {
@@ -837,7 +881,8 @@ struct AlertsView: View {
                         }
                         if hasLinks { message }
                     }
-                    .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(activities.isEmpty ? 14 : 0)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .background(isRead(n) ? Theme.bg : Theme.surface2)
                     .glowCard()
                 }
@@ -865,6 +910,13 @@ struct AlertsView: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
+        .confirmationDialog("Open activity", isPresented: $choosingActivity, titleVisibility: .visible) {
+            ForEach(activityChoices) { activity in
+                Button(activity.line) {
+                    if let destination = activity.destination { openActivity(destination) }
+                }
+            }
+        }
         .animation(.easeInOut(duration: 0.2), value: unread > 0)
         .refreshable { await load() }
         .task {
@@ -873,22 +925,6 @@ struct AlertsView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .offlineBackOnline)) { _ in Task { await load() } }
         .onFreshData { await load() }
-    }
-
-    private func alertPreview(_ copy: AlertCopy) -> AttributedString {
-        guard !copy.activities.isEmpty else { return copy.message.linkedText }
-        var preview = AttributedString()
-        for activity in copy.activities {
-            if !preview.characters.isEmpty { preview += AttributedString("\n") }
-            var line = AttributedString(activity.line)
-            if let url = activity.href.flatMap(AppLinks.resolve) {
-                line.link = url
-                line.foregroundColor = Theme.accent
-                line.underlineStyle = .single
-            }
-            preview += line
-        }
-        return preview
     }
 
     private func load() async {
