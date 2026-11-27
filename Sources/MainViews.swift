@@ -671,6 +671,7 @@ struct DefaultCover: View {
     @AppStorage("ui.preferOldCourseCards") private var preferOldCourseCards = false
     @AppStorage("ui.darkerCourseCardWallpaper") private var darkerCourseCardWallpaper = false
     @AppStorage(CoursePreviewStore.strengthKey) private var titleStrength = CoursePreviewStore.defaultStrength
+    @AppStorage(CoursePreviewStore.codeSizeKey) private var codeSize = CoursePreviewStore.defaultCodeSize
 
     private static let darkerCovers: [(UInt32, UInt32)] = [
         (0x13110D, 0x2A2219),
@@ -746,11 +747,12 @@ struct DefaultCover: View {
     }
 
     private func coverTitle(tags: [String], color: Color, strength: Double, scale: CGFloat) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6 * scale) {
+        let size = CGFloat(codeSize) * scale
+        return HStack(alignment: .firstTextBaseline, spacing: 6 * scale) {
             Text(course.courseCode(timetable: timetable.data))
                 .foregroundColor(color.opacity(strength))
                 .textGlow()
-                .courseCodeHeading(16 * scale, size: 22 * scale, useDisplayFont: useDisplayFont)
+                .courseCodeHeading(size * 16 / 22, size: size, useDisplayFont: useDisplayFont)
                 .padding(.trailing, 2 * scale)
             ForEach(Array(tags.enumerated()), id: \.offset) { _, tag in
                 Rectangle()
@@ -1446,7 +1448,9 @@ final class TabBadgeProbe: UIViewController {
 // Course identity used for the sample card in UI Preference and Dev tools
 enum CoursePreviewStore {
     static let strengthKey = "ui.courseTitleStrength"
-    static let defaultStrength = 0.9
+    static let defaultStrength = 1.0
+    static let codeSizeKey = "ui.courseCodeSize"
+    static let defaultCodeSize = 22.0
     private static let key = "ui.previewCourse"
     static let selectionKey = "dev.previewCourseSelection"
     private struct Saved: Codable { var id: Int; var fullname: String; var shortname: String? }

@@ -582,6 +582,7 @@ struct WidgetSettingsView: View {
     @AppStorage("ui.preferOldCourseCards") private var preferOldCourseCards = false
     @AppStorage("ui.darkerCourseCardWallpaper") private var darkerCourseCardWallpaper = false
     @AppStorage(CoursePreviewStore.strengthKey) private var titleStrength = CoursePreviewStore.defaultStrength
+    @AppStorage(CoursePreviewStore.codeSizeKey) private var codeSize = CoursePreviewStore.defaultCodeSize
 
     private func sectionTitle(_ t: String) -> some View {
         Text(t).font(ThemeStore.shared.theme.isNotebook ? Theme.font(.subheadline) : Theme.font(.footnote).weight(.semibold))
@@ -617,7 +618,7 @@ struct WidgetSettingsView: View {
                         title: "Prefer old course cards",
                         subtitle: "Use the original main page course card layout and titles.",
                         isOn: $preferOldCourseCards,
-                        showLine: themes.theme == .dark
+                        showLine: themes.theme == .dark || !preferOldCourseCards
                     )
                     if themes.theme == .dark {
                         toggleRow(
@@ -628,18 +629,32 @@ struct WidgetSettingsView: View {
                         )
                     }
                     if !preferOldCourseCards {
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Text("Title text strength")
-                                    .foregroundColor(Theme.txt).fontWeight(.semibold).textGlow(radius: 3)
-                                Spacer()
-                                Text("\(Int((titleStrength * 100).rounded()))%")
-                                    .font(Theme.font(.footnote)).foregroundColor(Theme.muted)
+                        VStack(alignment: .leading, spacing: 12) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack {
+                                    Text("Title text opacity")
+                                        .foregroundColor(Theme.txt).fontWeight(.semibold).textGlow(radius: 3)
+                                    Spacer()
+                                    Text("\(Int((titleStrength * 100).rounded()))%")
+                                        .font(Theme.font(.footnote)).foregroundColor(Theme.muted)
+                                }
+                                Slider(value: $titleStrength, in: 0.05...1, step: 0.05)
+                                    .tint(Theme.accent)
+                                    .accessibilityLabel("Title text opacity")
                             }
-                            Slider(value: $titleStrength, in: 0.05...1, step: 0.05).tint(Theme.accent)
-                            Text("Lower is more see-through. The course code and section on the cover use this.")
-                                .font(Theme.font(.caption)).foregroundColor(Theme.muted)
-                                .fixedSize(horizontal: false, vertical: true)
+
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack {
+                                    Text("Course code size")
+                                        .foregroundColor(Theme.txt).fontWeight(.semibold).textGlow(radius: 3)
+                                    Spacer()
+                                    Text("\(Int(codeSize.rounded())) pt")
+                                        .font(Theme.font(.footnote)).foregroundColor(Theme.muted)
+                                }
+                                Slider(value: $codeSize, in: 16...32, step: 1)
+                                    .tint(Theme.accent)
+                                    .accessibilityLabel("Course code size")
+                            }
                         }
                         .padding(ThemeStore.shared.theme.isNotebook ? 16 : 14)
                     }
