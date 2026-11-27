@@ -1423,9 +1423,10 @@ enum CoursePreviewStore {
     }
 
     /// A sample card (50% done, no photo) using the chosen course or the top course.
-    static func sample(selection: Data) -> Course {
-        let saved = try? JSONDecoder().decode(Saved.self, from: selection)
-        let automatic = UserDefaults.standard.data(forKey: key).flatMap { try? JSONDecoder().decode(Saved.self, from: $0) }
+    static func sample(selection: Data? = nil) -> Course {
+        let decoder = JSONDecoder()
+        let saved = selection.flatMap { try? decoder.decode(Saved.self, from: $0) }
+        let automatic = UserDefaults.standard.data(forKey: key).flatMap { try? decoder.decode(Saved.self, from: $0) }
         if let v = saved ?? automatic {
             return Course(id: v.id, fullname: v.fullname, shortname: v.shortname, progress: 50,
                           isfavourite: false, hidden: false, courseimage: nil)

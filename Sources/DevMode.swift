@@ -377,6 +377,7 @@ struct DevAttendanceCard: View {
 // MARK: - Screen with all of them (opened with the > on the Dev mode row)
 
 struct DevLogsView: View {
+    @AppStorage(DevMode.key) private var devModeEnabled = false
     @EnvironmentObject private var catalog: CourseCatalog
     @AppStorage(CoursePreviewStore.selectionKey) private var previewSelection = Data()
     @AppStorage(ThemeFamily.showCardsKey) private var showCards = false
@@ -398,7 +399,7 @@ struct DevLogsView: View {
                 }
                 .padding(14).frame(maxWidth: .infinity, alignment: .leading)
                 .glowCard()
-                previewCourse
+                if devModeEnabled { previewCourse }
                 DevHostsCard()
                 DevLogCard(channel: .login)
                 DevAttendanceCard()

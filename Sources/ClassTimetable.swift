@@ -581,7 +581,6 @@ struct WidgetSettingsView: View {
     @ObservedObject private var themes = ThemeStore.shared
     @AppStorage("ui.preferOldCourseCards") private var preferOldCourseCards = false
     @AppStorage("ui.darkerCourseCardWallpaper") private var darkerCourseCardWallpaper = false
-    @AppStorage(CoursePreviewStore.selectionKey) private var previewSelection = Data()
     @AppStorage(CoursePreviewStore.strengthKey) private var titleStrength = CoursePreviewStore.defaultStrength
 
     private func sectionTitle(_ t: String) -> some View {
@@ -649,7 +648,7 @@ struct WidgetSettingsView: View {
 
                 if !preferOldCourseCards {
                     sectionTitle("Preview")
-                    CourseCard(course: CoursePreviewStore.sample(selection: previewSelection))
+                    CourseCard(course: CoursePreviewStore.sample())
                         .allowsHitTesting(false)
                 }
 
