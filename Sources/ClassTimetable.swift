@@ -582,6 +582,7 @@ struct WidgetSettingsView: View {
     @AppStorage("ui.preferOldCourseCards") private var preferOldCourseCards = false
     @AppStorage("ui.darkerCourseCardWallpaper") private var darkerCourseCardWallpaper = false
     @AppStorage(CoursePreviewStore.strengthKey) private var titleStrength = CoursePreviewStore.defaultStrength
+    @AppStorage(BicsDisplayFont.previousStyleKey) private var usePreviousStyle = false
     @AppStorage(CoursePreviewStore.codeSizeKey) private var codeSize = CoursePreviewStore.defaultCodeSize
 
     private func sectionTitle(_ t: String) -> some View {
@@ -656,12 +657,13 @@ struct WidgetSettingsView: View {
                                     .accessibilityLabel("Course code size")
                             }
                         }
+                        .disabled(usePreviousStyle)
                         .padding(ThemeStore.shared.theme.isNotebook ? 16 : 14)
                     }
                 }
                 .glowCard()
 
-                if !preferOldCourseCards {
+                if !preferOldCourseCards || usePreviousStyle {
                     sectionTitle("Preview")
                     CourseCard(course: CoursePreviewStore.sample())
                         .allowsHitTesting(false)

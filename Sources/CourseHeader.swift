@@ -284,7 +284,7 @@ struct CourseHeaderView: View {
     let course: Course
     @StateObject private var lecturers: CourseLecturers
     @ObservedObject private var themes = ThemeStore.shared
-    @AppStorage(BicsDisplayFont.preferenceKey) private var useDisplayFont = false
+    @AppStorage(BicsDisplayFont.previousStyleKey) private var usePreviousStyle = false
 
     init(course: Course) {
         self.course = course
@@ -308,11 +308,15 @@ struct CourseHeaderView: View {
         }
     }
 
-    private var codeTitle: some View {
-        Text(course.headerCode)
+    @ViewBuilder private var codeTitle: some View {
+        let title = Text(course.headerCode)
             .foregroundColor(themes.theme.isNotebook ? Theme.txt : Theme.accent)
             .lineLimit(2).minimumScaleFactor(0.6)
-            .courseCodeHeading(22, size: 38, useDisplayFont: useDisplayFont)
+        if usePreviousStyle && BicsDisplayFont.available {
+            title.font(.custom(BicsDisplayFont.activeName, size: 48))
+        } else {
+            title.pixelHeading(22, normal: .system(size: 38, weight: .bold), pt: 38)
+        }
     }
 
     var body: some View {

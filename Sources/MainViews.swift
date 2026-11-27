@@ -609,6 +609,7 @@ struct CourseCard: View {
     let course: Course
     @ObservedObject private var themes = ThemeStore.shared
     @ObservedObject private var timetable = TimetableManager.shared
+    @AppStorage(BicsDisplayFont.previousStyleKey) private var usePreviousStyle = false
     @AppStorage("ui.preferOldCourseCards") private var preferOldCourseCards = false
 
     var body: some View {
@@ -623,7 +624,7 @@ struct CourseCard: View {
         VStack(alignment: .leading, spacing: 0) {
             cover.frame(height: 110).frame(maxWidth: .infinity).clipped()
             VStack(alignment: .leading, spacing: 8) {
-                Text(preferOldCourseCards ? course.prettyFull : course.cardTitle)
+                Text(preferOldCourseCards && !usePreviousStyle ? course.prettyFull : course.cardTitle)
                     .foregroundColor(Theme.txt)
                     .multilineTextAlignment(.leading)
                     .textGlow(radius: 3)
@@ -667,7 +668,7 @@ struct DefaultCover: View {
     let course: Course
     @ObservedObject private var themes = ThemeStore.shared
     @ObservedObject private var timetable = TimetableManager.shared
-    @AppStorage(BicsDisplayFont.preferenceKey) private var useDisplayFont = false
+    @AppStorage(BicsDisplayFont.previousStyleKey) private var usePreviousStyle = false
     @AppStorage("ui.preferOldCourseCards") private var preferOldCourseCards = false
     @AppStorage("ui.darkerCourseCardWallpaper") private var darkerCourseCardWallpaper = false
     @AppStorage(CoursePreviewStore.strengthKey) private var titleStrength = CoursePreviewStore.defaultStrength
@@ -707,7 +708,7 @@ struct DefaultCover: View {
                            startPoint: .topLeading, endPoint: .bottomTrailing)
             if themes.theme.isNotebook {
                 NotebookPattern(seed: course.id)
-            } else if preferOldCourseCards {
+            } else if preferOldCourseCards && !usePreviousStyle {
                 // old card style: the small book icon, as it always was
                 Image(systemName: "book.closed.fill")
                     .font(.system(size: 64))
@@ -727,11 +728,16 @@ struct DefaultCover: View {
                 }
                 .clipped()
             }
-            if preferOldCourseCards {
+            if usePreviousStyle {
+                let color = Self.bookColor(p0: p.0, p1: p.1,
+                                           accent: themes.theme.westernHeadings ? 0xFFFFFF : themes.palette.accent,
+                                           weight: 0.3)
+                previousCoverTitle(tags: tags, titleColor: color)
+            } else if preferOldCourseCards {
                 Text(course.prettyShort ?? "")
                     .foregroundColor(themes.theme.westernHeadings ? Color.white : Theme.accent.opacity(0.92))
                     .textGlow()
-                    .courseCodeHeading(16, size: 22, useDisplayFont: useDisplayFont)
+                    .pixelHeading(16, normal: .system(size: 22, weight: .bold), pt: 22)
                     .lineLimit(1).minimumScaleFactor(0.5)
                     .padding(14)
             } else {
@@ -746,13 +752,37 @@ struct DefaultCover: View {
         }
     }
 
+    private func previousCoverTitle(tags: [String], titleColor: Color) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(course.courseCode(timetable: timetable.data))
+                .font(BicsDisplayFont.available ? .custom(BicsDisplayFont.activeName, size: 48) : .system(size: 38, weight: .bold))
+                .foregroundColor(titleColor)
+                .lineLimit(1).minimumScaleFactor(0.5)
+            HStack(spacing: 6) {
+                ForEach(Array(tags.enumerated()), id: \.offset) { idx, tag in
+                    if idx > 0 {
+                        Text("•")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(titleColor.opacity(0.8))
+                    }
+                    Text(tag)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(titleColor)
+                }
+            }
+            .lineLimit(1).minimumScaleFactor(0.5)
+        }
+        .padding(.horizontal, 14)
+        .padding(.bottom, 9)
+    }
+
     private func coverTitle(tags: [String], color: Color, strength: Double, scale: CGFloat) -> some View {
         let size = CGFloat(codeSize) * scale
         return HStack(alignment: .firstTextBaseline, spacing: 6 * scale) {
             Text(course.courseCode(timetable: timetable.data))
                 .foregroundColor(color.opacity(strength))
                 .textGlow()
-                .courseCodeHeading(size * 16 / 22, size: size, useDisplayFont: useDisplayFont)
+                .pixelHeading(size * 16 / 22, normal: .system(size: size, weight: .bold), pt: size)
                 .padding(.trailing, 2 * scale)
             ForEach(Array(tags.enumerated()), id: \.offset) { _, tag in
                 Rectangle()

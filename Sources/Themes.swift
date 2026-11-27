@@ -414,7 +414,7 @@ enum RocksFont {
 }
 
 enum BicsDisplayFont {
-    static let preferenceKey = "dev.useDisplayCourseCodeFont"
+    static let previousStyleKey = "dev.useDisplayCourseCodeFont"
     static let name = "MADECoachella-Bold"
     static let cleanName = "BICSDisplay-Regular"
 
@@ -540,15 +540,6 @@ struct PixelHeading: ViewModifier {
 extension View {
     func pixelHeading(_ size: CGFloat = 12, normal: Font? = nil, pt: CGFloat? = nil) -> some View {
         modifier(PixelHeading(size: size, normal: normal, pt: pt))
-    }
-
-    @ViewBuilder
-    func courseCodeHeading(_ pixelSize: CGFloat, size: CGFloat, useDisplayFont: Bool) -> some View {
-        if useDisplayFont && BicsDisplayFont.available {
-            font(.custom(BicsDisplayFont.activeName, size: size))
-        } else {
-            pixelHeading(pixelSize, normal: .system(size: size, weight: .bold), pt: size)
-        }
     }
 }
 
