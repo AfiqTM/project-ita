@@ -377,6 +377,8 @@ struct DevAttendanceCard: View {
 // MARK: - Screen with all of them (opened with the > on the Dev mode row)
 
 struct DevLogsView: View {
+    @EnvironmentObject private var catalog: CourseCatalog
+    @AppStorage(CoursePreviewStore.selectionKey) private var previewSelection = Data()
     @AppStorage(ThemeFamily.showCardsKey) private var showCards = false
 
     var body: some View {
@@ -396,6 +398,7 @@ struct DevLogsView: View {
                 }
                 .padding(14).frame(maxWidth: .infinity, alignment: .leading)
                 .glowCard()
+                previewCourse
                 DevHostsCard()
                 DevLogCard(channel: .login)
                 DevAttendanceCard()
@@ -407,6 +410,45 @@ struct DevLogsView: View {
         .navigationTitle("Dev tools")
         .navigationBarTitleDisplayMode(.inline)
         .notebookBack()
+    }
+
+    private var previewCourse: some View {
+        let sample = CoursePreviewStore.sample(selection: previewSelection)
+        return VStack(alignment: .leading, spacing: 10) {
+            Menu {
+                Button {
+                    previewSelection = Data()
+                } label: {
+                    if previewSelection.isEmpty { Label("Automatic", systemImage: "checkmark") }
+                    else { Text("Automatic") }
+                }
+                ForEach(catalog.coursesWithPast) { course in
+                    Button {
+                        if let data = CoursePreviewStore.snapshot(course) { previewSelection = data }
+                    } label: {
+                        if !previewSelection.isEmpty, course.id == sample.id {
+                            Label(course.prettyFull, systemImage: "checkmark")
+                        } else {
+                            Text(course.prettyFull)
+                        }
+                    }
+                }
+            } label: {
+                HStack {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Preview course").fontWeight(.semibold).foregroundColor(Theme.txt)
+                        Text(previewSelection.isEmpty ? "Automatic" : sample.prettyFull)
+                            .font(Theme.font(.caption)).foregroundColor(Theme.muted)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.up.chevron.down").foregroundColor(Theme.accent)
+                }
+                .padding(14)
+                .glowCard()
+            }
+            CourseCard(course: sample).allowsHitTesting(false)
+        }
+        .task { await catalog.loadIfNeeded() }
     }
 }
 

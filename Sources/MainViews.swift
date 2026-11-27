@@ -1406,21 +1406,27 @@ final class TabBadgeProbe: UIViewController {
 }
 
 
-// The top subject of the Courses page, kept so UI Preference can show a sample card made from it
+// Course identity used for the sample card in UI Preference and Dev tools
 enum CoursePreviewStore {
     static let strengthKey = "ui.courseTitleStrength"
     static let defaultStrength = 0.9
     private static let key = "ui.previewCourse"
+    static let selectionKey = "dev.previewCourseSelection"
     private struct Saved: Codable { var id: Int; var fullname: String; var shortname: String? }
 
-    static func remember(_ c: Course) {
-        let v = Saved(id: c.id, fullname: c.fullname, shortname: c.shortname)
-        if let d = try? JSONEncoder().encode(v) { UserDefaults.standard.set(d, forKey: key) }
+    static func snapshot(_ course: Course) -> Data? {
+        try? JSONEncoder().encode(Saved(id: course.id, fullname: course.fullname, shortname: course.shortname))
     }
 
-    /// A made-up card (50% done, no photo, not starred) with the user's top subject's name and code
-    static func sample() -> Course {
-        if let d = UserDefaults.standard.data(forKey: key), let v = try? JSONDecoder().decode(Saved.self, from: d) {
+    static func remember(_ course: Course) {
+        if let data = snapshot(course) { UserDefaults.standard.set(data, forKey: key) }
+    }
+
+    /// A sample card (50% done, no photo) using the chosen course or the top course.
+    static func sample(selection: Data) -> Course {
+        let saved = try? JSONDecoder().decode(Saved.self, from: selection)
+        let automatic = UserDefaults.standard.data(forKey: key).flatMap { try? JSONDecoder().decode(Saved.self, from: $0) }
+        if let v = saved ?? automatic {
             return Course(id: v.id, fullname: v.fullname, shortname: v.shortname, progress: 50,
                           isfavourite: false, hidden: false, courseimage: nil)
         }
