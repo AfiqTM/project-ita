@@ -400,16 +400,14 @@ struct DevLogsView: View {
                 }
                 .padding(14).frame(maxWidth: .infinity, alignment: .leading)
                 .glowCard()
-                if devModeEnabled {
-                    Toggle(isOn: $usePreviousStyle) {
-                        Text("Use previous course card design")
-                            .foregroundColor(Theme.txt).fontWeight(.semibold)
-                    }
-                    .tint(Theme.accent)
-                    .padding(14)
-                    .glowCard()
-                    previewCourse
+                Toggle(isOn: $usePreviousStyle) {
+                    Text("Use previous course card design")
+                        .foregroundColor(Theme.txt).fontWeight(.semibold)
                 }
+                .tint(Theme.accent)
+                .padding(14)
+                .glowCard()
+                if devModeEnabled { previewCourse }
                 DevHostsCard()
                 DevLogCard(channel: .login)
                 DevAttendanceCard()
