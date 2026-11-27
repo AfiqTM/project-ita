@@ -284,7 +284,6 @@ struct CourseHeaderView: View {
     let course: Course
     @StateObject private var lecturers: CourseLecturers
     @ObservedObject private var themes = ThemeStore.shared
-    @AppStorage("ui.preferOldCourseCards") private var preferOldCourseCards = false
 
     init(course: Course) {
         self.course = course
@@ -308,20 +307,11 @@ struct CourseHeaderView: View {
         }
     }
 
-    /// The course code in the same font as the big title on the course card (the old-style cards keep the old heading font)
-    @ViewBuilder private var codeTitle: some View {
-        let color = themes.theme.isNotebook ? Theme.txt : Theme.accent
-        if BicsDisplayFont.available && !preferOldCourseCards {
-            Text(course.headerCode)
-                .font(.custom(BicsDisplayFont.activeName, size: 48))
-                .foregroundColor(color)
-                .lineLimit(2).minimumScaleFactor(0.6)
-        } else {
-            Text(course.headerCode)
-                .foregroundColor(color)
-                .lineLimit(2).minimumScaleFactor(0.6)
-                .pixelHeading(22, normal: .system(size: 38, weight: .bold), pt: 38)
-        }
+    private var codeTitle: some View {
+        Text(course.headerCode)
+            .foregroundColor(themes.theme.isNotebook ? Theme.txt : Theme.accent)
+            .lineLimit(2).minimumScaleFactor(0.6)
+            .pixelHeading(22, normal: .system(size: 38, weight: .bold), pt: 38)
     }
 
     var body: some View {
