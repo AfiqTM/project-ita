@@ -258,12 +258,10 @@ final class NotificationManager: NSObject, ObservableObject, UNUserNotificationC
 
         let fresh = r.notifications.filter { $0.id > last && $0.read != true }.sorted { $0.id < $1.id }
         for n in fresh.suffix(5) {
-            let text = ((n.subject ?? "") + " " + (n.smallmessage ?? "")).lowercased()
-            let title: String
-            if n.component == "mod_forum" {
-                title = (text.contains("announcement") || text.contains("news")) ? "New announcement" : "New forum post"
-            } else {
-                title = "New alert"
+            let copy = AlertCopy(n)
+            if copy.isFormatted {
+                await post(id: "alert.\(n.id)", title: copy.title, body: copy.message.plainText)
+                continue
             }
             // Moodle often sends the same sentence as both "subject" and "smallmessage":
             // only show the second line when it adds something new.
@@ -280,7 +278,7 @@ final class NotificationManager: NSObject, ObservableObject, UNUserNotificationC
                 else if b.contains(a) { body = detail }   // detail already includes the subject
                 else { body += "\n" + detail }
             }
-            await post(id: "alert.\(n.id)", title: title, body: body)
+            await post(id: "alert.\(n.id)", title: "New alert", body: body)
         }
     }
 

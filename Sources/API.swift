@@ -386,6 +386,8 @@ struct Notif: Decodable, Identifiable {
     let id: Int
     let subject: String?
     let smallmessage: String?
+    let fullmessage: String?
+    let fullmessagehtml: String?
     let timecreated: Int?
     let read: Bool?
     let contexturl: String?

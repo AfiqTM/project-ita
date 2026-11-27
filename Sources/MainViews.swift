@@ -803,11 +803,12 @@ struct AlertsView: View {
                     .padding(.leading, 4)   // just slightly to the right of the boxes' edge
                 if let error { Text(error).font(Theme.font(.footnote)).foregroundColor(Theme.muted) }
                 ForEach(items) { n in
-                    let preview = (n.smallmessage ?? "").linkedText
+                    let copy = AlertCopy(n)
+                    let preview = alertPreview(copy)
                     let hasLinks = preview.runs.contains { $0.link != nil }
-                    let message = Text(preview).font(Theme.font(.caption)).foregroundColor(Theme.muted).lineLimit(3)
+                    let message = Text(preview).font(Theme.font(.caption)).foregroundColor(Theme.muted).lineLimit(copy.activities.isEmpty ? 3 : nil)
                     let card = VStack(alignment: .leading, spacing: 4) {
-                        Text(n.subject ?? "Alert")
+                        Text(copy.title)
                             .foregroundColor(Theme.txt).fontWeight(isRead(n) ? .regular : .semibold)
                         if !hasLinks, !preview.characters.isEmpty { message }
                         Text(fmt(n.timecreated)).font(Theme.font(.caption2)).foregroundColor(Theme.muted)
@@ -872,6 +873,22 @@ struct AlertsView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .offlineBackOnline)) { _ in Task { await load() } }
         .onFreshData { await load() }
+    }
+
+    private func alertPreview(_ copy: AlertCopy) -> AttributedString {
+        guard !copy.activities.isEmpty else { return copy.message.linkedText }
+        var preview = AttributedString()
+        for activity in copy.activities {
+            if !preview.characters.isEmpty { preview += AttributedString("\n") }
+            var line = AttributedString(activity.line)
+            if let url = activity.href.flatMap(AppLinks.resolve) {
+                line.link = url
+                line.foregroundColor = Theme.accent
+                line.underlineStyle = .single
+            }
+            preview += line
+        }
+        return preview
     }
 
     private func load() async {
