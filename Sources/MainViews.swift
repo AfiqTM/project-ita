@@ -670,8 +670,8 @@ struct DefaultCover: View {
     var body: some View {
         let covers = (themes.theme == .dark && darkerCourseCardWallpaper) ? Self.darkerCovers : themes.theme.covers
         let p = covers[abs(course.id) % covers.count]
-        // the big code and the section / semester line: accent over the cover, strength set in UI Preference (default 30%) 
-        let titleColor = Self.bookColor(p0: p.0, p1: p.1, accent: themes.theme.westernHeadings ? 0xFFFFFF : themes.palette.accent, weight: min(max(titleStrength, 0.05), 1))
+        let baseColor = themes.theme.westernHeadings ? Color.white : Theme.accent
+        let strength = min(max(titleStrength, 0.05), 1)
         let tags = course.coverTags(timetable: timetable.data)
         ZStack(alignment: .bottomLeading) {
             LinearGradient(colors: [Color(hex: p.0), Color(hex: p.1)],
@@ -706,29 +706,38 @@ struct DefaultCover: View {
                     .lineLimit(1).minimumScaleFactor(0.5)
                     .padding(14)
             } else {
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(course.courseCode(timetable: timetable.data))
-                        .font(BicsDisplayFont.available ? .custom(BicsDisplayFont.activeName, size: 48) : .system(size: 38, weight: .bold))
-                        .foregroundColor(titleColor)
-                        .lineLimit(1).minimumScaleFactor(0.5)
-                    HStack(spacing: 6) {
-                        ForEach(Array(tags.enumerated()), id: \.offset) { idx, tag in
-                            if idx > 0 {
-                                Text("•")
-                                    .font(.system(size: 13, weight: .medium))
-                                    .foregroundColor(titleColor.opacity(0.8))
-                            }
-                            Text(tag)
-                                .font(.system(size: 13, weight: .medium))
-                                .foregroundColor(titleColor)
-                        }
-                    }
-                    .lineLimit(1).minimumScaleFactor(0.5)
+                ViewThatFits(in: .horizontal) {
+                    coverTitle(tags: tags, color: baseColor, strength: strength, scale: 1)
+                        .fixedSize(horizontal: true, vertical: false)
+                    coverTitle(tags: tags, color: baseColor, strength: strength, scale: 0.8)
                 }
                 .padding(.horizontal, 14)
                 .padding(.bottom, 9)
             }
         }
+    }
+
+    private func coverTitle(tags: [String], color: Color, strength: Double, scale: CGFloat) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6 * scale) {
+            Text(course.courseCode(timetable: timetable.data))
+                .foregroundColor(color.opacity(strength))
+                .textGlow()
+                .pixelHeading(16 * scale, normal: .system(size: 22 * scale, weight: .bold), pt: 22 * scale)
+                .padding(.trailing, 2 * scale)
+            ForEach(Array(tags.enumerated()), id: \.offset) { _, tag in
+                Rectangle()
+                    .fill(color.opacity(strength * 0.5))
+                    .frame(width: 1, height: 13.5 * scale)
+                    .alignmentGuide(.firstTextBaseline) { $0.height - scale }
+                    .accessibilityHidden(true)
+                Text(tag)
+                    .font(.system(size: 12.5 * scale, weight: .medium))
+                    .foregroundColor(color.opacity(strength * 0.9))
+                    .baselineOffset(1.5 * scale)
+            }
+        }
+        .lineLimit(1)
+        .minimumScaleFactor(0.5)
     }
 }
 
@@ -1377,7 +1386,7 @@ final class TabBadgeProbe: UIViewController {
 // The top subject of the Courses page, kept so UI Preference can show a sample card made from it
 enum CoursePreviewStore {
     static let strengthKey = "ui.courseTitleStrength"
-    static let defaultStrength = 0.3
+    static let defaultStrength = 0.9
     private static let key = "ui.previewCourse"
     private struct Saved: Codable { var id: Int; var fullname: String; var shortname: String? }
 
