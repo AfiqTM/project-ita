@@ -172,10 +172,10 @@ struct UserProfileView: View {
         .overlay(Rectangle().fill(Theme.line).frame(height: 1), alignment: .bottom)
     }
 
-    private func fieldView(_ k: String, _ v: String) -> some View {
+    private func fieldView(_ k: String, _ v: String, html: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(k).font(Theme.font(.subheadline).weight(.semibold)).foregroundColor(Theme.txt)
-            Text(v).font(Theme.read(.subheadline)).foregroundColor(Theme.muted).textSelection(.enabled)
+            Text(html ? v.linkedText : AppLinks.plain(v)).font(Theme.read(.subheadline)).foregroundColor(Theme.muted).textSelection(.enabled)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -213,12 +213,12 @@ struct UserProfileView: View {
     }
 
     @ViewBuilder private var aboutTab: some View {
-        let desc = clean(p?.description?.plainText)
+        let desc = p?.description.flatMap { clean($0.plainText) == nil ? nil : $0 }
         if shortFields.isEmpty && wideFields.isEmpty && desc == nil {
             if !loading { Text("Nothing to show here.").foregroundColor(Theme.muted) }
         } else {
             VStack(alignment: .leading, spacing: 18) {
-                if let desc { fieldView("About", desc) }
+                if let desc { fieldView("About", desc, html: true) }
                 if !wideFields.isEmpty {
                     ForEach(wideFields, id: \.0) { f in fieldView(f.0, f.1) }
                 }

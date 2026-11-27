@@ -481,20 +481,6 @@ enum DailyText {
         guard !missing.isEmpty else { return summary }
         return summary + "\n" + missing.joined(separator: "\n")
     }
-
-    /// Text whose web addresses can be tapped
-    static func linkified(_ s: String) -> AttributedString {
-        var a = AttributedString(s)
-        guard let det = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else { return a }
-        for m in det.matches(in: s, range: NSRange(s.startIndex..., in: s)) {
-            guard let url = m.url, let r = Range(m.range, in: s),
-                  let lo = AttributedString.Index(r.lowerBound, within: a),
-                  let hi = AttributedString.Index(r.upperBound, within: a) else { continue }
-            a[lo..<hi].link = url
-            a[lo..<hi].underlineStyle = .single
-        }
-        return a
-    }
 }
 
 // MARK: - AI (through the user's own Cloudflare server)

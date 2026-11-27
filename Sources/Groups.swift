@@ -53,7 +53,7 @@ enum GroupBuilder {
         for p in people {
             for g in p.groups ?? [] {
                 var info = byId[g.id] ?? CourseGroupInfo(id: g.id, name: (g.name ?? "Group \(g.id)").decodedEntities,
-                                                         about: (g.description ?? "").plainText, members: [])
+                                                         about: g.description ?? "", members: [])
                 info.members.append(p)
                 byId[g.id] = info
             }
@@ -226,7 +226,7 @@ struct GroupChoiceView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 14) {
-                if let d = module.description?.plainText, !d.isEmpty {
+                if let d = module.description?.linkedText, !d.characters.isEmpty {
                     Text(d).font(Theme.read(.subheadline)).foregroundColor(Theme.muted)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -401,8 +401,9 @@ struct GroupChoiceView: View {
             }
 
             if expanded {
-                if !e.about.isEmpty {
-                    Text(e.about).font(Theme.font(.footnote)).foregroundColor(Theme.muted)
+                let about = e.about.linkedText
+                if !about.characters.isEmpty {
+                    Text(about).font(Theme.font(.footnote)).foregroundColor(Theme.muted)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 12).padding(.bottom, 8)
                 }

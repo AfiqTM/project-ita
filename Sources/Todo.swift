@@ -581,7 +581,7 @@ struct TodoDetailSheet: View {
 
                     if let d = current.notes, !d.isEmpty {
                         Rectangle().fill(Theme.line).frame(height: 1)
-                        Text(d).font(Theme.read(.body)).foregroundColor(Theme.txt)
+                        Text(AppLinks.plain(d)).font(Theme.read(.body)).foregroundColor(Theme.txt)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .fixedSize(horizontal: false, vertical: true)
                             .textSelection(.enabled)

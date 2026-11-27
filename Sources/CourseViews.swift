@@ -336,7 +336,7 @@ struct ModuleRow: View {
 
     var body: some View {
         if module.modname == "label" {
-            if let d = module.description?.plainText, !d.isEmpty {
+            if let d = module.description?.linkedText, !d.characters.isEmpty {
                 Text(d).font(Theme.read(.subheadline)).foregroundColor(Theme.muted)
                     .padding(14).frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -461,24 +461,34 @@ struct ForumView: View {
             LazyVStack(spacing: 18) {
                 if let error { Text(error).font(Theme.font(.footnote)).foregroundColor(Theme.muted) }
                 ForEach(items) { d in
-                    NavigationLink { PostsView(discussionId: d.discussion, title: d.name ?? d.subject ?? title) } label: {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text(d.name ?? d.subject ?? "Discussion")
-                                .fontWeight(.semibold).foregroundColor(Theme.txt).multilineTextAlignment(.leading)
-                            Text("\(d.userfullname ?? "") · \(fmt(d.created, time: false))")
-                                .font(Theme.font(.caption)).foregroundColor(Theme.muted)
-                            if let m = d.message?.plainText, !m.isEmpty {
-                                Text(m).font(Theme.read(.subheadline)).foregroundColor(Theme.muted).lineLimit(4)
-                                    .multilineTextAlignment(.leading)
+                    let preview = (d.message ?? "").linkedText
+                    let hasLinks = preview.runs.contains { $0.link != nil }
+                    VStack(alignment: .leading, spacing: 6) {
+                        NavigationLink { PostsView(discussionId: d.discussion, title: d.name ?? d.subject ?? title) } label: {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(d.name ?? d.subject ?? "Discussion")
+                                    .fontWeight(.semibold).foregroundColor(Theme.txt).multilineTextAlignment(.leading)
+                                Text("\(d.userfullname ?? "") · \(fmt(d.created, time: false))")
+                                    .font(Theme.font(.caption)).foregroundColor(Theme.muted)
+                                if !hasLinks, !preview.characters.isEmpty {
+                                    Text(preview).font(Theme.read(.subheadline)).foregroundColor(Theme.muted).lineLimit(4)
+                                        .multilineTextAlignment(.leading)
+                                }
+                                if let r = d.numreplies, r > 0 {
+                                    Text("\(r) replies").font(Theme.font(.caption)).foregroundColor(Theme.accent)
+                                }
                             }
-                            if let r = d.numreplies, r > 0 {
-                                Text("\(r) replies").font(Theme.font(.caption)).foregroundColor(Theme.accent)
-                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
                         }
-                        .padding(16).frame(maxWidth: .infinity, alignment: .leading)
-                        .glowCard(radius: 12)
+                        .buttonStyle(.plain)
+                        if hasLinks {
+                            Text(preview).font(Theme.read(.subheadline)).foregroundColor(Theme.muted).lineLimit(4)
+                                .multilineTextAlignment(.leading)
+                        }
                     }
-                    .buttonStyle(.plain)
+                    .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+                    .glowCard(radius: 12)
                 }
                 if loading { ProgressView().tint(Theme.accent) }
                 else if items.isEmpty && error == nil { Text("No discussions yet.").foregroundColor(Theme.muted) }
@@ -526,7 +536,7 @@ struct PostsView: View {
                         Text(p.subject ?? "").fontWeight(.semibold).foregroundColor(Theme.txt)
                         Text("\(p.author?.fullname ?? "") · \(fmt(p.timecreated))")
                             .font(Theme.font(.caption)).foregroundColor(Theme.muted)
-                        Text((p.message ?? "").plainText).foregroundColor(Theme.txt)
+                        Text((p.message ?? "").linkedText).foregroundColor(Theme.txt)
                     }
                     .padding(16).frame(maxWidth: .infinity, alignment: .leading)
                     .glowCard(radius: 12)
@@ -868,7 +878,7 @@ struct PageModuleView: View {
         .notebookBack()
         // links to files on the site open in the app's viewer; other links go to Safari
         .environment(\.openURL, OpenURLAction { url in
-            if url.absoluteString.contains("pluginfile.php") { openFile = url; return .handled }
+            if AppLinks.isSiteFile(url) { openFile = url; return .handled }
             return .systemAction
         })
         .navigationDestination(isPresented: Binding(get: { openFile != nil },
@@ -899,15 +909,11 @@ enum HTMLText {
 
         func flush() {
             while let last = out.characters.last, last == "\n" || last == " " { out.characters.removeLast() }
+            AppLinks.detect(in: &out, color: Theme.accent)
             if !out.characters.isEmpty { blocks.append(.text(out)) }
             out = AttributedString()
             newlines = 2
             pendingSpace = false
-        }
-        // site files need the user's token; other addresses are used as they are (the token must not leave the site)
-        func resolve(_ raw: String) -> URL? {
-            let r = raw.decodedEntities
-            return r.contains("pluginfile.php") ? MoodleAPI.shared.fileURL(r) : URL(string: r)
         }
         func newline(_ n: Int) {
             guard newlines < n else { return }
@@ -926,7 +932,7 @@ enum HTMLText {
             newlines = 0
         }
 
-        guard let re = try? NSRegularExpression(pattern: "<[^>]+>|[^<]+") else { return [.text(AttributedString(html.plainText))] }
+        guard let re = try? NSRegularExpression(pattern: "<[^>]+>|[^<]+") else { return [.text(html.linkedText)] }
         let ns = html as NSString
         for m in re.matches(in: html, range: NSRange(location: 0, length: ns.length)) {
             let tok = ns.substring(with: m.range)
@@ -944,18 +950,14 @@ enum HTMLText {
                 case "em", "i": italic = closing ? max(italic - 1, 0) : italic + 1
                 case "a":
                     if closing { link = nil }
-                    else if let r = tok.range(of: "href=\"([^\"]*)\"", options: .regularExpression) {
-                        link = resolve(String(String(tok[r]).dropFirst(6).dropLast()))
-                    }
+                    else { link = AppLinks.attribute("href", in: tok).flatMap(AppLinks.resolve) }
                 case "img":
-                    if let r = tok.range(of: "src=\"([^\"]*)\"", options: .regularExpression),
-                       let u = resolve(String(String(tok[r]).dropFirst(5).dropLast())) {
+                    if let u = AppLinks.attribute("src", in: tok).flatMap(AppLinks.resolve) {
                         flush()
                         blocks.append(.image(u))
                     }
                 case "iframe":
-                    if !closing, let r = tok.range(of: "src=\"([^\"]*)\"", options: .regularExpression),
-                       let u = resolve(String(String(tok[r]).dropFirst(5).dropLast())) {
+                    if !closing, let u = AppLinks.attribute("src", in: tok).flatMap(AppLinks.resolve) {
                         let saved = link
                         newline(1); link = u; add("\u{25B6}  Open embedded content"); link = saved; newline(1)
                     }

@@ -884,7 +884,7 @@ struct AttendanceView: View {
                 if !r.time.isEmpty { Text(r.time).font(Theme.font(.caption)).foregroundColor(Theme.accent) }
                 if !r.desc.isEmpty { Text(r.desc).font(Theme.font(.caption)).foregroundColor(Theme.muted) }
                 if !r.remarks.isEmpty {
-                    Text(r.remarks).font(Theme.font(.caption)).italic().foregroundColor(Theme.muted)
+                    Text(AppLinks.plain(r.remarks)).font(Theme.font(.caption)).italic().foregroundColor(Theme.muted)
                 }
             }
             Spacer()
@@ -1626,39 +1626,81 @@ struct SharePickerSheet: View {
 }
 
 
-// MARK: - HTML -> text with tappable links (assignment description)
+// MARK: - Links in native text
+
+enum AppLinks {
+    private static let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
+
+    static func attribute(_ name: String, in tag: String) -> String? {
+        let pattern = "(?:^|\\s)" + name + "\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)'|([^\\s>]+))"
+        guard let re = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
+              let match = re.firstMatch(in: tag, range: NSRange(tag.startIndex..., in: tag)) else { return nil }
+        for index in 1..<match.numberOfRanges {
+            if let range = Range(match.range(at: index), in: tag) { return String(tag[range]) }
+        }
+        return nil
+    }
+
+    static func isSiteFile(_ url: URL) -> Bool {
+        url.scheme?.lowercased() == Site.url.scheme?.lowercased()
+            && url.host?.lowercased() == Site.url.host?.lowercased()
+            && url.port == Site.url.port
+            && url.path.split(separator: "/").contains("pluginfile.php")
+    }
+
+    static func resolve(_ raw: String) -> URL? {
+        let target = raw.decodedEntities.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !target.isEmpty, !target.hasPrefix("#"),
+              let url = URL(string: target, relativeTo: Site.url)?.absoluteURL,
+              ["https", "http", "mailto", "tel"].contains(url.scheme?.lowercased() ?? "") else { return nil }
+        return isSiteFile(url) ? MoodleAPI.shared.fileURL(url.absoluteString) : url
+    }
+
+    static func detect(in text: inout AttributedString, color: Color) {
+        let plain = String(text.characters)
+        for match in detector?.matches(in: plain, range: NSRange(plain.startIndex..., in: plain)) ?? [] {
+            guard let url = match.url.flatMap({ resolve($0.absoluteString) }),
+                  let range = Range(match.range, in: plain),
+                  let lower = AttributedString.Index(range.lowerBound, within: text),
+                  let upper = AttributedString.Index(range.upperBound, within: text),
+                  text[lower..<upper].runs.allSatisfy({ $0.link == nil }) else { continue }
+            text[lower..<upper].link = url
+        }
+        let linkedRanges = text.runs.filter { $0.link != nil }.map(\.range)
+        for range in linkedRanges {
+            text[range].foregroundColor = color
+            text[range].underlineStyle = .single
+        }
+    }
+
+    static func plain(_ string: String) -> AttributedString {
+        var text = AttributedString(string)
+        detect(in: &text, color: Theme.accent)
+        return text
+    }
+}
 
 extension String {
     /// Turns Moodle HTML into display text where <a href> links and bare URLs are tappable.
-    var linkedText: AttributedString {
+    var linkedText: AttributedString { linkedText(linkColor: Theme.accent) }
+
+    func linkedText(linkColor: Color) -> AttributedString {
         func clean(_ h: String) -> String {
             h.replacingOccurrences(of: "<br\\s*/?>|</p>|</div>|</li>|</h[1-6]>", with: "\n",
                                    options: [.regularExpression, .caseInsensitive])
                 .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
                 .decodedEntities
         }
-        func resolve(_ href: String) -> URL? {
-            let h = href.decodedEntities.trimmingCharacters(in: .whitespacesAndNewlines)
-            if h.isEmpty || h.hasPrefix("#") || h.lowercased().hasPrefix("javascript") { return nil }
-            var abs = h
-            if !h.lowercased().hasPrefix("http") && !h.lowercased().hasPrefix("mailto:") && !h.lowercased().hasPrefix("tel:") {
-                abs = Site.url.absoluteString + (h.hasPrefix("/") ? h : "/" + h)
-            }
-            if abs.contains("pluginfile.php") { return MoodleAPI.shared.fileURL(abs) }   // files need the token
-            return URL(string: abs) ?? abs.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)
-                .flatMap { URL(string: $0) }
-        }
-
         var pieces: [(String, URL?)] = []
         let ns = self as NSString
         var last = 0
-        if let re = try? NSRegularExpression(pattern: "<a\\b[^>]*?href\\s*=\\s*([\"'])(.*?)\\1[^>]*>([\\s\\S]*?)</a>",
+        if let re = try? NSRegularExpression(pattern: "<a\\b([^>]*)>([\\s\\S]*?)</a\\s*>",
                                              options: [.caseInsensitive]) {
             for m in re.matches(in: self, range: NSRange(location: 0, length: ns.length)) {
                 pieces.append((clean(ns.substring(with: NSRange(location: last, length: m.range.location - last))), nil))
-                let label = clean(ns.substring(with: m.range(at: 3))).trimmingCharacters(in: .whitespacesAndNewlines)
-                let url = resolve(ns.substring(with: m.range(at: 2)))
-                pieces.append((label.isEmpty ? ns.substring(with: m.range(at: 2)) : label, url))
+                let label = clean(ns.substring(with: m.range(at: 2))).trimmingCharacters(in: .whitespacesAndNewlines)
+                let href = AppLinks.attribute("href", in: ns.substring(with: m.range(at: 1))) ?? ""
+                pieces.append((label.isEmpty ? href.decodedEntities : label, AppLinks.resolve(href)))
                 last = m.range.location + m.range.length
             }
         }
@@ -1674,28 +1716,13 @@ extension String {
             pieces[pieces.count - 1].0 = t
         }
 
-        let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
         var out = AttributedString()
-        func link(_ text: String, _ url: URL) {
-            var a = AttributedString(text)
-            a.link = url
-            a.foregroundColor = Theme.accent
-            a.underlineStyle = .single
-            out += a
-        }
         for (text, url) in pieces {
-            if let url { link(text, url); continue }
-            // plain text: make bare URLs tappable too
-            let t = text as NSString
-            var pos = 0
-            for m in detector?.matches(in: text, range: NSRange(location: 0, length: t.length)) ?? [] {
-                guard let u = m.url else { continue }
-                out += AttributedString(t.substring(with: NSRange(location: pos, length: m.range.location - pos)))
-                link(t.substring(with: m.range), u)
-                pos = m.range.location + m.range.length
-            }
-            out += AttributedString(t.substring(from: pos))
+            var part = AttributedString(text)
+            if let url { part.link = url }
+            out += part
         }
+        AppLinks.detect(in: &out, color: linkColor)
         return out
     }
 }

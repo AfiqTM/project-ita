@@ -581,7 +581,8 @@ struct ChatThreadView: View {
 
     private func bubble(_ m: ChatMsg, prev: ChatMsg?, next: ChatMsg?) -> some View {
         let mine = m.useridfrom == uid
-        let text = (m.text ?? "").plainText
+        let text = selecting ? AttributedString((m.text ?? "").plainText)
+            : (m.text ?? "").linkedText(linkColor: mine ? Theme.onAccent : Theme.accent)
         let showName = !mine && conv.type == 2 && prev?.useridfrom != m.useridfrom
         let lastInGroup = next == nil || next?.useridfrom != m.useridfrom
             || !ChatTime.sameDay(next?.timecreated, m.timecreated)

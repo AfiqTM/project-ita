@@ -803,36 +803,42 @@ struct AlertsView: View {
                     .padding(.leading, 4)   // just slightly to the right of the boxes' edge
                 if let error { Text(error).font(Theme.font(.footnote)).foregroundColor(Theme.muted) }
                 ForEach(items) { n in
+                    let preview = (n.smallmessage ?? "").linkedText
+                    let hasLinks = preview.runs.contains { $0.link != nil }
+                    let message = Text(preview).font(Theme.font(.caption)).foregroundColor(Theme.muted).lineLimit(3)
                     let card = VStack(alignment: .leading, spacing: 4) {
                         Text(n.subject ?? "Alert")
                             .foregroundColor(Theme.txt).fontWeight(isRead(n) ? .regular : .semibold)
-                        if let m = n.smallmessage, !m.isEmpty {
-                            Text(m.plainText).font(Theme.font(.caption)).foregroundColor(Theme.muted).lineLimit(3)
-                        }
+                        if !hasLinks, !preview.characters.isEmpty { message }
                         Text(fmt(n.timecreated)).font(Theme.font(.caption2)).foregroundColor(Theme.muted)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        if let d = n.discussionId {
+                            // Announcements / forum posts open inside the app, not the website
+                            NavigationLink { PostsView(discussionId: d, title: n.subject ?? "Announcement") } label: { card }
+                                .buttonStyle(.plain)
+                                .simultaneousGesture(TapGesture().onEnded { Task { await markRead(n) } })
+                        } else if let cm = n.cmid {
+                            // Announcements, assignments, pages...: opened with the app's own screens
+                            NavigationLink { ModuleLoaderView(cmid: cm, url: n.contexturl.flatMap { URL(string: $0) },
+                                                              title: n.subject ?? "Alert") } label: { card }
+                                .buttonStyle(.plain)
+                                .simultaneousGesture(TapGesture().onEnded { Task { await markRead(n) } })
+                        } else if let s = n.contexturl, let u = URL(string: s) {
+                            NavigationLink { WebActivityView(url: u, title: n.subject ?? "Alert") } label: { card }
+                                .buttonStyle(.plain)
+                                .simultaneousGesture(TapGesture().onEnded { Task { await markRead(n) } })
+                        } else {
+                            card.onTapGesture { Task { await markRead(n) } }
+                        }
+                        if hasLinks { message }
                     }
                     .padding(14).frame(maxWidth: .infinity, alignment: .leading)
                     .background(isRead(n) ? Theme.bg : Theme.surface2)
                     .glowCard()
-
-                    if let d = n.discussionId {
-                        // Announcements / forum posts open inside the app, not the website
-                        NavigationLink { PostsView(discussionId: d, title: n.subject ?? "Announcement") } label: { card }
-                            .buttonStyle(.plain)
-                            .simultaneousGesture(TapGesture().onEnded { Task { await markRead(n) } })
-                    } else if let cm = n.cmid {
-                        // Announcements, assignments, pages...: opened with the app's own screens
-                        NavigationLink { ModuleLoaderView(cmid: cm, url: n.contexturl.flatMap { URL(string: $0) },
-                                                          title: n.subject ?? "Alert") } label: { card }
-                            .buttonStyle(.plain)
-                            .simultaneousGesture(TapGesture().onEnded { Task { await markRead(n) } })
-                    } else if let s = n.contexturl, let u = URL(string: s) {
-                        NavigationLink { WebActivityView(url: u, title: n.subject ?? "Alert") } label: { card }
-                            .buttonStyle(.plain)
-                            .simultaneousGesture(TapGesture().onEnded { Task { await markRead(n) } })
-                    } else {
-                        card.onTapGesture { Task { await markRead(n) } }
-                    }
                 }
                 if loading { ProgressView().tint(Theme.accent) }
                 else if items.isEmpty && error == nil { Text("You have no alerts").foregroundColor(Theme.muted) }
@@ -1272,7 +1278,7 @@ struct FinalExamCalculator: View {
                 HStack {
                     Text(g.letter).font(Theme.font(.headline)).foregroundColor(Theme.accent)
                         .frame(width: 56, alignment: .leading)
-                    Text(g.remark).font(Theme.font(.footnote)).foregroundColor(Theme.muted)
+                    Text(g.remark.linkedText).font(Theme.font(.footnote)).foregroundColor(Theme.muted)
                     Spacer()
                     outcome(needed: needed, exam: exam)
                 }
