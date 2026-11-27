@@ -708,16 +708,14 @@ struct DefaultCover: View {
                            startPoint: .topLeading, endPoint: .bottomTrailing)
             if themes.theme.isNotebook {
                 NotebookPattern(seed: course.id)
-            } else if preferOldCourseCards && !usePreviousStyle {
-                // old card style: the small book icon, as it always was
+            } else if !usePreviousStyle {
                 Image(systemName: "book.closed.fill")
                     .font(.system(size: 64))
                     .foregroundColor(Self.bookColor(p0: p.0, p1: p.1, accent: themes.theme.westernHeadings ? 0xFFFFFF : themes.palette.accent))
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                     .padding(14)
             } else {
-                // new card style: a big, tilted book whose top-left corner starts 73% across and 20% down the cover,
-                // running off the right edge and the bottom, kept faint behind the title
+                // The previous design uses a tilted book cropped at the right and bottom edges.
                 GeometryReader { g in
                     Image(systemName: "book.closed.fill")
                         .font(.system(size: 140))
