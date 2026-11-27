@@ -379,6 +379,7 @@ struct DevAttendanceCard: View {
 struct DevLogsView: View {
     @AppStorage(DevMode.key) private var devModeEnabled = false
     @EnvironmentObject private var catalog: CourseCatalog
+    @AppStorage(BicsDisplayFont.preferenceKey) private var useDisplayFont = false
     @AppStorage(CoursePreviewStore.selectionKey) private var previewSelection = Data()
     @AppStorage(ThemeFamily.showCardsKey) private var showCards = false
 
@@ -399,7 +400,16 @@ struct DevLogsView: View {
                 }
                 .padding(14).frame(maxWidth: .infinity, alignment: .leading)
                 .glowCard()
-                if devModeEnabled { previewCourse }
+                if devModeEnabled {
+                    Toggle(isOn: $useDisplayFont) {
+                        Text("Use previous course code font")
+                            .foregroundColor(Theme.txt).fontWeight(.semibold)
+                    }
+                    .tint(Theme.accent)
+                    .padding(14)
+                    .glowCard()
+                    previewCourse
+                }
                 DevHostsCard()
                 DevLogCard(channel: .login)
                 DevAttendanceCard()

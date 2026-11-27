@@ -667,6 +667,7 @@ struct DefaultCover: View {
     let course: Course
     @ObservedObject private var themes = ThemeStore.shared
     @ObservedObject private var timetable = TimetableManager.shared
+    @AppStorage(BicsDisplayFont.preferenceKey) private var useDisplayFont = false
     @AppStorage("ui.preferOldCourseCards") private var preferOldCourseCards = false
     @AppStorage("ui.darkerCourseCardWallpaper") private var darkerCourseCardWallpaper = false
     @AppStorage(CoursePreviewStore.strengthKey) private var titleStrength = CoursePreviewStore.defaultStrength
@@ -729,7 +730,7 @@ struct DefaultCover: View {
                 Text(course.prettyShort ?? "")
                     .foregroundColor(themes.theme.westernHeadings ? Color.white : Theme.accent.opacity(0.92))
                     .textGlow()
-                    .pixelHeading(16, normal: .system(size: 22, weight: .bold), pt: 22)
+                    .courseCodeHeading(16, size: 22, useDisplayFont: useDisplayFont)
                     .lineLimit(1).minimumScaleFactor(0.5)
                     .padding(14)
             } else {
@@ -749,7 +750,7 @@ struct DefaultCover: View {
             Text(course.courseCode(timetable: timetable.data))
                 .foregroundColor(color.opacity(strength))
                 .textGlow()
-                .pixelHeading(16 * scale, normal: .system(size: 22 * scale, weight: .bold), pt: 22 * scale)
+                .courseCodeHeading(16 * scale, size: 22 * scale, useDisplayFont: useDisplayFont)
                 .padding(.trailing, 2 * scale)
             ForEach(Array(tags.enumerated()), id: \.offset) { _, tag in
                 Rectangle()

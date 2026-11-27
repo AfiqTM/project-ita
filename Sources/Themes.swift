@@ -413,6 +413,27 @@ enum RocksFont {
     static func ui(_ size: CGFloat) -> UIFont? { UIFont(name: name, size: size) }
 }
 
+enum BicsDisplayFont {
+    static let preferenceKey = "dev.useDisplayCourseCodeFont"
+    static let name = "MADECoachella-Bold"
+    static let cleanName = "BICSDisplay-Regular"
+
+    static func register() {
+        if let url = Bundle.main.url(forResource: name, withExtension: "otf") {
+            CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+        }
+        if let url = Bundle.main.url(forResource: "BICS-Display-Clean-v4", withExtension: "ttf") {
+            CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+        }
+    }
+
+    static var activeName: String {
+        UIFont(name: cleanName, size: 12) != nil ? cleanName : name
+    }
+
+    static var available: Bool { UIFont(name: activeName, size: 12) != nil }
+}
+
 /// The title face and the text face of the themes with `westernHeadings`: the sizes of the nav bar, tab bar and
 /// bar buttons are kept together here.
 struct FaceSpec {
@@ -519,6 +540,15 @@ struct PixelHeading: ViewModifier {
 extension View {
     func pixelHeading(_ size: CGFloat = 12, normal: Font? = nil, pt: CGFloat? = nil) -> some View {
         modifier(PixelHeading(size: size, normal: normal, pt: pt))
+    }
+
+    @ViewBuilder
+    func courseCodeHeading(_ pixelSize: CGFloat, size: CGFloat, useDisplayFont: Bool) -> some View {
+        if useDisplayFont && BicsDisplayFont.available {
+            font(.custom(BicsDisplayFont.activeName, size: size))
+        } else {
+            pixelHeading(pixelSize, normal: .system(size: size, weight: .bold), pt: size)
+        }
     }
 }
 
